@@ -1,6 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import TenantRegistrationViewSet, TenantViewSet, VerifyEmail, LoginView, RequestPasswordResetView, ResetPasswordView, ResendVerificationEmail
+from .views import TenantRegistrationViewSet, TenantViewSet, \
+VerifyEmail, LoginView, RequestPasswordResetView, \
+ResetPasswordView, ResendVerificationEmail, UpdateCompanyProfileView
 
 from rest_framework_simplejwt.views import (
 
@@ -20,6 +22,8 @@ urlpatterns = [
     path('resend-verification-email/<str:token>/', ResendVerificationEmail.as_view(), name='resend-verification-email'),
 
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    path('update-company-profile/', UpdateCompanyProfileView.as_view(), name='update-company-profile'),
 
 
 ]

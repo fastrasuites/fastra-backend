@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Tenant
+from .models import Tenant, CompanyProfile
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 
@@ -120,3 +120,11 @@ class TenantSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenant
         fields = '__all__'
+
+
+
+class CompanyProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanyProfile
+        fields = ['logo', 'phone', 'address', 'city', 'state', 'zip_code', 'country', 
+                  'registration_number', 'tax_id', 'currency', 'industry', 'language', 'time_zone']
