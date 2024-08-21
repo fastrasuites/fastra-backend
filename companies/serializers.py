@@ -5,13 +5,16 @@ from django.contrib.auth.password_validation import validate_password
 
 from .models import UserProfile
 
-
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = ['is_verified']
         read_only_fields = ['is_verified']
 
+# Generate default username for admin user
+def generate_default_username(company_name):
+    company_name_parts = company_name.split()
+    return f"admin_{company_name_parts[0]}"
 
 class UserSerializer(serializers.ModelSerializer):
     password1 = serializers.CharField(write_only=True, required=True, validators=[validate_password])
@@ -21,6 +24,9 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['username', 'password1', 'password2', 'email', 'profile']
+        extra_kwargs = {
+            'username': {'required': False}
+        }
 
     def validate(self, attrs):
         if attrs['password1'] != attrs['password2']:
@@ -31,6 +37,8 @@ class UserSerializer(serializers.ModelSerializer):
 
         profile_data = validated_data.pop('profile', {})
         validated_data.pop('password2')  # Remove password2 as it's not needed for User creation
+        
+
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
@@ -55,7 +63,7 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tenant
-        fields = ['schema_name', 'company_name', 'user']
+        fields = ['company_name', 'user']
 
     # VALIDATE DATAS
     def validate_company_name(self, value):
@@ -67,6 +75,7 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
         if Tenant.objects.filter(schema_name__iexact=value).exists():
             raise serializers.ValidationError("A tenant with this schema name already exists.")
         return value
+    
 
     def validate(self, data):
         user_data = data.get('user', {})
@@ -77,15 +86,21 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
         if not user_serializer.is_valid():
             raise serializers.ValidationError(user_serializer.errors)
 
-        return data
 
-    # CREATE AFTER VALIDATION
     def create(self, validated_data):
+        
+        schema_name = slugify(validated_data['company_name'].split()[0])
+        tenant = Tenant.objects.create(schema_name=schema_name, company_name=validated_data['company_name'])
+        
         user_data = validated_data.pop('user')
+        user_data['username'] = generate_default_username(validated_data['company_name'])
         user = UserSerializer.create(UserSerializer(), validated_data=user_data)
-        tenant = Tenant.objects.create(user=user, **validated_data)
-        return tenant
 
+        tenant.user = user
+        tenant.save()
+        return tenant
+    
+    
 
 # LOGIN
 class LoginSerializer(serializers.Serializer):
