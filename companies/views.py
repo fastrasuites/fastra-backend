@@ -6,7 +6,7 @@ from rest_framework import viewsets, generics
 from rest_framework import status
 from django.utils.text import slugify
 from django.contrib.auth import login, authenticate, get_user_model
-from .models import Tenant, Domain, CompanyProfile
+from .models import Tenant, Domain, CompanyProfile, OTP
 from .serializers import TenantRegistrationSerializer, TenantSerializer, LoginSerializer, \
     RequestPasswordResetSerializer, ResetPasswordSerializer, CompanyProfileSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -14,6 +14,7 @@ from .utils import Util
 from django.contrib.sites.shortcuts import get_current_site
 import jwt
 from django.conf import settings
+from urllib.parse import urlparse
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
@@ -24,30 +25,44 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import PermissionDenied
 from .permissions import IsAdminUser
+from django.db import transaction
+
 
 
 class TenantRegistrationViewSet(viewsets.ViewSet):
     serializer_class = TenantRegistrationSerializer
 
+    @transaction.atomic
     def create(self, request):
         serializer = TenantRegistrationSerializer(data=request.data)
         if serializer.is_valid(raise_exception=True):
             tenant = serializer.save()
             sanitized_name = slugify(tenant.schema_name, allow_unicode=True)
+
+            # frontend_url = request.data.get('frontend_url', 'http://localhost:8000')
+            # frontend_domain = frontend_url.split('://', 1)[-1].split(':')[0]  # Extract domain without protocol and port
             
-            # Use the frontend URL provided in the request for domain creation
-            frontend_url = request.data.get('frontend_url', 'http://localhost:3000')
-            # frontend_domain = frontend_url.split('://')[1].split(':')[0]  # Extract domain without protocol and port
-            frontend_domain = frontend_url.split('://', 1)[-1]  # Remove protocol, keep everything else
-            domain = Domain.objects.create(domain=f"{sanitized_name}.{frontend_domain}", tenant=tenant)
+            frontend_url = request.data.get('frontend_url', 'http://localhost:8000')
+            parsed_url = urlparse(frontend_url)
+            frontend_domain = parsed_url.netloc.split(':')[0]  # This will handle URLs with or without ports
+            domain = Domain.objects.create(
+                domain=f"{sanitized_name}.{frontend_domain}",
+                tenant=tenant,
+                is_primary=True
+            )
 
             user = tenant.user
+
+            # Activate the tenant
+            # with tenant_context(tenant):
+            #     # Perform any tenant-specific setup here
+            #     pass
 
             token = RefreshToken.for_user(user)
             token['email'] = user.email
 
             verification_url = f'{frontend_url}/email-verify?token={str(token.access_token)}'
-            
+
             email_body = f'Hi {tenant.company_name},\n\nUse the link below to verify your email:\n{verification_url}'
             data = {
                 'email_body': email_body,
@@ -131,9 +146,9 @@ class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
-            username = serializer.validated_data['username']
+            email = serializer.validated_data['email']
             password = serializer.validated_data['password']
-            user = authenticate(request, username=username, password=password)
+            user = authenticate(request, email=email, password=password)
 
             if user is not None:
                 if user.profile.is_verified:
@@ -173,7 +188,7 @@ class RequestPasswordResetView(APIView):
     serializer_class = RequestPasswordResetSerializer
 
     def post(self, request):
-        serializer = RequestPasswordResetSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data['email']
             try:
@@ -181,55 +196,71 @@ class RequestPasswordResetView(APIView):
                 if not user.profile.is_verified:
                     return Response({'error': 'Email is not verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
-                token = default_token_generator.make_token(user)
-                uid = urlsafe_base64_encode(force_bytes(user.pk))
-                current_site = get_current_site(request).domain
-                reset_link = f"http://{current_site}/reset-password/{uid}/{token}"
-
+                otp = OTP.objects.create(user=user)
+                
                 send_mail(
-                    'Password Reset Request',
-                    f'Click the following link to reset your password: {reset_link}',
+                    'Password Reset OTP',
+                    f'Your OTP for password reset is: {otp.code}',
                     settings.DEFAULT_FROM_EMAIL,
                     [email],
                     fail_silently=False,
                 )
-                return Response({'detail': 'Password reset email has been sent.'}, status=status.HTTP_200_OK)
+                return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
 class ResetPasswordView(APIView):
-    def get(self, request, uidb64, token):
-        try:
-            uid = urlsafe_base64_decode(uidb64).decode()
-            user = User.objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            user = None
-
-        if user is not None and default_token_generator.check_token(user, token):
-            return Response({'detail': 'Token is valid'}, status=status.HTTP_200_OK)
-        else:
-            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
-
     serializer_class = ResetPasswordSerializer
 
-    def post(self, request, uidb64, token):
-        try:
-            uid = urlsafe_base64_decode(uidb64).decode()
-            user = User.objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            user = None
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            otp_code = serializer.validated_data['otp']
+            new_password = serializer.validated_data['new_password']
 
-        if user is not None and default_token_generator.check_token(user, token):
-            serializer = ResetPasswordSerializer(data=request.data)
-            if serializer.is_valid():
-                user.set_password(serializer.validated_data['password1'])
-                user.save()
-                return Response({'detail': 'Password has been reset successfully.'}, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                user = User.objects.get(email=email)
+                otp = OTP.objects.filter(user=user, code=otp_code).order_by('-created_at').first()
+
+                if otp and otp.is_valid():
+                    user.set_password(new_password)
+                    user.save()
+                    otp.delete()  # Delete the OTP after successful use
+                    return Response({'detail': 'Password has been reset successfully.'}, status=status.HTTP_200_OK)
+                else:
+                    return Response({'error': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
+            except User.DoesNotExist:
+                return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Resend OTP if expired
+class ResendOTPView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email=email)
+            # Invalidate any existing OTPs
+            OTP.objects.filter(user=user, is_used=False).update(is_used=True)
+            
+            # Create new OTP
+            otp = OTP.objects.create(user=user)
+            
+            # Send email with new OTP
+            send_mail(
+                'New Password Reset OTP',
+                f'Your new OTP for password reset is: {otp.code}',
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+                fail_silently=False,
+            )
+            return Response({'message': 'New OTP sent successfully'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'No user found with this email address'}, status=status.HTTP_404_NOT_FOUND)
 
 
 class TenantViewSet(viewsets.ModelViewSet):

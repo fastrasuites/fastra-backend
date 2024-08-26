@@ -292,6 +292,7 @@ TENANT_MODEL = 'companies.Tenant'
 TENANT_DOMAIN_MODEL = 'companies.Domain'
 
 AUTHENTICATION_BACKENDS = [
+    'companies.authenticate.EmailBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 

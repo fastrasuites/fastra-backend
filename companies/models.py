@@ -3,6 +3,8 @@ from django_tenants.models import TenantMixin, DomainMixin
 from django.utils.translation import gettext_lazy as _
 import pytz
 from django.contrib.auth.models import User
+from django.utils import timezone
+import random
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -79,6 +81,24 @@ class CompanyProfile(models.Model):
     industry = models.CharField(max_length=100, blank=True, null=True)
     language = models.CharField(max_length=20, choices=LANGUAGE_CHOICES, default='en', null=False)
     time_zone = models.CharField(max_length=50, choices=TIMEZONE_CHOICES, default='UTC', null=False)
+
+
+class OTP(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    code = models.CharField(max_length=4)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            self.code = str(random.randint(1000, 9999))
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timezone.timedelta(minutes=5)
+        return super().save(*args, **kwargs)
+
+    def is_valid(self):
+        return timezone.now() <= self.expires_at and not self.is_used
 
 
 class Domain(DomainMixin):
