@@ -78,6 +78,12 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
         if not user_serializer.is_valid():
             raise serializers.ValidationError({"user": user_serializer.errors})
 
+        # Validate email uniqueness
+        email = user_data.get('email')
+        if email and User.objects.filter(email=email).exists():
+            raise serializers.ValidationError({"email": "A user with this email already exists."})
+
+
         return data
 
     def create(self, validated_data):
