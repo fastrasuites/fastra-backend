@@ -79,8 +79,6 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
-
 class VerifyEmail(generics.GenericAPIView):
     def get(self, request):
         token = request.GET.get('token')
@@ -154,10 +152,16 @@ class LoginView(APIView):
                 if user.profile.is_verified:
                     login(request, user)
                     refresh = RefreshToken.for_user(user)
+                    print(refresh.payload)
                     # Get the tenant associated with the user
                     try:
                         tenant = Tenant.objects.get(user=user)
                         domain = Domain.objects.get(tenant=tenant)
+
+                        refresh['tenant_id'] = tenant.id
+                        refresh['domain'] = domain.domain
+
+                        print(refresh.payload)
 
                         # Construct the tenant-specific URL
                         tenant_url = f"{domain.domain}"
