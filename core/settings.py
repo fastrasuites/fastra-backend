@@ -86,6 +86,9 @@ INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in S
 MIDDLEWARE = [
     # Middleware for accessing schemas and permissions
     'django_tenants.middleware.main.TenantMainMiddleware',
+    
+    # Custom Middleware for tenant authentication
+    # 'companies.middlewares.TenantAwareJWTMiddleware',
 
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -341,6 +344,7 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 
+
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
 
@@ -352,3 +356,6 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+# Add this new setting
+# TENANT_SUBFOLDER_PREFIX = 'schemas'
