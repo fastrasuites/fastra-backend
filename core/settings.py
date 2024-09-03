@@ -40,7 +40,7 @@ ALLOWED_HOSTS = [
 
 SHARED_APPS = [
     'django_tenants',
-    'companies',
+    'registration',
 
     # 'tenant_users.permissions',
     # 'tenant_users.tenants',
@@ -79,6 +79,8 @@ TENANT_APPS = [
     'sales',
     'users',
     # 'tenant_users.permissions',
+
+    'companies',
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
@@ -87,8 +89,6 @@ MIDDLEWARE = [
     # Middleware for accessing schemas and permissions
     'django_tenants.middleware.main.TenantMainMiddleware',
     
-    # Custom Middleware for tenant authentication
-    # 'companies.middlewares.TenantAwareJWTMiddleware',
 
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -98,6 +98,11 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     "corsheaders.middleware.CorsMiddleware",
+
+    # Custom Middleware for tenant authentication
+    # 'companies.middlewares.TenantMiddleware',
+    # 'users.middlewares.TenantMiddleware',
+
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -290,9 +295,9 @@ CKEDITOR_5_CONFIGS = {
     }
 }
 
-TENANT_MODEL = 'companies.Tenant'
+TENANT_MODEL = 'registration.Tenant'
 
-TENANT_DOMAIN_MODEL = 'companies.Domain'
+TENANT_DOMAIN_MODEL = 'registration.Domain'
 
 AUTHENTICATION_BACKENDS = [
     'companies.authenticate.EmailBackend',
@@ -357,5 +362,5 @@ SIMPLE_JWT = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-# Add this new setting
-# TENANT_SUBFOLDER_PREFIX = 'schemas'
+
+
