@@ -1,41 +1,66 @@
-# from rest_framework import serializers
-# from django.contrib.auth.models import User
-# from .models import TenantUser, TenantPermission, UserPermission
+from rest_framework import serializers
+from django.contrib.auth.models import User
+from .models import TenantUser, TenantPermission, UserPermission
 
-# class UserSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = User
-#         fields = ['id', 'username', 'email',]
-#         extra_kwargs = {'password': {'write_only': True, 'required': True} }
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email','password']
+        
+        extra_kwargs = {
+            'username': {'required': True},
+            'password': {'required': True},
+            'email': {'required': True}
+        }
 
-# class TenantUserSerializer(serializers.ModelSerializer):
-#     user = UserSerializer()
 
-#     class Meta:
-#         model = TenantUser
-#         fields = ['id', 'user', 'tenant', 'role', 'phone_number', 'language', 'timezone', 
-#                   'in_app_notifications', 'email_notifications', 'signature']
 
-#     def create(self, validated_data):
-#         user_data = validated_data.pop('user')
-#         user = User.objects.create_user(**user_data)
-#         tenant_user = TenantUser.objects.create(user=user, **validated_data)
-#         return tenant_user
+class TenantUserSerializer(serializers.ModelSerializer):
+    user = UserSerializer()
 
-#     def update(self, instance, validated_data):
-#         user_data = validated_data.pop('user', None)
-#         if user_data:
-#             user_serializer = UserSerializer(instance.user, data=user_data, partial=True)
-#             if user_serializer.is_valid():
-#                 user_serializer.save()
-#         return super().update(instance, validated_data)
+    class Meta:
+        model = TenantUser
+        fields = ['id', 'user', 'role', 'phone_number', 'language', 'timezone', 
+                  'in_app_notifications', 'email_notifications']
 
-# class TenantPermissionSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = TenantPermission
-#         fields = ['id', 'tenant', 'name', 'description']
 
-# class UserPermissionSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = UserPermission
-#         fields = ['id', 'user', 'permission']
+    def validate(self, data):
+        user_data = data.get('user', {})
+        if not user_data:
+            raise serializers.ValidationError({"user": "User data is required."})
+
+        user_serializer = UserSerializer(data=user_data)
+        if not user_serializer.is_valid():
+            raise serializers.ValidationError({"user": user_serializer.errors})
+
+        # Validate email uniqueness
+        email = user_data.get('email')
+        if email and User.objects.filter(email=email).exists():
+            raise serializers.ValidationError({"email": "A user with this email already exists."})
+
+        return data
+
+
+    def create(self, validated_data):
+        user_data = validated_data.pop('user')
+        user = User.objects.create_user(**user_data)
+        tenant_user = TenantUser.objects.create(user=user, **validated_data)
+        return tenant_user
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop('user', None)
+        if user_data:
+            user_serializer = UserSerializer(instance.user, data=user_data, partial=True)
+            if user_serializer.is_valid():
+                user_serializer.save()
+        return super().update(instance, validated_data)
+
+class TenantPermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TenantPermission
+        fields = ['id', 'name', 'description']
+
+class UserPermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserPermission
+        fields = ['id', 'user', 'permission']

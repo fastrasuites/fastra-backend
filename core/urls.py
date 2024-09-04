@@ -12,8 +12,7 @@ urlpatterns = [
     path('project-costing/', include('project_costing.urls')),
     path('purchase/', include('purchase.urls')),
     path('sales/', include('sales.urls')),
-    
-    # path('users/', include('users.urls')),
+    path('users/', include('users.urls')),
 
     
 ]
