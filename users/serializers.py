@@ -9,9 +9,21 @@ class UserSerializer(serializers.ModelSerializer):
         
         extra_kwargs = {
             'username': {'required': True},
-            'password': {'required': True},
-            'email': {'required': True}
+            'password': {'required': True, 'write_only': True},  # Ensure password is write-only
+            'email': {'required': True, 'validators': []}  # Remove the default unique validator
         }
+
+    def validate_email(self, value):
+        """
+        Validate that the email is provided, valid, and unique.
+        """
+        if not value:
+            raise serializers.ValidationError("This field is required.")
+
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+
+        return value
 
 
 
