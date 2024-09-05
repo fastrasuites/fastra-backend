@@ -33,7 +33,8 @@ from django_tenants.utils import schema_context, tenant_context
 class VerifyEmail(generics.GenericAPIView):
     def get(self, request):
         token = request.GET.get('token')
-        frontend_url = request.GET.get('frontend_url', 'http://localhost:3000')
+        # frontend_url = request.GET.get('frontend_url', 'http://localhost:3000')
+        current_site = get_current_site(self.request).domain
 
         if not token:
             return Response({'error': 'No token provided'}, status=status.HTTP_400_BAD_REQUEST)
@@ -43,7 +44,7 @@ class VerifyEmail(generics.GenericAPIView):
         except jwt.ExpiredSignatureError:
             return Response({
                 'error': 'Activation link expired',
-                'resend_link': f'{frontend_url}/resend-verification-email?token={token}'
+                'resend_link': f'{current_site}/companies/resend-verification-email?token={token}'
             }, status=status.HTTP_400_BAD_REQUEST)
         except jwt.DecodeError:
             return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
@@ -75,8 +76,8 @@ class ResendVerificationEmail(generics.GenericAPIView):
             new_token['email'] = user.email
 
             current_site = get_current_site(request).domain
-            relativeLink = reverse('email-verify')
-            absurl = f'http://{current_site}{relativeLink}?token={str(new_token.access_token)}'
+            # relativeLink = reverse('email-verify')
+            absurl = f'https://{current_site}/companies/email-verify?token={str(new_token.access_token)}'
             email_body = f'Hi {user.username},\nUse the link below to verify your email:\n{absurl}'
             data = {'email_body': email_body, 'to_email': user.email, 'email_subject': 'Verify Your Email'}
 
