@@ -5,16 +5,53 @@ from .models import TenantUser, TenantPermission, UserPermission
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email',]
-        extra_kwargs = {'password': {'write_only': True, 'required': True} }
+        fields = ['id', 'username', 'email','password']
+        
+        extra_kwargs = {
+            'username': {'required': True},
+            'password': {'required': True, 'write_only': True},  # Ensure password is write-only
+            'email': {'required': True, 'validators': []}  # Remove the default unique validator
+        }
+
+    def validate_email(self, value):
+        """
+        Validate that the email is provided, valid, and unique.
+        """
+        if not value:
+            raise serializers.ValidationError("This field is required.")
+
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+
+        return value
+
+
 
 class TenantUserSerializer(serializers.ModelSerializer):
     user = UserSerializer()
 
     class Meta:
         model = TenantUser
-        fields = ['id', 'user', 'tenant', 'role', 'phone_number', 'language', 'timezone', 
-                  'in_app_notifications', 'email_notifications', 'signature']
+        fields = ['id', 'user', 'role', 'phone_number', 'language', 'timezone', 
+                  'in_app_notifications', 'email_notifications']
+
+
+    def validate(self, data):
+        user_data = data.get('user', {})
+        if not user_data:
+            raise serializers.ValidationError({"user": "User data is required."})
+
+        user_serializer = UserSerializer(data=user_data)
+        if not user_serializer.is_valid():
+            raise serializers.ValidationError({"user": user_serializer.errors})
+
+        # Validate email uniqueness
+        email = user_data.get('email')
+        if email and User.objects.filter(email=email).exists():
+            raise serializers.ValidationError({"email": "A user with this email already exists."})
+
+        return data
+
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -33,7 +70,7 @@ class TenantUserSerializer(serializers.ModelSerializer):
 class TenantPermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = TenantPermission
-        fields = ['id', 'tenant', 'name', 'description']
+        fields = ['id', 'name', 'description']
 
 class UserPermissionSerializer(serializers.ModelSerializer):
     class Meta:
