@@ -72,7 +72,7 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
 
             return Response({
                 'detail': 'Tenant created successfully. Please confirm your email address.',
-                'tenant_url': f"https://{domain.domain}"
+                'tenant_url': f"http://{domain.domain}"
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
