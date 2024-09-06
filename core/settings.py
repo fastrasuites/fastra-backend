@@ -34,7 +34,10 @@ ALLOWED_HOSTS = [
     'localhost:8000',
     'fastrav1-production.up.railway.app',
     '*.fastrav1-production.up.railway.app',
-    '*']
+    'fastra-frontend.vercel.app',
+    '*.fastra-frontend.vercel.app',
+    '*',
+    'fastra.onrender.com']
 
 # Application definition
 
@@ -102,6 +105,8 @@ MIDDLEWARE = [
     # Custom Middleware for tenant authentication
     # 'companies.middlewares.TenantMiddleware',
     # 'users.middlewares.TenantMiddleware',
+
+    
 
 ]
 

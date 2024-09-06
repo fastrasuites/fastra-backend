@@ -20,7 +20,7 @@ urlpatterns = [
     path('request-password-reset/', RequestPasswordResetView.as_view(), name='request-password-reset'),
     path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
     path('resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
-    path('resend-verification-email/<str:token>/', ResendVerificationEmail.as_view(), name='resend-verification-email'),
+    path('resend-verification-email/', ResendVerificationEmail.as_view(), name='resend-verification-email'),
 
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
