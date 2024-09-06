@@ -10,6 +10,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.response import Response
 from rest_framework import status
 from .utils import Util
+import jwt
+from django.conf import settings
+from urllib.parse import urlparse
+from django.contrib.auth.models import User
+from django.urls import reverse
+from rest_framework import viewsets, generics
 
 class TenantUserViewSet(viewsets.ModelViewSet):
     queryset = TenantUser.objects.all()
@@ -22,6 +28,7 @@ class TenantUserViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         tenant_user = serializer.save()
         self.send_verification_email(tenant_user)
+        
 
     def get_user_email(self, tenant_user):
         # Attempt to get email from related User model if it exists
@@ -46,7 +53,7 @@ class TenantUserViewSet(viewsets.ModelViewSet):
         token['email'] = email
         
         current_site = get_current_site(self.request).domain
-        verification_url = f'https://{current_site}/companies/email-verify?token={str(token.access_token)}'
+        verification_url = f'https://{current_site}/email-verify?token={str(token.access_token)}'
 
         email_body = f'Hi {tenant_user.user.username},\n\nUse the link below to verify your email:\n{verification_url}'
         email_data = {
@@ -66,16 +73,6 @@ class TenantUserViewSet(viewsets.ModelViewSet):
             'user': serializer.data
         }, status=status.HTTP_201_CREATED, headers=headers)
     
-# class TenantUserViewSet(viewsets.ModelViewSet):
-#     queryset = TenantUser.objects.all()
-#     serializer_class = TenantUserSerializer
-#     permission_classes = [IsAuthenticated]
-
-#     def get_queryset(self):
-#         return TenantUser.objects.all()
-    
-#     def perform_create(self, serializer):
-#         serializer.save()
 
 
 class TenantPermissionViewSet(viewsets.ModelViewSet):
@@ -96,3 +93,6 @@ class UserPermissionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return UserPermission.objects.all()
+    
+
+

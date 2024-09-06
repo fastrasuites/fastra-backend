@@ -44,7 +44,7 @@ class VerifyEmail(generics.GenericAPIView):
         except jwt.ExpiredSignatureError:
             return Response({
                 'error': 'Activation link expired',
-                'resend_link': f'{current_site}/companies/resend-verification-email?token={token}'
+                'resend_link': f'{current_site}/resend-verification-email?token={token}'
             }, status=status.HTTP_400_BAD_REQUEST)
         except jwt.DecodeError:
             return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
@@ -64,7 +64,12 @@ class VerifyEmail(generics.GenericAPIView):
 
 
 class ResendVerificationEmail(generics.GenericAPIView):
-    def get(self, request, token):
+    def get(self, request):
+        token = request.GET.get('token')
+        if not token:
+            return Response({'error': 'Token is missing'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
             user = User.objects.get(email=payload['email'])
@@ -76,8 +81,8 @@ class ResendVerificationEmail(generics.GenericAPIView):
             new_token['email'] = user.email
 
             current_site = get_current_site(request).domain
-            # relativeLink = reverse('email-verify')
-            absurl = f'https://{current_site}/companies/email-verify?token={str(new_token.access_token)}'
+            relativeLink = reverse('email-verify')
+            absurl = f'http://{current_site}{relativeLink}?token={str(new_token.access_token)}'
             email_body = f'Hi {user.username},\nUse the link below to verify your email:\n{absurl}'
             data = {'email_body': email_body, 'to_email': user.email, 'email_subject': 'Verify Your Email'}
 

@@ -60,7 +60,7 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
             # Generate and send verification email
             token = RefreshToken.for_user(user)
             token['email'] = user.email
-            verification_url = f'https://{domain.domain}/companies/email-verify?token={str(token.access_token)}'
+            verification_url = f'https://{domain.domain}/email-verify?token={str(token.access_token)}'
 
             email_body = f'Hi {tenant.company_name},\n\nUse the link below to verify your email:\n{verification_url}'
             email_data = {
