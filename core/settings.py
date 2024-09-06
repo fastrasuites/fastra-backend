@@ -32,12 +32,10 @@ DEBUG = os.getenv('DEBUG') == 'True'
 
 ALLOWED_HOSTS = [
     'localhost:8000',
-    'fastrav1-production.up.railway.app',
-    '*.fastrav1-production.up.railway.app',
-    'fastra-frontend.vercel.app',
-    '*.fastra-frontend.vercel.app',
     '*',
-    'fastra.onrender.com']
+    'fastra.onrender.com',
+    '*.fastra.onrender.com',
+    ]
 
 # Application definition
 
