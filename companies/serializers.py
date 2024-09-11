@@ -13,11 +13,10 @@ class LoginSerializer(serializers.Serializer):
 
 
 # RESET PASSWORD
-class RequestPasswordResetSerializer(serializers.Serializer):
+class RequestForgottenPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
-class ResetPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True)
+class ForgottenPasswordSerializer(serializers.Serializer):
     otp = serializers.CharField(required=True, max_length=4, min_length=4)
     new_password = serializers.CharField(write_only=True, required=True)
     confirm_password = serializers.CharField(write_only=True, required=True)

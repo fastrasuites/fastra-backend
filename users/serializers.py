@@ -1,14 +1,18 @@
-from rest_framework import serializers
+from rest_framework import serializers,status
 from django.contrib.auth.models import User
 from .models import TenantUser, TenantPermission, UserPermission
 import re
 from django.utils.translation import gettext as _
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+
 
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username','first_name', 'last_name', 'email','password']
+        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'is_archived']
+        read_only_fields = ['is_archived']
         
         extra_kwargs = {
             'username': {'required': True},
@@ -27,6 +31,46 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A user with this email already exists.")
 
         return value
+
+
+class UserManagementView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.id == User.objects.first().id:  # Check if the user is the first (admin) user
+            return User.objects.all()
+        else:
+            return User.objects.filter(id=self.request.user.id)
+
+    def get(self, request):
+        users = self.get_queryset()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = UserSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request, pk=None):
+        user = User.objects.get(pk=pk)
+        if request.user.id == User.objects.first().id:  # Check if the user is the first (admin) user
+            user.is_archived = not user.is_archived
+            user.save()
+            serializer = UserSerializer(user)
+            return Response(serializer.data)
+        else:
+            return Response({'error': 'Only admin users can archive/unarchive users.'}, status=status.HTTP_403_FORBIDDEN)
+
+    def delete(self, request, pk=None):
+        user = User.objects.get(pk=pk)
+        if user.id == request.user.id or request.user.id == User.objects.first().id:  # Allow deletion by the user or admin
+            user.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response({'error': 'You can only delete users you have created.'}, status=status.HTTP_403_FORBIDDEN)
 
 
 class TenantUserSerializer(serializers.ModelSerializer):
@@ -74,6 +118,23 @@ class TenantUserSerializer(serializers.ModelSerializer):
             if user_serializer.is_valid():
                 user_serializer.save()
         return super().update(instance, validated_data)
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    old_password = serializers.CharField(min_length=8, max_length=128, write_only=True)
+    new_password = serializers.CharField(min_length=8, max_length=128, write_only=True)
+    confirm_new_password = serializers.CharField(min_length=8, max_length=128, write_only=True)
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        if not user.check_password(attrs['old_password']):
+            raise serializers.ValidationError({'old_password': 'Incorrect password.'})
+
+        if attrs['new_password'] != attrs['confirm_new_password']:
+            raise serializers.ValidationError({'confirm_new_password': 'Passwords do not match.'})
+
+        return attrs
+
 
 class TenantPermissionSerializer(serializers.ModelSerializer):
     class Meta:

@@ -35,12 +35,10 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"password2": "Password fields didn't match."})
         return attrs
 
-
-
     
     def create(self, validated_data):
         validated_data.pop('password2')
-        user = User.objects.create_user(
+        user = User.objects.create_superuser(
             username=validated_data.get('username'),
             email=validated_data['email'],
             password=validated_data['password1']
@@ -70,6 +68,7 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
         if Tenant.objects.filter(schema_name__iexact=schema_name).exists():
             raise serializers.ValidationError("A tenant with this schema name already exists.")
         return schema_name
+
 
     def validate(self, data):
         user_data = data.get('user', {})

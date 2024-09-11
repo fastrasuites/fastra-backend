@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import TenantUserViewSet, TenantPermissionViewSet, UserPermissionViewSet
+from .views import TenantUserViewSet, PasswordChangeView, TenantPermissionViewSet, UserPermissionViewSet
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -12,6 +12,7 @@ router.register(r'user-permissions', UserPermissionViewSet, basename='user-permi
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('password-change/', PasswordChangeView.as_view(), name='password-change')
 ]
 
 # urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1,9 +1,10 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from .models import TenantUser, TenantPermission, UserPermission
-from .serializers import TenantUserSerializer, TenantPermissionSerializer, UserPermissionSerializer
+from .serializers import TenantUserSerializer, PasswordChangeSerializer, TenantPermissionSerializer, UserPermissionSerializer
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.contrib.sites.shortcuts import get_current_site
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -73,7 +74,18 @@ class TenantUserViewSet(viewsets.ModelViewSet):
             'user': serializer.data
         }, status=status.HTTP_201_CREATED, headers=headers)
     
+class PasswordChangeView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = PasswordChangeSerializer
 
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            user = request.user
+            user.set_password(serializer.validated_data['new_password'])
+            user.save()
+            return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class TenantPermissionViewSet(viewsets.ModelViewSet):
     queryset = TenantPermission.objects.all()
