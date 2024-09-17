@@ -1,7 +1,7 @@
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
-from .models import TenantUser, TenantPermission, UserPermission
-from .serializers import TenantUserSerializer, PasswordChangeSerializer, TenantPermissionSerializer, UserPermissionSerializer
+from rest_framework.permissions import IsAuthenticated, DjangoModelPermissions
+from .models import TenantUser
+from .serializers import TenantUserSerializer, PasswordChangeSerializer, GroupSerializer, PermissionSerializer, GroupPermissionSerializer
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.views import APIView
@@ -14,9 +14,78 @@ from .utils import Util
 import jwt
 from django.conf import settings
 from urllib.parse import urlparse
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group, Permission
+from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from rest_framework import viewsets, generics
+
+
+class GroupViewSet(viewsets.ModelViewSet):
+    queryset = Group.objects.all()
+    serializer_class = GroupSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Permission.objects.all()
+    serializer_class = PermissionSerializer
+
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser, DjangoModelPermissions]
+
+    def get_queryset(self):
+        app_label = self.request.query_params.get('app', None)
+        if app_label:
+            return Permission.objects.filter(content_type__app_label=app_label)
+        return Permission.objects.all()
+
+class GroupPermissionViewSet(viewsets.ModelViewSet):
+    serializer_class = GroupPermissionSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+
+    def get_queryset(self):
+        # Return an empty queryset or implement logic if needed
+        return Group.objects.none() 
+
+    def create(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        group = serializer.validated_data['group']
+        permissions = serializer.validated_data['permissions']
+        group.permissions.set(permissions)
+        return Response({
+            'group': group.id,
+            'permissions': [p.id for p in permissions]
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'])
+    def group_permissions(self, request):
+        group_id = request.query_params.get('group_id')
+        if not group_id:
+            return Response({"error": "group_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            group = Group.objects.get(id=group_id)
+        except Group.DoesNotExist:
+            return Response({"error": "Group not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        permissions = group.permissions.all()
+        return Response(PermissionSerializer(permissions, many=True).data)
+
+
 
 class TenantUserViewSet(viewsets.ModelViewSet):
     queryset = TenantUser.objects.all()
@@ -74,6 +143,22 @@ class TenantUserViewSet(viewsets.ModelViewSet):
             'user': serializer.data
         }, status=status.HTTP_201_CREATED, headers=headers)
     
+
+
+    @action(detail=True, methods=['post'])
+    def add_groups(self, request, pk=None):
+        tenant_user = self.get_object()
+        groups = Group.objects.filter(id__in=request.data.get('groups', []))
+        tenant_user.user.groups.add(*groups)  # Add groups to additional_groups
+        return Response({'status': 'Groups added'})
+
+    @action(detail=True, methods=['post'])
+    def remove_groups(self, request, pk=None):
+        tenant_user = self.get_object()
+        groups = Group.objects.filter(id__in=request.data.get('groups', []))
+        tenant_user.user.groups.remove(*groups)  # Remove groups from additional_groups
+        return Response({'status': 'Groups removed'})
+    
 class PasswordChangeView(APIView):
     permission_classes = [IsAuthenticated]
     serializer_class = PasswordChangeSerializer
@@ -87,24 +172,5 @@ class PasswordChangeView(APIView):
             return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class TenantPermissionViewSet(viewsets.ModelViewSet):
-    queryset = TenantPermission.objects.all()
-    serializer_class = TenantPermissionSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return TenantPermission.objects.all()
-
-    def perform_create(self, serializer):
-        serializer.save()
-
-class UserPermissionViewSet(viewsets.ModelViewSet):
-    queryset = UserPermission.objects.all()
-    serializer_class = UserPermissionSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return UserPermission.objects.all()
-    
 
 
