@@ -25,10 +25,11 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import PermissionDenied
 from django.db import transaction
 from django_tenants.utils import schema_context, tenant_context
-
+from rest_framework.permissions import AllowAny
 
 class TenantRegistrationViewSet(viewsets.ViewSet):
     serializer_class = TenantRegistrationSerializer
+    permission_classes = [AllowAny]
 
     @transaction.atomic
     def create(self, request):

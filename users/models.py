@@ -31,7 +31,8 @@ class TenantUser(models.Model):
     in_app_notifications = models.BooleanField(default=False)
     email_notifications = models.BooleanField(default=False)
     # signature = models.ImageField(upload_to='signatures', blank=True, null=True)
-
+    is_hidden = models.BooleanField(default=False)
+    
     def __str__(self):
         return f"{self.user.username} - {self.role}"
 

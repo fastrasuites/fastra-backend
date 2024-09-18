@@ -1,11 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import TenantUserViewSet, PasswordChangeView, GroupViewSet, PermissionViewSet, GroupPermissionViewSet
+from .views import UserViewSet, TenantUserViewSet, PasswordChangeView, GroupViewSet, PermissionViewSet, GroupPermissionViewSet
 from django.conf import settings
 from django.conf.urls.static import static
 
 
 router = DefaultRouter()
+router.register(r'users', UserViewSet, basename='user')
 router.register(r'tenant-users', TenantUserViewSet, basename='tenant-user')
 router.register(r'groups', GroupViewSet)
 router.register(r'permissions', PermissionViewSet)
