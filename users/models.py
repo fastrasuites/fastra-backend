@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from companies.models import Tenant
 import pytz
 
@@ -24,7 +24,7 @@ ROLE_CHOICES = [
 
 class TenantUser(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    role = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, related_name='role')
     phone_number = models.CharField(max_length=20, blank=True)
     language = models.CharField(max_length=20, choices=LANGUAGE_CHOICES, default='en')
     timezone = models.CharField(max_length=50, choices=TIMEZONE_CHOICES, default='UTC')
@@ -37,19 +37,3 @@ class TenantUser(models.Model):
 
 
 
-class TenantPermission(models.Model):
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-
-    def __str__(self):
-        return f"{self.name}"
-
-class UserPermission(models.Model):
-    user = models.ForeignKey(TenantUser, on_delete=models.CASCADE, related_name='permissions')
-    permission = models.ForeignKey(TenantPermission, on_delete=models.CASCADE)
-
-    class Meta:
-        unique_together = ('user', 'permission')
-
-    def __str__(self):
-        return f"{self.user.user.username} - {self.permission.name}"

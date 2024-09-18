@@ -9,7 +9,7 @@ from django.contrib.auth import login, authenticate, get_user_model
 from .models import CompanyProfile, OTP
 from registration.models import Tenant, Domain
 from .serializers import TenantSerializer, LoginSerializer, \
-    RequestPasswordResetSerializer, ResetPasswordSerializer, CompanyProfileSerializer
+    RequestForgottenPasswordSerializer, ForgottenPasswordSerializer, CompanyProfileSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .utils import Util
 from django.contrib.sites.shortcuts import get_current_site
@@ -150,9 +150,8 @@ class LoginView(APIView):
                                 status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-class RequestPasswordResetView(APIView):
-    serializer_class = RequestPasswordResetSerializer
+class RequestForgottenPasswordView(APIView):
+    serializer_class = RequestForgottenPasswordSerializer
 
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
@@ -166,24 +165,29 @@ class RequestPasswordResetView(APIView):
                 otp = OTP.objects.create(user=user)
                 
                 send_mail(
-                    'Password Reset OTP',
-                    f'Your OTP for password reset is: {otp.code}',
+                    'Forgotten Password OTP',
+                    f'Your OTP for forgotten password is: {otp.code}',
                     settings.DEFAULT_FROM_EMAIL,
                     [email],
                     fail_silently=False,
                 )
+                request.session['forgotten_password_email'] = email  # Store email in session
                 return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class ResetPasswordView(APIView):
-    serializer_class = ResetPasswordSerializer
+
+class ForgottenPasswordView(APIView):
+    serializer_class = ForgottenPasswordSerializer
 
     def post(self, request):
+        email = request.session.get('forgotten_password_email')
+        if not email:
+            return Response({'error': 'No email found in session. Please initiate the forgotten password process again.'}, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
-            email = serializer.validated_data['email']
             otp_code = serializer.validated_data['otp']
             new_password = serializer.validated_data['new_password']
 
@@ -195,19 +199,20 @@ class ResetPasswordView(APIView):
                     user.set_password(new_password)
                     user.save()
                     otp.delete()  # Delete the OTP after successful use
-                    return Response({'detail': 'Password has been reset successfully.'}, status=status.HTTP_200_OK)
+                    del request.session['forgotten_password_email']  # Clear the email from session
+                    return Response({'detail': 'Password has been updated successfully.'}, status=status.HTTP_200_OK)
                 else:
                     return Response({'error': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-# Resend OTP if expired
+
 class ResendOTPView(APIView):
     def post(self, request):
-        email = request.data.get('email')
+        email = request.session.get('forgotten_password_email')
         if not email:
-            return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'No email found in session. Please initiate the forgotten password process again.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user = User.objects.get(email=email)
@@ -219,8 +224,8 @@ class ResendOTPView(APIView):
             
             # Send email with new OTP
             send_mail(
-                'New Password Reset OTP',
-                f'Your new OTP for password reset is: {otp.code}',
+                'New Forgotten Password OTP',
+                f'Your new OTP for forgotten password is: {otp.code}',
                 settings.DEFAULT_FROM_EMAIL,
                 [email],
                 fail_silently=False,
@@ -228,7 +233,6 @@ class ResendOTPView(APIView):
             return Response({'message': 'New OTP sent successfully'}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({'error': 'No user found with this email address'}, status=status.HTTP_404_NOT_FOUND)
-
 
 class TenantViewSet(viewsets.ModelViewSet):
     queryset = Tenant.objects.all()
