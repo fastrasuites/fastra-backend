@@ -28,9 +28,10 @@ from rest_framework.exceptions import PermissionDenied
 from .permissions import IsAdminUser
 from django.db import transaction
 from django_tenants.utils import schema_context, tenant_context
-
+from rest_framework.permissions import AllowAny
 
 class VerifyEmail(generics.GenericAPIView):
+    permission_classes = [AllowAny]
     def get(self, request):
         token = request.GET.get('token')
         # frontend_url = request.GET.get('frontend_url', 'http://localhost:3000')
@@ -64,6 +65,8 @@ class VerifyEmail(generics.GenericAPIView):
 
 
 class ResendVerificationEmail(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+
     def get(self, request):
         token = request.GET.get('token')
         if not token:
@@ -97,6 +100,7 @@ class ResendVerificationEmail(generics.GenericAPIView):
 
 class LoginView(APIView):
     serializer_class = LoginSerializer
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -152,6 +156,7 @@ class LoginView(APIView):
 
 class RequestForgottenPasswordView(APIView):
     serializer_class = RequestForgottenPasswordSerializer
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
@@ -180,6 +185,7 @@ class RequestForgottenPasswordView(APIView):
 
 class ForgottenPasswordView(APIView):
     serializer_class = ForgottenPasswordSerializer
+    permission_classes = [AllowAny]
 
     def post(self, request):
         email = request.session.get('forgotten_password_email')
@@ -209,6 +215,7 @@ class ForgottenPasswordView(APIView):
 
 
 class ResendOTPView(APIView):
+    permission_classes = [AllowAny]
     def post(self, request):
         email = request.session.get('forgotten_password_email')
         if not email:
