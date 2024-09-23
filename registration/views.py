@@ -39,13 +39,14 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
             tenant = serializer.save()
             
             # Set up domain
-            frontend_url = request.data.get('frontend_url', 'http://localhost:8000')
-            parsed_url = urlparse(frontend_url)
-            frontend_domain = parsed_url.netloc.split(':')[0]
+            # frontend_url = request.data.get('frontend_url', 'http://localhost:8000')
+            # parsed_url = urlparse(frontend_url)
+            # frontend_domain = parsed_url.netloc.split(':')[0]
+            api_base_domain = settings.API_BASE_DOMAIN
             sanitized_name = slugify(tenant.schema_name, allow_unicode=True)
             
             domain = Domain.objects.create(
-                domain=f"{sanitized_name}.{frontend_domain}",
+                domain=f"{sanitized_name}.{api_base_domain}",
                 tenant=tenant,
                 is_primary=True
             )
@@ -61,6 +62,7 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
             # Generate and send verification email
             token = RefreshToken.for_user(user)
             token['email'] = user.email
+            token['tenant'] = tenant.schema_name
             verification_url = f'https://{domain.domain}/email-verify?token={str(token.access_token)}'
 
             email_body = f'Hi {tenant.company_name},\n\nUse the link below to verify your email:\n{verification_url}'
@@ -73,7 +75,7 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
 
             return Response({
                 'detail': 'Tenant created successfully. Please confirm your email address.',
-                'tenant_url': f"http://{domain.domain}"
+                'tenant_url': f"https://{domain.domain}"
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

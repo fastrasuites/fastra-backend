@@ -115,19 +115,37 @@ class TenantUserViewSet(SearchDeleteViewSet):
             'user': serializer.data
         }, status=status.HTTP_201_CREATED, headers=headers)
 
+
+    def sync_user_permissions(self, user):
+        # Get all permissions from the user's groups
+        group_permissions = Permission.objects.filter(group__user=user).distinct()
+        
+        # Add these permissions to the user's direct permissions
+        user.user_permissions.set(group_permissions)
+
     @action(detail=True, methods=['post'])
     def add_groups(self, request, pk=None):
         tenant_user = self.get_object()
+        user = tenant_user.user
         groups = Group.objects.filter(id__in=request.data.get('groups', []))
-        tenant_user.user.groups.add(*groups)
-        return Response({'status': 'Groups added'})
+        user.groups.add(*groups)
+        self.sync_user_permissions(user)
+        return Response({'status': 'Groups added and permissions synced'})
 
     @action(detail=True, methods=['post'])
     def remove_groups(self, request, pk=None):
         tenant_user = self.get_object()
+        user = tenant_user.user
         groups = Group.objects.filter(id__in=request.data.get('groups', []))
-        tenant_user.user.groups.remove(*groups)
-        return Response({'status': 'Groups removed'})
+        user.groups.remove(*groups)
+        self.sync_user_permissions(user)
+        return Response({'status': 'Groups removed and permissions synced'})
+
+    def perform_update(self, serializer):
+        tenant_user = serializer.save()
+        self.sync_user_permissions(tenant_user.user)
+
+
 
     @action(detail=True, methods=['post'])
     def change_password(self, request, pk=None):
@@ -181,23 +199,25 @@ class GroupPermissionViewSet(viewsets.ModelViewSet):
             'permissions': permission_names  # Return names instead of IDs
         }, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=['get'])
-    def group_permissions(self, request):
-        group_id = request.query_params.get('group_id')
-        if not group_id:
-            return Response({"error": "group_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+    # @action(detail=False, methods=['get'])
+    # def group_permissions(self, request):
+    #     group_id = request.query_params.get('group_id')
+    #     if not group_id:
+    #         return Response({"error": "group_id is required"}, status=status.HTTP_400_BAD_REQUEST)
         
-        try:
-            group = Group.objects.get(id=group_id)
-        except Group.DoesNotExist:
-            return Response({"error": "Group not found"}, status=status.HTTP_404_NOT_FOUND)
+    #     try:
+    #         group = Group.objects.get(id=group_id)
+    #     except Group.DoesNotExist:
+    #         return Response({"error": "Group not found"}, status=status.HTTP_404_NOT_FOUND)
         
-        permissions = group.permissions.all()
+    #     permissions = group.permissions.all()
         
-        # Return permission names instead of full objects or IDs
-        permission_names = [perm.name for perm in permissions]
+    #     # Return permission names instead of full objects or IDs
+    #     permission_names = [perm.name for perm in permissions]
         
-        return Response({'permissions': permission_names})
+    #     return Response({'permissions': permission_names})
 
 class PasswordChangeView(APIView):
     permission_classes = [permissions.IsAuthenticated]

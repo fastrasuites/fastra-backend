@@ -52,11 +52,11 @@ class UserSerializer(serializers.ModelSerializer):
 
 class TenantRegistrationSerializer(serializers.ModelSerializer):
     user = UserSerializer()
-    frontend_url = serializers.URLField(required=False)
+    # frontend_url = serializers.URLField(required=False)
 
     class Meta:
         model = Tenant
-        fields = ['company_name', 'user', 'frontend_url']
+        fields = ['company_name', 'user']
 
     def validate_company_name(self, value):
         if Tenant.objects.filter(company_name__iexact=value).exists():
