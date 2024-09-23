@@ -35,35 +35,41 @@ class VerifyEmail(generics.GenericAPIView):
     def get(self, request):
         token = request.GET.get('token')
         # frontend_url = request.GET.get('frontend_url', 'http://localhost:3000')
-        current_site = get_current_site(self.request).domain
+        # current_site = get_current_site(self.request).domain
 
         if not token:
             return Response({'error': 'No token provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-        except jwt.ExpiredSignatureError:
-            return Response({
-                'error': 'Activation link expired',
-                'resend_link': f'{current_site}/resend-verification-email?token={token}'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except jwt.DecodeError:
-            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
             user = User.objects.get(email=payload['email'])
 
             if not user.profile.is_verified:
                 user.profile.is_verified = True
                 user.profile.save()
-                return Response({'detail': 'Email successfully verified'}, status=status.HTTP_200_OK)
+                status_message = 'Email successfully verified'
             else:
-                return Response({'detail': 'Email already verified'}, status=status.HTTP_200_OK)
+                status_message = 'Email already verified'
 
+            # Construct tenant-specific frontend URL
+            tenant_subdomain = payload['tenant']  # Assuming tenant info is included in the token
+            frontend_url = f"https://{tenant_subdomain}.fastrasuite.com/email-verify-status"
+
+            # Redirect with status and token
+            redirect_url = f"{frontend_url}?status={status_message}&token={token}"
+            return redirect(redirect_url)
+
+        except jwt.ExpiredSignatureError:
+            # Redirect with expiration status and token for resending
+            tenant_subdomain = payload['tenant'] if 'tenant' in locals() else 'default'  # Handle case if tenant is not found
+            frontend_url = f"https://{tenant_subdomain}.fastrasuite.com/email-verify-status"
+            redirect_url = f"{frontend_url}?status=expired&token={token}"
+            return redirect(redirect_url)
+        except jwt.DecodeError:
+            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
             return Response({'error': 'User does not exist'}, status=status.HTTP_400_BAD_REQUEST)
-
-
+        
 class ResendVerificationEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
@@ -83,9 +89,10 @@ class ResendVerificationEmail(generics.GenericAPIView):
             new_token = RefreshToken.for_user(user)
             new_token['email'] = user.email
 
-            current_site = get_current_site(request).domain
+            # current_site = get_current_site(request).domain
+            current_site = f"{payload['tenant']}.fastrasuite.com"
             relativeLink = reverse('email-verify')
-            absurl = f'http://{current_site}{relativeLink}?token={str(new_token.access_token)}'
+            absurl = f'https://{current_site}{relativeLink}?token={str(new_token.access_token)}'
             email_body = f'Hi {user.username},\nUse the link below to verify your email:\n{absurl}'
             data = {'email_body': email_body, 'to_email': user.email, 'email_subject': 'Verify Your Email'}
 

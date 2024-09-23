@@ -113,8 +113,8 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 
 class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='tenant-user-detail')
-    # user = UserSerializer()
-    user = serializers.HyperlinkedRelatedField(view_name='user-detail', queryset=User.objects.all())
+    user = UserSerializer()
+    # user = serializers.HyperlinkedRelatedField(view_name='user-detail', queryset=User.objects.all())
     groups = serializers.HyperlinkedRelatedField(queryset=Group.objects.all(), many=True, view_name='group-detail', required=False)
 
     class Meta:
