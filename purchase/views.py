@@ -5,15 +5,20 @@ from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, Product, RequestForQuotation, \
-    RequestForQuotationItem, VendorCategory, ProductCategory, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
+    RequestForQuotationItem, ProductCategory, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
     PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem
 from .serializers import PurchaseRequestSerializer, DepartmentSerializer, VendorSerializer, \
     ProductSerializer, RequestForQuotationSerializer, RequestForQuotationItemSerializer, \
-    VendorCategorySerializer, ProductCategorySerializer, UnitOfMeasureSerializer, \
+     ProductCategorySerializer, UnitOfMeasureSerializer, \
     PurchaseRequestItemSerializer, RFQVendorQuoteSerializer, RFQVendorQuoteItemSerializer, \
     PurchaseOrderSerializer, PurchaseOrderItemSerializer, POVendorQuoteSerializer, \
-    POVendorQuoteItemSerializer
-
+    POVendorQuoteItemSerializer, ExcelUploadSerializer
+from django.core.files.uploadedfile import InMemoryUploadedFile
+from openpyxl import load_workbook
+import requests
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+import os
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
     """
@@ -92,6 +97,29 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
     def perform_create(self, serializer):
         serializer.save(requester=self.request.user)
 
+    @action(detail=True, methods=['post'])
+    def submit(self, request, pk=None):
+        purchase_request = self.get_object()
+        purchase_request.submit()
+        return Response({'status': 'submitted'})
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        purchase_request = self.get_object()
+        if request.user.has_perm('approve_purchase_request'):
+            purchase_request.approve()
+            return Response({'status': 'approved'})
+        return Response({'status': 'permission denied'}, status=403)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        purchase_request = self.get_object()
+        if request.user.has_perm('reject_purchase_request'):
+            purchase_request.reject()
+            return Response({'status': 'rejected'})
+        return Response({'status': 'permission denied'}, status=403)
+
+
 
 class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
     queryset = PurchaseRequestItem.objects.all()
@@ -112,11 +140,11 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
     search_fields = ['name',]
 
 
-class VendorCategoryViewSet(SearchDeleteViewSet):
-    queryset = VendorCategory.objects.all()
-    serializer_class = VendorCategorySerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['name',]
+# class VendorCategoryViewSet(SearchDeleteViewSet):
+#     queryset = VendorCategory.objects.all()
+#     serializer_class = VendorCategorySerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     search_fields = ['name',]
 
 
 class ProductCategoryViewSet(SearchDeleteViewSet):
@@ -126,12 +154,80 @@ class ProductCategoryViewSet(SearchDeleteViewSet):
     search_fields = ['name',]
 
 
-class VendorViewSet(SearchDeleteViewSet):
+
+class VendorViewSet(viewsets.ModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
     permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['company_name',]
+    search_fields = ['company_name', 'email']
 
+    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
+    def upload_excel(self, request):
+        serializer = ExcelUploadSerializer(data=request.data)
+        if serializer.is_valid():
+            excel_file = serializer.validated_data['file']
+            if not isinstance(excel_file, InMemoryUploadedFile):
+                return Response({"error": "Invalid file format"}, status=400)
+
+            try:
+                workbook = load_workbook(excel_file)
+                sheet = workbook.active
+
+                vendors_created = 0
+                errors = []
+
+                for row in sheet.iter_rows(min_row=2, values_only=True):
+                    company_name, email, address, phone_number, profile_picture_url = row[:5]
+                    
+                    try:
+                        vendor = Vendor(
+                            company_name=company_name,
+                            email=email,
+                            address=address,
+                            phone_number=phone_number,
+                            # is_hidden=bool(is_hidden)
+                        )
+
+                        if profile_picture_url:
+                            try:
+                                response = requests.get(profile_picture_url)
+                                if response.status_code == 200:
+                                    # Generate a unique filename
+                                    file_name = f"{company_name.replace(' ', '_')}_profile.jpg"
+                                    file_path = os.path.join('vendor_profiles', file_name)
+                                    
+                                    # Save the image using default_storage
+                                    file_name = default_storage.save(file_path, ContentFile(response.content))
+                                    
+                                    # Set the profile_picture field to the saved file path
+                                    vendor.profile_picture = file_name
+                            except Exception as e:
+                                errors.append(f"Error downloading profile picture for {company_name}: {str(e)}")
+
+                        vendor.save()
+                        vendors_created += 1
+                    except Exception as e:
+                        errors.append(f"Error creating vendor {company_name}: {str(e)}")
+
+                return Response({
+                    "message": f"Successfully created {vendors_created} vendors",
+                    "errors": errors
+                }, status=201)
+
+            except Exception as e:
+                return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
+        else:
+            return Response(serializer.errors, status=400)
+
+    @action(detail=True, methods=['POST'])
+    def upload_profile_picture(self, request, pk=None):
+        vendor = self.get_object()
+        if 'profile_picture' not in request.FILES:
+            return Response({"error": "No file provided"}, status=400)
+        
+        vendor.profile_picture = request.FILES['profile_picture']
+        vendor.save()
+        return Response({"message": "Profile picture uploaded successfully"}, status=200)
 
 class ProductViewSet(SearchDeleteViewSet):
     queryset = Product.objects.all()

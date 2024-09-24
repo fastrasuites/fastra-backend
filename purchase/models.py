@@ -5,12 +5,14 @@ from django.conf import settings
 
 from django.template.loader import render_to_string
 from django.utils import timezone
-
-from django.db.models.signals import pre_save
+from django.core.exceptions import ValidationError
+from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django_ckeditor_5.fields import CKEditor5Field
 from datetime import datetime, timedelta
 import json
+
+
 PURCHASE_REQUEST_STATUS = (
     ('draft', 'Draft'),
     ('approved', 'Approved'),
@@ -65,9 +67,9 @@ class ApprovedPRManager(models.Manager):
         return super(ApprovedPRManager, self).get_queryset().filter(status='approved')
 
 
-class SubmittedPRManager(models.Manager):
+class PendingPRManager(models.Manager):
     def get_queryset(self):
-        return super(SubmittedPRManager, self).get_queryset().filter(status='submitted')
+        return super(PendingPRManager, self).get_queryset().filter(status='submitted')
 
 
 class RejectedPRManager(models.Manager):
@@ -206,31 +208,32 @@ class Department(models.Model):
         return self.name
 
 
-class VendorCategory(models.Model):
-    name = models.CharField(max_length=100)
-    description = CKEditor5Field(blank=True, null=True)
-    created_on = models.DateTimeField(auto_now_add=True)
-    updated_on = models.DateTimeField(auto_now=True)
-    is_hidden = models.BooleanField(default=False)
+# class VendorCategory(models.Model):
+#     name = models.CharField(max_length=100)
+#     description = CKEditor5Field(blank=True, null=True)
+#     created_on = models.DateTimeField(auto_now_add=True)
+#     updated_on = models.DateTimeField(auto_now=True)
+#     is_hidden = models.BooleanField(default=False)
 
-    objects = models.Manager()
+#     objects = models.Manager()
 
-    class Meta:
-        ordering = ['is_hidden', '-updated_on']
-        verbose_name_plural = 'Vendor Categories'
+#     class Meta:
+#         ordering = ['is_hidden', '-updated_on']
+#         verbose_name_plural = 'Vendor Categories'
 
-    def __str__(self):
-        return self.name
+#     def __str__(self):
+#         return self.name
 
 
 class Vendor(models.Model):
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
     company_name = models.CharField(max_length=200)
-    category = models.ForeignKey(VendorCategory, on_delete=models.SET_NULL, null=True, related_name="vendors")
+    # category = models.ForeignKey(VendorCategory, on_delete=models.SET_NULL, null=True, related_name="vendors")
     email = models.EmailField(max_length=100)
     address = models.CharField(max_length=300, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
+    profile_picture = models.ImageField(upload_to='vendor_profiles/', blank=True, null=True)
     is_hidden = models.BooleanField(default=False)
 
     objects = models.Manager()
@@ -240,6 +243,16 @@ class Vendor(models.Model):
 
     def __str__(self):
         return self.company_name
+
+    def clean(self):
+        if Vendor.objects.filter(company_name=self.company_name).exclude(pk=self.pk).exists():
+            raise ValidationError('A vendor with this company name already exists.')
+        if Vendor.objects.filter(email=self.email).exclude(pk=self.pk).exists():
+            raise ValidationError('A vendor with this email already exists.')
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
     # Email functionality:
     def send_email(self, subject, message, **kwargs):
@@ -278,16 +291,18 @@ class PurchaseRequest(models.Model):
     date_updated = models.DateTimeField(auto_now=True)
     requester = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_requests')
     # requester = models.CharField(max_length=200)
-    department = models.ForeignKey(Department, on_delete=models.CASCADE)
-    status = models.CharField(max_length=20, choices=PURCHASE_REQUEST_STATUS, default='draft')
+    # department = models.ForeignKey(Department, on_delete=models.CASCADE)
+    status = models.CharField(max_length=20,choices=PURCHASE_REQUEST_STATUS, default='draft')
     purpose = CKEditor5Field(blank=True, null=True)
     suggested_vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
     is_hidden = models.BooleanField(default=False)
+    is_submitted = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=True)
 
     objects = models.Manager()
     pr_draft = DraftPRManager()
     pr_approved = ApprovedPRManager()
-    pr_submitted = SubmittedPRManager()
+    pr_pending = PendingPRManager()
     pr_rejected = RejectedPRManager()
 
     @property
@@ -300,6 +315,21 @@ class PurchaseRequest(models.Model):
 
     def __str__(self):
         return self.id
+    
+
+    def submit(self):
+        self.is_submitted = True
+        self.can_edit = False
+        self.status = 'submitted'
+        self.save()
+
+    def approve(self):
+        self.status = 'approved'
+        self.save()
+
+    def reject(self):
+        self.status = 'rejected'
+        self.save()
 
 
 class PurchaseRequestItem(models.Model):
@@ -324,6 +354,22 @@ class PurchaseRequestItem(models.Model):
 @receiver(pre_save, sender=PurchaseRequestItem)
 def update_total_price(sender, instance, **kwargs):
     instance.total_price = instance.qty * instance.estimated_unit_price
+
+# @receiver(post_save, sender=PurchaseRequest)
+# def notify_managers(sender, instance, created, **kwargs):
+#     if created or instance.status == 'submitted':
+#         managers = User.objects.filter(groups__name='Managers')
+#         for manager in managers:
+#             send_mail(
+#                 'New Purchase Request',
+#                 f'A new purchase request {instance.id} has been created/submitted.',
+#                 'from@example.com',
+#                 [manager.email],
+#                 fail_silently=False,
+#             )
+
+
+
 
 
 class RequestForQuotation(models.Model):
