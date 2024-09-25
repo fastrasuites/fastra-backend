@@ -1,8 +1,8 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, \
-    Product, RequestForQuotation, RequestForQuotationItem, ProductCategory, \
-     UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
+    Product, RequestForQuotation, RequestForQuotationItem, \
+    UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
     PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem
 
 
@@ -90,6 +90,7 @@ class UnitOfMeasureSerializer(serializers.HyperlinkedModelSerializer):
 
 class ExcelUploadSerializer(serializers.Serializer):
     file = serializers.FileField()
+    check_for_duplicates = serializers.BooleanField(default=False)  # Adding this field to the serializer
 
 class VendorSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='vendor-detail')
@@ -101,7 +102,7 @@ class VendorSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Vendor
-        fields = ['url', 'company_name','profile_picture', 'email', 'address', 'phone_number', 'is_hidden']
+        fields = ['url', 'company_name', 'profile_picture', 'email', 'address', 'phone_number', 'is_hidden']
 
     def validate(self, data):
         if Vendor.objects.filter(company_name=data['company_name']).exclude(pk=self.instance.pk if self.instance else None).exists():
@@ -124,30 +125,46 @@ class VendorSerializer(serializers.HyperlinkedModelSerializer):
 
 class ProductSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='product-detail')
-    unit_of_measure =  serializers.HyperlinkedRelatedField(
+    check_for_duplicates = serializers.BooleanField(write_only=True, required=False,
+                                                    help_text="Mark if you want to update existing products")
+    unit_of_measure = serializers.HyperlinkedRelatedField(
         queryset=UnitOfMeasure.objects.filter(is_hidden=False),
         view_name='unit-of-measure-detail')
-    category = serializers.HyperlinkedRelatedField(
-        queryset=ProductCategory.objects.filter(is_hidden=False),
-        view_name='product-category-detail')
-    company = serializers.HyperlinkedRelatedField(
-        queryset=Vendor.objects.filter(is_hidden=False),
-        view_name='vendor-detail')
+
 
     class Meta:
         model = Product
-        fields = ['url', 'name', 'created_on', 'updated_on', 'unit_of_measure', 'type', 'category',
-                  'company', 'cost_price', 'selling_price', 'is_hidden']
+        fields = ['url', 'product_name', 'product_description', 'product_category',
+                  'available_product_quantity', 'total_quantity_purchased', 'unit_of_measure',
+                  'created_on', 'updated_on', 'is_hidden', 'check_for_duplicates']
+
+    def create(self, validated_data):
+        check_for_duplicates = validated_data.pop('check_for_duplicates', False)
+
+        if check_for_duplicates:
+            # Check for duplicate product by name
+            product_name = validated_data.get('product_name')
+            existing_product = Product.objects.filter(product_name=product_name).first()
+
+            if existing_product:
+                # Update existing product quantities
+                existing_product.available_product_quantity += validated_data['available_product_quantity']
+                existing_product.total_quantity_purchased += validated_data['total_quantity_purchased']
+                existing_product.save()
+                return existing_product
+
+        # If not checking for duplicates, create a new product
+        return super().create(validated_data)
 
 
-class ProductCategorySerializer(serializers.HyperlinkedModelSerializer):
-    products = ProductSerializer(many=True, read_only=True)
-    url = serializers.HyperlinkedIdentityField(view_name='product-category-detail')
-
-    class Meta:
-        model = ProductCategory
-        fields = ['url', 'name', 'description', 'created_on', 'updated_on', 'products', 'is_hidden']
-        read_only_fields = ['created_on', 'updated_on']
+# class ProductCategorySerializer(serializers.HyperlinkedModelSerializer):
+#     products = ProductSerializer(many=True, read_only=True)
+#     url = serializers.HyperlinkedIdentityField(view_name='product-category-detail')
+#
+#     class Meta:
+#         model = ProductCategory
+#         fields = ['url', 'name', 'description', 'created_on', 'updated_on', 'products', 'is_hidden']
+#         read_only_fields = ['created_on', 'updated_on']
 
 
 class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
@@ -162,7 +179,7 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = RequestForQuotationItem
-        fields = ['id', 'url', 'request_for_quotation', 'product', 'description',
+        fields = ['id', 'url', 'request_for_quotation', 'product',
                   'qty', 'estimated_unit_price', 'get_total_price']
 
 
@@ -175,7 +192,7 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = RequestForQuotation
-        fields = ['url', 'expiry_date', 'vendor',
+        fields = ['url', 'expiry_date', 'vendor', 'purchase_request',
                   'status', 'rfq_total_price', 'items', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated', 'rfq_total_price']
 

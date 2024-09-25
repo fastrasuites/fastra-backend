@@ -21,9 +21,10 @@ PURCHASE_REQUEST_STATUS = (
 )
 
 RFQ_STATUS = (
-    ('selected', 'Vendor Selected'),
-    ('awaiting', 'Awaiting Vendor Selection'),
-    ('cancelled', 'Cancelled'),
+    ('draft', 'Draft'),
+    ('approved', 'Approved'),
+    ('submitted', 'Submitted'),
+    ('rejected', 'Rejected')
 )
 
 PURCHASE_ORDER_STATUS = (
@@ -33,10 +34,10 @@ PURCHASE_ORDER_STATUS = (
     ('cancelled', 'Cancelled'),
 )
 
-PRODUCT_TYPE = (
-    ('consumable', 'Consumable'),
-    ('store-able', 'Store-able'),
-    ('services', 'Services'),
+PRODUCT_CATEGORY = (
+    ('consumables', 'Consumables'),
+    ('stockable', 'Stockable'),
+    ('service-product', 'Service Product'),
 )
 
 
@@ -77,6 +78,28 @@ class RejectedPRManager(models.Manager):
         return super(RejectedPRManager, self).get_queryset().filter(status='rejected')
 
 
+# For Requests For Quotation (RFQs)
+class DraftRFQManager(models.Manager):
+    def get_queryset(self):
+        return super(DraftRFQManager, self).get_queryset().filter(status='draft')
+
+
+class ApprovedRFQManager(models.Manager):
+    def get_queryset(self):
+        return super(ApprovedRFQManager, self).get_queryset().filter(status='approved')
+
+
+class PendingRFQManager(models.Manager):
+    def get_queryset(self):
+        return super(PendingRFQManager, self).get_queryset().filter(status='submitted')
+
+
+class RejectedRFQManager(models.Manager):
+    def get_queryset(self):
+        return super(RejectedRFQManager, self).get_queryset().filter(status='rejected')
+
+
+
 # For Purchase Orders
 class DraftPOManager(models.Manager):
     def get_queryset(self):
@@ -98,6 +121,7 @@ class CancelledPOManager(models.Manager):
         return super(CancelledPOManager, self).get_queryset().filter(status='cancelled')
 
 
+# For Active or Hidden States
 class ActiveManager(models.Manager):
     def get_queryset(self):
         return super(ActiveManager, self).get_queryset().filter(is_hidden=False)
@@ -157,33 +181,33 @@ class UnitOfMeasure(models.Model):
         return self.name
 
 
-class ProductCategory(models.Model):
-    name = models.CharField(max_length=100)
-    description = CKEditor5Field(blank=True, null=True)
-    created_on = models.DateTimeField(auto_now_add=True)
-    updated_on = models.DateTimeField(auto_now=True)
-    is_hidden = models.BooleanField(default=False)
-
-    objects = models.Manager()
-
-    class Meta:
-        ordering = ['is_hidden', '-updated_on']
-        verbose_name_plural = 'Product Categories'
-
-    def __str__(self):
-        return self.name
+# class ProductCategory(models.Model):
+#     name = models.CharField(max_length=100)
+#     description = CKEditor5Field(blank=True, null=True)
+#     created_on = models.DateTimeField(auto_now_add=True)
+#     updated_on = models.DateTimeField(auto_now=True)
+#     is_hidden = models.BooleanField(default=False)
+#
+#     objects = models.Manager()
+#
+#     class Meta:
+#         ordering = ['is_hidden', '-updated_on']
+#         verbose_name_plural = 'Product Categories'
+#
+#     def __str__(self):
+#         return self.name
 
 
 class Product(models.Model):
-    name = models.CharField(max_length=100)
+    product_name = models.CharField(max_length=100)
+    product_description = CKEditor5Field(null=True, blank=True)
+    product_category = models.CharField(max_length=64, choices=PRODUCT_CATEGORY)
+    available_product_quantity = models.PositiveIntegerField(verbose_name="Available Product Quantity", default=0)
+    total_quantity_purchased = models.PositiveIntegerField(verbose_name="Total Quantity Purchased", default=0)
+    unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True)
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
-    unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True)
-    type = models.CharField(max_length=64, choices=PRODUCT_TYPE, default="goods")
-    category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, related_name='products')
-    company = models.ForeignKey('Vendor', on_delete=models.CASCADE)
-    cost_price = models.DecimalField(max_digits=10, decimal_places=2)
-    selling_price = models.DecimalField(max_digits=10, decimal_places=2)
+
     is_hidden = models.BooleanField(default=False)
 
     objects = models.Manager()
@@ -192,7 +216,7 @@ class Product(models.Model):
         ordering = ['is_hidden', '-created_on']
 
     def __str__(self):
-        return self.name
+        return self.product_name
 
 
 class Department(models.Model):
@@ -347,7 +371,7 @@ class PurchaseRequestItem(models.Model):
         ordering = ['-date_created']
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name
 
 
 # this is a signal that calculates the qty times the unit price automatically
@@ -374,12 +398,14 @@ def update_total_price(sender, instance, **kwargs):
 
 class RequestForQuotation(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_rfq_id, editable=False)
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_updated = models.DateTimeField(auto_now=True)
+    purchase_request = models.ForeignKey('PurchaseRequest', on_delete=models.SET_NULL, null=True, blank=True)
     expiry_date = models.DateTimeField(null=True, blank=True,
                                        help_text="Leave blank for no expiry")
     vendor = models.ForeignKey('Vendor', on_delete=models.CASCADE)
-    status = models.CharField(max_length=100, choices=RFQ_STATUS, default='awaiting')
+    status = models.CharField(max_length=100, choices=RFQ_STATUS, default='draft')
+
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
     is_hidden = models.BooleanField(default=False)
 
     # def __init__(self, *args, **kwargs):
@@ -446,8 +472,8 @@ class RequestForQuotation(models.Model):
             'status': self.status,
             'items': [
                 {
-                    'product': item.product.name,
-                    'description': item.description,
+                    'product': item.product.product_name,
+                    'description': item.product.product_description,
                     'qty': item.qty,
                     'estimated_unit_price': str(item.estimated_unit_price),
                     'total_price': str(item.total_price)
@@ -461,12 +487,13 @@ class RequestForQuotation(models.Model):
 
 
 class RequestForQuotationItem(models.Model):
-    date_created = models.DateTimeField(auto_now_add=True)
+
     request_for_quotation = models.ForeignKey(RequestForQuotation, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    description = CKEditor5Field(null=True, blank=True)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
     estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+
+    date_created = models.DateTimeField(auto_now_add=True)
 
     objects = models.Manager()
 
@@ -485,7 +512,7 @@ class RequestForQuotationItem(models.Model):
     total_price = property(get_total_price, set_total_price, doc="total price property")
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name
 
     class Meta:
         ordering = ['-date_created']

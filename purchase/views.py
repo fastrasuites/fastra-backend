@@ -5,11 +5,11 @@ from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, Product, RequestForQuotation, \
-    RequestForQuotationItem, ProductCategory, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
+    RequestForQuotationItem, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
     PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem
 from .serializers import PurchaseRequestSerializer, DepartmentSerializer, VendorSerializer, \
     ProductSerializer, RequestForQuotationSerializer, RequestForQuotationItemSerializer, \
-     ProductCategorySerializer, UnitOfMeasureSerializer, \
+    UnitOfMeasureSerializer, \
     PurchaseRequestItemSerializer, RFQVendorQuoteSerializer, RFQVendorQuoteItemSerializer, \
     PurchaseOrderSerializer, PurchaseOrderItemSerializer, POVendorQuoteSerializer, \
     POVendorQuoteItemSerializer, ExcelUploadSerializer
@@ -147,14 +147,6 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
 #     search_fields = ['name',]
 
 
-class ProductCategoryViewSet(SearchDeleteViewSet):
-    queryset = ProductCategory.objects.all()
-    serializer_class = ProductCategorySerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['name',]
-
-
-
 class VendorViewSet(viewsets.ModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
@@ -229,11 +221,71 @@ class VendorViewSet(viewsets.ModelViewSet):
         vendor.save()
         return Response({"message": "Profile picture uploaded successfully"}, status=200)
 
+
 class ProductViewSet(SearchDeleteViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['name', 'category__name', 'unit_of_measure__name', 'type', 'company__name',]
+    search_fields = ['product_name', 'product_category', 'unit_of_measure__name',]
+
+    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
+    def upload_excel(self, request):
+        serializer = ExcelUploadSerializer(data=request.data)
+        if serializer.is_valid():
+            excel_file = serializer.validated_data['file']
+            check_for_duplicates = serializer.validated_data.get('check_for_duplicates', False)
+
+            if not isinstance(excel_file, InMemoryUploadedFile):
+                return Response({"error": "Invalid file format"}, status=400)
+
+            try:
+                workbook = load_workbook(excel_file)
+                sheet = workbook.active
+
+                products_created = 0
+                products_updated = 0
+                errors = []
+
+                for row in sheet.iter_rows(min_row=2, values_only=True):
+                    (product_name, product_description, product_category, unit_of_measure,
+                     available_product_quantity, total_quantity_purchased) = row[:6]
+
+                    try:
+                        # Check if the product already exists by product_name
+                        existing_product = Product.objects.filter(product_name=product_name).first()
+
+                        if check_for_duplicates and existing_product:
+                            # Update the existing product quantities
+                            existing_product.available_product_quantity += available_product_quantity
+                            existing_product.total_quantity_purchased += total_quantity_purchased
+                            existing_product.save()
+                            products_updated += 1
+                        else:
+                            # Create a new product if no duplicates are found or check_for_duplicates is False
+                            product = Product(
+                                product_name=product_name,
+                                product_description=product_description,
+                                product_category=product_category,
+                                unit_of_measure=unit_of_measure,
+                                available_product_quantity=available_product_quantity,
+                                total_quantity_purchased=total_quantity_purchased,
+                            )
+                            product.save()
+                            products_created += 1
+
+                    except Exception as e:
+                        errors.append(f"Error processing product {product_name}: {str(e)}")
+
+                return Response({
+                    "message": f"Successfully created {products_created} products, updated {products_updated} products",
+                    "errors": errors
+                }, status=201)
+
+            except Exception as e:
+                return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
+        else:
+            return Response(serializer.errors, status=400)
+
 
 
 class RequestForQuotationViewSet(SearchDeleteViewSet):
