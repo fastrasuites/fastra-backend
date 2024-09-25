@@ -196,6 +196,13 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
                   'status', 'rfq_total_price', 'items', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated', 'rfq_total_price']
 
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        rfq = RequestForQuotation.objects.create(**validated_data)
+        for item_data in items_data:
+            RequestForQuotationItem.objects.create(request_for_quotation=rfq, **item_data)
+        return rfq
+
 
 class RFQVendorQuoteItemSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='rfq-vendor-quote-item-detail')

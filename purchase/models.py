@@ -408,24 +408,28 @@ class RequestForQuotation(models.Model):
     date_updated = models.DateTimeField(auto_now=True)
     is_hidden = models.BooleanField(default=False)
 
-    # def __init__(self, *args, **kwargs):
-    #     self._formatted_id = None
-    #     super(RequestForQuotation, self).__init__(*args, **kwargs)
-    #
-    # def get_formatted_id(self, *args, **kwargs):
-    #     if self._formatted_id is None:
-    #         self.set_formatted_id()
-    #     return self._formatted_id
-    #
-    # def set_formatted_id(self, *args, **kwargs):
-    #     self._formatted_id = "RFQ" + "{:05d}".format(self.id)
-    #
-    # formatted_id = property(get_formatted_id, set_formatted_id, doc="formatted_id property")
+    is_submitted = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=True)
 
     objects = models.Manager()
-    vendor_selected_rfqs = SelectedVendorManager()
-    vendor_awaiting_rfqs = AwaitingVendorManager()
-    vendor_cancelled_rfqs = CancelledVendorManager()
+    rfq_draft = DraftRFQManager()
+    rfq_approved = ApprovedRFQManager()
+    rfq_pending = PendingRFQManager()
+    rfq_rejected = RejectedRFQManager()
+
+    def submit(self):
+        self.is_submitted = True
+        self.can_edit = False
+        self.status = 'pending'
+        self.save()
+
+    def approve(self):
+        self.status = 'approved'
+        self.save()
+
+    def reject(self):
+        self.status = 'rejected'
+        self.save()
 
     class Meta:
         ordering = ['is_hidden', '-date_updated']
@@ -438,25 +442,12 @@ class RequestForQuotation(models.Model):
         rfq_total_price = sum(item.total_price for item in self.items.all())
         return rfq_total_price
 
-    # @property
-    # def duration_till_expiration(self):
-    #     if self.expiry_date:
-    #         return datetime(self.expiry_date) - datetime(self.date_opened)
-    #     return None
-
-    # @property
-    # def is_expired(self) -> bool:
-    #     """ to check whether duration already expired or yet """
-    #     if self.expiry_date:
-    #         return datetime.now() > self.expiry_date
-    #     return False
-
-    # @property
-    # def next_expiry_date(self):
-    #     """ to get next expiry date """
-    #     if self.expiry_date:
-    #         return datetime(self.expiry_date) + timedelta(days=1)
-    #     return None
+    @property
+    def is_expired(self):
+        """Return True if the RFQ has expired based on the expiry_date."""
+        if self.expiry_date:
+            return datetime.now() > self.expiry_date
+        return False
 
     def send_email(self):
         """
@@ -476,6 +467,7 @@ class RequestForQuotation(models.Model):
                     'description': item.product.product_description,
                     'qty': item.qty,
                     'estimated_unit_price': str(item.estimated_unit_price),
+                    'actual_unit_price': str(item.actual_unit_price),
                     'total_price': str(item.total_price)
                 }
                 for item in self.items.all()
@@ -491,7 +483,8 @@ class RequestForQuotationItem(models.Model):
     request_for_quotation = models.ForeignKey(RequestForQuotation, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
-    estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    estimated_unit_price = models.DecimalField(max_digits=20, decimal_places=2)
+    actual_unit_price = models.DecimalField(max_digits=20, decimal_places=2)
 
     date_created = models.DateTimeField(auto_now_add=True)
 
@@ -563,7 +556,7 @@ class RFQVendorQuoteItem(models.Model):
     total_price = property(get_total_price, set_total_price, doc="total price property")
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name
 
 
 class PurchaseOrder(models.Model):
@@ -646,7 +639,7 @@ class PurchaseOrderItem(models.Model):
     total_price = property(get_total_price, set_total_price, doc="total price property")
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name
 
 
 class POVendorQuote(models.Model):
@@ -694,4 +687,4 @@ class POVendorQuoteItem(models.Model):
     total_price = property(get_total_price, set_total_price, doc="total price property")
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name

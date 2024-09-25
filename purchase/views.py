@@ -1,4 +1,7 @@
-from django.shortcuts import render
+from datetime import datetime
+
+from django.core.mail import EmailMessage
+from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, status, generics, filters
 from rest_framework import permissions
@@ -19,6 +22,10 @@ import requests
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 import os
+from django.utils import timezone
+
+from .utils import generate_rfq_pdf
+
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
     """
@@ -118,6 +125,47 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
             purchase_request.reject()
             return Response({'status': 'rejected'})
         return Response({'status': 'permission denied'}, status=403)
+
+    @action(detail=True, methods=['POST'])
+    def convert_to_rfq(self, request, pk=None):
+        try:
+            # Get the approved purchase request
+            purchase_request = self.get_object()
+
+            if purchase_request.status != 'approved':
+                return Response({"detail": "Only approved purchase requests can be converted to RFQs."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Create the RFQ
+            rfq = RequestForQuotation.objects.create(
+                purchase_request=purchase_request,
+                vendor=purchase_request.suggested_vendor,  # Assuming suggested vendor is used
+                expiry_date=None,  # Can be set dynamically or left blank
+                status='draft',
+                date_created=timezone.now(),
+                date_updated=timezone.now(),
+                is_hidden=False,
+            )
+
+            # Create RFQ items from the PurchaseRequest items
+            for pr_item in purchase_request.items.all():
+                RequestForQuotationItem.objects.create(
+                    request_for_quotation=rfq,
+                    product=pr_item.product,
+                    qty=pr_item.qty,
+                    estimated_unit_price=pr_item.estimated_unit_price,
+                )
+
+            return Response({
+                "detail": "RFQ created successfully",
+                "rfq_id": rfq.id
+            }, status=status.HTTP_201_CREATED)
+
+        except PurchaseRequest.DoesNotExist:
+            return Response({"detail": "Purchase request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        except Exception as e:
+            return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 
@@ -298,11 +346,76 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
     @action(detail=True, methods=['get', 'post'])
     def send_email(self, request, pk=None):
         rfq = self.get_object()
+
         try:
-            rfq.send_email()
+            # Generate the PDF
+            pdf_response = generate_rfq_pdf(rfq)
+            pdf_content = pdf_response.content
+
+            # Create an email with the PDF attached
+            subject = f"Request for Quotation: {rfq.id}"
+            body = f"Please find attached the RFQ {rfq.id}. The deadline for response is {rfq.expiry_date.strftime(
+                '%Y-%m-%d')}."
+            email = EmailMessage(subject, body, settings.EMAIL_HOST_USER, [rfq.vendor.email])
+
+            # Attach the PDF
+            email.attach(f"RFQ_{rfq.id}.pdf", pdf_content, 'application/pdf')
+
+            # Send the email
+            email.send()
             return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'])
+    def submit(self, request, pk=None):
+        rfq = self.get_object()
+        rfq.submit()
+        return Response({'status': 'pending'})
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        rfq = self.get_object()
+        if request.user.has_perm('approve_request_for_quotation'):
+            rfq.approve()
+            return Response({'status': 'approved'})
+        return Response({'status': 'permission denied'}, status=403)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        rfq = self.get_object()
+        if request.user.has_perm('reject_request_for_quotation'):
+            rfq.reject()
+            return Response({'status': 'rejected'})
+        return Response({'status': 'permission denied'}, status=403)
+
+    def get_queryset(self):
+        rfq_status = self.request.query_params.get('status')
+        expired = self.request.query_params.get('expired')
+        queryset = self.queryset
+
+        # Filter by status if provided
+        if status:
+            queryset = queryset.filter(status=rfq_status)
+
+        # Filter by expiration status if provided
+        if expired == 'true':
+            queryset = queryset.filter(expiry_date__lt=datetime.now())
+        elif expired == 'false':
+            queryset = queryset.filter(expiry_date__gte=datetime.now())
+
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        serializer = self.get_serializer(data=data)
+        if serializer.is_valid():
+            rfq = serializer.save(
+                date_created=timezone.now(),
+                date_updated=timezone.now()
+            )
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
