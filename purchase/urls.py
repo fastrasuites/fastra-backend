@@ -9,7 +9,6 @@ router.register(r'departments', views.DepartmentViewSet, basename='department')
 # router.register(r'vendor-categories', views.VendorCategoryViewSet, basename='vendor-category')
 router.register(r'vendors', views.VendorViewSet, basename='vendor')
 router.register(r'unit-of-measure', views.UnitOfMeasureViewSet, basename='unit-of-measure')
-router.register(r'product-categories', views.ProductCategoryViewSet, basename='product-category')
 router.register(r'products', views.ProductViewSet, basename='product')
 router.register(r'request-for-quotation', views.RequestForQuotationViewSet, basename='request-for-quotation')
 router.register(r'request-for-quotation-items', views.RequestForQuotationItemViewSet,

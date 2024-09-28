@@ -1,5 +1,4 @@
 from datetime import datetime
-
 from django.core.mail import EmailMessage
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
