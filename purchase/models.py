@@ -3,27 +3,26 @@ from django.db import models
 from django.contrib.auth.models import User, AbstractUser
 from django.conf import settings
 
-from django.template.loader import render_to_string
-from django.utils import timezone
+from django.utils import timezone, text
 from django.core.exceptions import ValidationError
 from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django_ckeditor_5.fields import CKEditor5Field
-from datetime import datetime, timedelta
+
 import json
 
 
 PURCHASE_REQUEST_STATUS = (
     ('draft', 'Draft'),
     ('approved', 'Approved'),
-    ('submitted', 'Submitted'),
+    ('pending', 'Pending'),
     ('rejected', 'Rejected'),
 )
 
 RFQ_STATUS = (
     ('draft', 'Draft'),
     ('approved', 'Approved'),
-    ('submitted', 'Submitted'),
+    ('pending', 'Pending'),
     ('rejected', 'Rejected')
 )
 
@@ -35,7 +34,7 @@ PURCHASE_ORDER_STATUS = (
 )
 
 PRODUCT_CATEGORY = (
-    ('consumables', 'Consumables'),
+    ('consumable', 'Consumable'),
     ('stockable', 'Stockable'),
     ('service-product', 'Service Product'),
 )
@@ -70,7 +69,7 @@ class ApprovedPRManager(models.Manager):
 
 class PendingPRManager(models.Manager):
     def get_queryset(self):
-        return super(PendingPRManager, self).get_queryset().filter(status='submitted')
+        return super(PendingPRManager, self).get_queryset().filter(status='pending')
 
 
 class RejectedPRManager(models.Manager):
@@ -91,7 +90,7 @@ class ApprovedRFQManager(models.Manager):
 
 class PendingRFQManager(models.Manager):
     def get_queryset(self):
-        return super(PendingRFQManager, self).get_queryset().filter(status='submitted')
+        return super(PendingRFQManager, self).get_queryset().filter(status='pending')
 
 
 class RejectedRFQManager(models.Manager):
@@ -147,7 +146,7 @@ def generate_unique_pr_id():
 def generate_unique_rfq_id():
     last_request = RequestForQuotation.objects.order_by('id').last()
     if last_request:
-        last_id = int(last_request.id[2:])
+        last_id = int(last_request.id[3:])
         new_id = f"RFQ{last_id + 1:06d}"
     else:
         new_id = "RFQ000001"
@@ -176,6 +175,9 @@ class UnitOfMeasure(models.Model):
     class Meta:
         ordering = ['is_hidden', '-created_on']
         verbose_name_plural = 'Units of Measure'
+
+    def __repr__(self):
+        return self.name
 
     def __str__(self):
         return self.name
@@ -214,6 +216,16 @@ class Product(models.Model):
 
     class Meta:
         ordering = ['is_hidden', '-created_on']
+
+    def clean(self):
+        valid_categories = [choice[0] for choice in PRODUCT_CATEGORY]  # Extract valid categories
+        if text.slugify(self.product_category) not in valid_categories:
+            raise ValidationError(
+                f"Invalid category '{self.product_category}'. Valid categories are: {', '.join(valid_categories)}.")
+
+    def save(self, *args, **kwargs):
+        self.clean()  # Call clean method before saving
+        super(Product, self).save(*args, **kwargs)
 
     def __str__(self):
         return self.product_name
@@ -339,21 +351,31 @@ class PurchaseRequest(models.Model):
 
     def __str__(self):
         return self.id
-    
+
+    def save(self, *args, **kwargs):
+        # If the purchase request is submitted, make it non-editable
+        if self.is_submitted:
+            self.can_edit = False
+        super(PurchaseRequest, self).save(*args, **kwargs)
+
+    def change_status(self, status):
+        """Utility method to change the status and save"""
+        self.status = status
+        self.save()
 
     def submit(self):
+        """Mark the purchase request as pending"""
         self.is_submitted = True
-        self.can_edit = False
-        self.status = 'submitted'
-        self.save()
+        self.change_status('pending')
 
     def approve(self):
-        self.status = 'approved'
-        self.save()
+        """Mark the purchase request as approved"""
+        self.change_status('approved')
 
     def reject(self):
-        self.status = 'rejected'
-        self.save()
+        """Mark the purchase request as rejected"""
+        self.change_status('rejected')
+
 
 
 class PurchaseRequestItem(models.Model):
@@ -417,22 +439,32 @@ class RequestForQuotation(models.Model):
     rfq_pending = PendingRFQManager()
     rfq_rejected = RejectedRFQManager()
 
-    def submit(self):
-        self.is_submitted = True
-        self.can_edit = False
-        self.status = 'pending'
-        self.save()
-
-    def approve(self):
-        self.status = 'approved'
-        self.save()
-
-    def reject(self):
-        self.status = 'rejected'
-        self.save()
-
     class Meta:
         ordering = ['is_hidden', '-date_updated']
+
+    def save(self, *args, **kwargs):
+        # If the request_for_quotation is submitted, make it non-editable
+        if self.is_submitted:
+            self.can_edit = False
+        super(RequestForQuotation, self).save(*args, **kwargs)
+
+    def change_status(self, status):
+        """Utility method to change the status and save"""
+        self.status = status
+        self.save()
+
+    def submit(self):
+        """Mark the request_for_quotation as pending"""
+        self.is_submitted = True
+        self.change_status('pending')
+
+    def approve(self):
+        """Mark the request_for_quotation as approved"""
+        self.change_status('approved')
+
+    def reject(self):
+        """Mark the request_for_quotation as rejected"""
+        self.change_status('rejected')
 
     def __str__(self):
         return self.id
@@ -446,7 +478,7 @@ class RequestForQuotation(models.Model):
     def is_expired(self):
         """Return True if the RFQ has expired based on the expiry_date."""
         if self.expiry_date:
-            return datetime.now() > self.expiry_date
+            return timezone.now() > self.expiry_date
         return False
 
     def send_email(self):
@@ -484,7 +516,7 @@ class RequestForQuotationItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
     estimated_unit_price = models.DecimalField(max_digits=20, decimal_places=2)
-    actual_unit_price = models.DecimalField(max_digits=20, decimal_places=2)
+    actual_unit_price = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
 
     date_created = models.DateTimeField(auto_now_add=True)
 
