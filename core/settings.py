@@ -33,9 +33,10 @@ DEBUG = os.getenv('DEBUG') == 'True'
 ALLOWED_HOSTS = [
     'localhost:8000',
     '*',
-    'fastra.onrender.com',
-    '*.fastra.onrender.com',
-    ]
+    '.fastrasuite.com',
+    'api.fastrasuite.com',
+    '95.179.214.79'
+]
 
 # Application definition
 
@@ -89,7 +90,6 @@ INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in S
 MIDDLEWARE = [
     # Middleware for accessing schemas and permissions
     'django_tenants.middleware.main.TenantMainMiddleware',
-    
 
     'django.middleware.security.SecurityMiddleware',
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -100,13 +100,10 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     "corsheaders.middleware.CorsMiddleware",
-    
 
     # Custom Middleware for tenant authentication
     # 'companies.middlewares.TenantMiddleware',
     # 'users.middlewares.TenantMiddleware',
-
-    
 
 ]
 
@@ -317,7 +314,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        
+
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.DjangoModelPermissions',
@@ -357,7 +354,6 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 
-
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
 
@@ -370,6 +366,5 @@ SIMPLE_JWT = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-
-API_BASE_DOMAIN = 'api.fastrasuite.com'
+API_BASE_DOMAIN = 'fastrasuite.com'
 # API_BASE_DOMAIN = 'localhost'
