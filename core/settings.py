@@ -33,8 +33,10 @@ DEBUG = os.getenv('DEBUG') == 'True'
 ALLOWED_HOSTS = [
     'localhost:8000',
     '*',
+    'fastrasuite.com',
+    'www.fastrasuite.com'
     '.fastrasuite.com',
-    'api.fastrasuite.com',
+    '*.fastrasuite.com',
     '95.179.214.79'
 ]
 
