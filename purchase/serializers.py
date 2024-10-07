@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, \
     Product, RequestForQuotation, RequestForQuotationItem, ProductCategory, \
-    VendorCategory, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
+     UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
     PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem
 
 
@@ -47,15 +47,17 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-request-detail')
     suggested_vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
                                                            view_name='vendor-detail')
-    department = serializers.HyperlinkedRelatedField(queryset=Department.objects.filter(is_hidden=False),
-                                                     view_name="department-detail")
+    # department = serializers.HyperlinkedRelatedField(queryset=Department.objects.filter(is_hidden=False),
+                                                    #  view_name="department-detail")
     items = PurchaseRequestItemSerializer(many=True, read_only=True)
     total_price = serializers.ReadOnlyField()
+    can_edit = serializers.ReadOnlyField()
+    is_submitted = serializers.ReadOnlyField()
 
     class Meta:
         model = PurchaseRequest
-        fields = ['url', 'department', 'status', 'date_created', 'date_updated',
-                  'purpose', 'suggested_vendor', 'items', 'total_price', 'is_hidden']
+        fields = ['url', 'status', 'date_created', 'date_updated',
+                  'purpose', 'suggested_vendor', 'items', 'total_price','can_edit', 'is_submitted', 'is_hidden']
 
     def create(self, validated_data):
         items_data = validated_data.pop('items', [])
@@ -66,9 +68,9 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
 
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', [])
-        instance.date = validated_data.get('date', instance.date)
+        # instance.date_updated = validated_data.get('date_updated', instance.date_updated)
         instance.requester = validated_data.get('requester', instance.requester)
-        instance.department = validated_data.get('department', instance.department)
+        # instance.department = validated_data.get('department', instance.department)
         instance.status = validated_data.get('status', instance.status)
         instance.purpose = validated_data.get('purpose', instance.purpose)
         instance.suggested_vendor = validated_data.get('suggested_vendor', instance.suggested_vendor)
@@ -86,31 +88,45 @@ class UnitOfMeasureSerializer(serializers.HyperlinkedModelSerializer):
         fields = ['url', 'name', 'description', 'created_on', 'is_hidden']
 
 
+class ExcelUploadSerializer(serializers.Serializer):
+    file = serializers.FileField()
+
 class VendorSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='vendor-detail')
-    category = serializers.HyperlinkedRelatedField(
-        view_name='vendor-category-detail',
-        queryset=VendorCategory.objects.filter(is_hidden=False)
-    )
+    # category = serializers.HyperlinkedRelatedField(
+    #     view_name='vendor-category-detail',
+    #     # queryset=VendorCategory.objects.filter(is_hidden=False)
+    # )
+    profile_picture = serializers.ImageField(required=False)
 
     class Meta:
         model = Vendor
-        fields = ['url', 'company_name', 'category', 'email', 'address', 'phone_number', 'is_hidden']
+        fields = ['url', 'company_name','profile_picture', 'email', 'address', 'phone_number', 'is_hidden']
+
+    def validate(self, data):
+        if Vendor.objects.filter(company_name=data['company_name']).exclude(pk=self.instance.pk if self.instance else None).exists():
+            raise serializers.ValidationError('A vendor with this company name already exists.')
+        if Vendor.objects.filter(email=data['email']).exclude(pk=self.instance.pk if self.instance else None).exists():
+            raise serializers.ValidationError('A vendor with this email already exists.')
+        return data
 
 
-class VendorCategorySerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='vendor-category-detail')
-    vendors = VendorSerializer(many=True, read_only=True)
 
-    class Meta:
-        model = VendorCategory
-        fields = ['url', 'name', 'description', 'vendors', 'is_hidden']
-        read_only_fields = ['created_on', 'updated_on']
+# class VendorCategorySerializer(serializers.HyperlinkedModelSerializer):
+#     url = serializers.HyperlinkedIdentityField(view_name='vendor-category-detail')
+#     vendors = VendorSerializer(many=True, read_only=True)
+
+#     class Meta:
+#         model = VendorCategory
+#         fields = ['url', 'name', 'description', 'vendors', 'is_hidden']
+#         read_only_fields = ['created_on', 'updated_on']
 
 
 class ProductSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='product-detail')
-    unit_of_measure = UnitOfMeasureSerializer(many=True)
+    unit_of_measure =  serializers.HyperlinkedRelatedField(
+        queryset=UnitOfMeasure.objects.filter(is_hidden=False),
+        view_name='unit-of-measure-detail')
     category = serializers.HyperlinkedRelatedField(
         queryset=ProductCategory.objects.filter(is_hidden=False),
         view_name='product-category-detail')

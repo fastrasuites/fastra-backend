@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from .models import Department, Product, Vendor, ProductCategory,\
-                    VendorCategory, PurchaseRequest, PurchaseRequestItem, RequestForQuotation,\
+                     PurchaseRequest, PurchaseRequestItem, RequestForQuotation,\
                     RequestForQuotationItem
 
 # Register your models here.
@@ -27,7 +27,7 @@ class RFQItemAdmin(admin.ModelAdmin):
         order_by = ('request_for_quotation', '-id')
 
 
-admin.site.register(VendorCategory)
+# admin.site.register(VendorCategory)
 admin.site.register(Vendor)
 admin.site.register(ProductCategory)
 admin.site.register(Product)

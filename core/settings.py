@@ -189,7 +189,8 @@ SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
 PG_EXTRA_SEARCH_PATHS = ['extensions']
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, '/media')
+# MEDIA_ROOT = os.path.join(BASE_DIR, '/media')
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 customColorPalette = [
     {
