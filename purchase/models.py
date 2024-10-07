@@ -3,27 +3,27 @@ from django.db import models
 from django.contrib.auth.models import User, AbstractUser
 from django.conf import settings
 
-from django.template.loader import render_to_string
-from django.utils import timezone
+from django.utils import timezone, text
 from django.core.exceptions import ValidationError
 from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django_ckeditor_5.fields import CKEditor5Field
-from datetime import datetime, timedelta
+
 import json
 
 
 PURCHASE_REQUEST_STATUS = (
     ('draft', 'Draft'),
     ('approved', 'Approved'),
-    ('submitted', 'Submitted'),
+    ('pending', 'Pending'),
     ('rejected', 'Rejected'),
 )
 
 RFQ_STATUS = (
-    ('selected', 'Vendor Selected'),
-    ('awaiting', 'Awaiting Vendor Selection'),
-    ('cancelled', 'Cancelled'),
+    ('draft', 'Draft'),
+    ('approved', 'Approved'),
+    ('pending', 'Pending'),
+    ('rejected', 'Rejected')
 )
 
 PURCHASE_ORDER_STATUS = (
@@ -33,10 +33,10 @@ PURCHASE_ORDER_STATUS = (
     ('cancelled', 'Cancelled'),
 )
 
-PRODUCT_TYPE = (
+PRODUCT_CATEGORY = (
     ('consumable', 'Consumable'),
-    ('store-able', 'Store-able'),
-    ('services', 'Services'),
+    ('stockable', 'Stockable'),
+    ('service-product', 'Service Product'),
 )
 
 
@@ -69,12 +69,34 @@ class ApprovedPRManager(models.Manager):
 
 class PendingPRManager(models.Manager):
     def get_queryset(self):
-        return super(PendingPRManager, self).get_queryset().filter(status='submitted')
+        return super(PendingPRManager, self).get_queryset().filter(status='pending')
 
 
 class RejectedPRManager(models.Manager):
     def get_queryset(self):
         return super(RejectedPRManager, self).get_queryset().filter(status='rejected')
+
+
+# For Requests For Quotation (RFQs)
+class DraftRFQManager(models.Manager):
+    def get_queryset(self):
+        return super(DraftRFQManager, self).get_queryset().filter(status='draft')
+
+
+class ApprovedRFQManager(models.Manager):
+    def get_queryset(self):
+        return super(ApprovedRFQManager, self).get_queryset().filter(status='approved')
+
+
+class PendingRFQManager(models.Manager):
+    def get_queryset(self):
+        return super(PendingRFQManager, self).get_queryset().filter(status='pending')
+
+
+class RejectedRFQManager(models.Manager):
+    def get_queryset(self):
+        return super(RejectedRFQManager, self).get_queryset().filter(status='rejected')
+
 
 
 # For Purchase Orders
@@ -98,6 +120,7 @@ class CancelledPOManager(models.Manager):
         return super(CancelledPOManager, self).get_queryset().filter(status='cancelled')
 
 
+# For Active or Hidden States
 class ActiveManager(models.Manager):
     def get_queryset(self):
         return super(ActiveManager, self).get_queryset().filter(is_hidden=False)
@@ -123,7 +146,7 @@ def generate_unique_pr_id():
 def generate_unique_rfq_id():
     last_request = RequestForQuotation.objects.order_by('id').last()
     if last_request:
-        last_id = int(last_request.id[2:])
+        last_id = int(last_request.id[3:])
         new_id = f"RFQ{last_id + 1:06d}"
     else:
         new_id = "RFQ000001"
@@ -153,37 +176,40 @@ class UnitOfMeasure(models.Model):
         ordering = ['is_hidden', '-created_on']
         verbose_name_plural = 'Units of Measure'
 
+    def __repr__(self):
+        return self.name
+
     def __str__(self):
         return self.name
 
 
-class ProductCategory(models.Model):
-    name = models.CharField(max_length=100)
-    description = CKEditor5Field(blank=True, null=True)
-    created_on = models.DateTimeField(auto_now_add=True)
-    updated_on = models.DateTimeField(auto_now=True)
-    is_hidden = models.BooleanField(default=False)
-
-    objects = models.Manager()
-
-    class Meta:
-        ordering = ['is_hidden', '-updated_on']
-        verbose_name_plural = 'Product Categories'
-
-    def __str__(self):
-        return self.name
+# class ProductCategory(models.Model):
+#     name = models.CharField(max_length=100)
+#     description = CKEditor5Field(blank=True, null=True)
+#     created_on = models.DateTimeField(auto_now_add=True)
+#     updated_on = models.DateTimeField(auto_now=True)
+#     is_hidden = models.BooleanField(default=False)
+#
+#     objects = models.Manager()
+#
+#     class Meta:
+#         ordering = ['is_hidden', '-updated_on']
+#         verbose_name_plural = 'Product Categories'
+#
+#     def __str__(self):
+#         return self.name
 
 
 class Product(models.Model):
-    name = models.CharField(max_length=100)
+    product_name = models.CharField(max_length=100)
+    product_description = CKEditor5Field(null=True, blank=True)
+    product_category = models.CharField(max_length=64, choices=PRODUCT_CATEGORY)
+    available_product_quantity = models.PositiveIntegerField(verbose_name="Available Product Quantity", default=0)
+    total_quantity_purchased = models.PositiveIntegerField(verbose_name="Total Quantity Purchased", default=0)
+    unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True)
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
-    unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True)
-    type = models.CharField(max_length=64, choices=PRODUCT_TYPE, default="goods")
-    category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, related_name='products')
-    company = models.ForeignKey('Vendor', on_delete=models.CASCADE)
-    cost_price = models.DecimalField(max_digits=10, decimal_places=2)
-    selling_price = models.DecimalField(max_digits=10, decimal_places=2)
+
     is_hidden = models.BooleanField(default=False)
 
     objects = models.Manager()
@@ -191,8 +217,18 @@ class Product(models.Model):
     class Meta:
         ordering = ['is_hidden', '-created_on']
 
+    def clean(self):
+        valid_categories = [choice[0] for choice in PRODUCT_CATEGORY]  # Extract valid categories
+        if text.slugify(self.product_category) not in valid_categories:
+            raise ValidationError(
+                f"Invalid category '{self.product_category}'. Valid categories are: {', '.join(valid_categories)}.")
+
+    def save(self, *args, **kwargs):
+        self.clean()  # Call clean method before saving
+        super(Product, self).save(*args, **kwargs)
+
     def __str__(self):
-        return self.name
+        return self.product_name
 
 
 class Department(models.Model):
@@ -315,21 +351,31 @@ class PurchaseRequest(models.Model):
 
     def __str__(self):
         return self.id
-    
+
+    def save(self, *args, **kwargs):
+        # If the purchase request is submitted, make it non-editable
+        if self.is_submitted:
+            self.can_edit = False
+        super(PurchaseRequest, self).save(*args, **kwargs)
+
+    def change_status(self, status):
+        """Utility method to change the status and save"""
+        self.status = status
+        self.save()
 
     def submit(self):
+        """Mark the purchase request as pending"""
         self.is_submitted = True
-        self.can_edit = False
-        self.status = 'submitted'
-        self.save()
+        self.change_status('pending')
 
     def approve(self):
-        self.status = 'approved'
-        self.save()
+        """Mark the purchase request as approved"""
+        self.change_status('approved')
 
     def reject(self):
-        self.status = 'rejected'
-        self.save()
+        """Mark the purchase request as rejected"""
+        self.change_status('rejected')
+
 
 
 class PurchaseRequestItem(models.Model):
@@ -347,7 +393,7 @@ class PurchaseRequestItem(models.Model):
         ordering = ['-date_created']
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name
 
 
 # this is a signal that calculates the qty times the unit price automatically
@@ -374,35 +420,51 @@ def update_total_price(sender, instance, **kwargs):
 
 class RequestForQuotation(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_rfq_id, editable=False)
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_updated = models.DateTimeField(auto_now=True)
+    purchase_request = models.ForeignKey('PurchaseRequest', on_delete=models.SET_NULL, null=True, blank=True)
     expiry_date = models.DateTimeField(null=True, blank=True,
                                        help_text="Leave blank for no expiry")
     vendor = models.ForeignKey('Vendor', on_delete=models.CASCADE)
-    status = models.CharField(max_length=100, choices=RFQ_STATUS, default='awaiting')
+    status = models.CharField(max_length=100, choices=RFQ_STATUS, default='draft')
+
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
     is_hidden = models.BooleanField(default=False)
 
-    # def __init__(self, *args, **kwargs):
-    #     self._formatted_id = None
-    #     super(RequestForQuotation, self).__init__(*args, **kwargs)
-    #
-    # def get_formatted_id(self, *args, **kwargs):
-    #     if self._formatted_id is None:
-    #         self.set_formatted_id()
-    #     return self._formatted_id
-    #
-    # def set_formatted_id(self, *args, **kwargs):
-    #     self._formatted_id = "RFQ" + "{:05d}".format(self.id)
-    #
-    # formatted_id = property(get_formatted_id, set_formatted_id, doc="formatted_id property")
+    is_submitted = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=True)
 
     objects = models.Manager()
-    vendor_selected_rfqs = SelectedVendorManager()
-    vendor_awaiting_rfqs = AwaitingVendorManager()
-    vendor_cancelled_rfqs = CancelledVendorManager()
+    rfq_draft = DraftRFQManager()
+    rfq_approved = ApprovedRFQManager()
+    rfq_pending = PendingRFQManager()
+    rfq_rejected = RejectedRFQManager()
 
     class Meta:
         ordering = ['is_hidden', '-date_updated']
+
+    def save(self, *args, **kwargs):
+        # If the request_for_quotation is submitted, make it non-editable
+        if self.is_submitted:
+            self.can_edit = False
+        super(RequestForQuotation, self).save(*args, **kwargs)
+
+    def change_status(self, status):
+        """Utility method to change the status and save"""
+        self.status = status
+        self.save()
+
+    def submit(self):
+        """Mark the request_for_quotation as pending"""
+        self.is_submitted = True
+        self.change_status('pending')
+
+    def approve(self):
+        """Mark the request_for_quotation as approved"""
+        self.change_status('approved')
+
+    def reject(self):
+        """Mark the request_for_quotation as rejected"""
+        self.change_status('rejected')
 
     def __str__(self):
         return self.id
@@ -412,25 +474,12 @@ class RequestForQuotation(models.Model):
         rfq_total_price = sum(item.total_price for item in self.items.all())
         return rfq_total_price
 
-    # @property
-    # def duration_till_expiration(self):
-    #     if self.expiry_date:
-    #         return datetime(self.expiry_date) - datetime(self.date_opened)
-    #     return None
-
-    # @property
-    # def is_expired(self) -> bool:
-    #     """ to check whether duration already expired or yet """
-    #     if self.expiry_date:
-    #         return datetime.now() > self.expiry_date
-    #     return False
-
-    # @property
-    # def next_expiry_date(self):
-    #     """ to get next expiry date """
-    #     if self.expiry_date:
-    #         return datetime(self.expiry_date) + timedelta(days=1)
-    #     return None
+    @property
+    def is_expired(self):
+        """Return True if the RFQ has expired based on the expiry_date."""
+        if self.expiry_date:
+            return timezone.now() > self.expiry_date
+        return False
 
     def send_email(self):
         """
@@ -446,10 +495,11 @@ class RequestForQuotation(models.Model):
             'status': self.status,
             'items': [
                 {
-                    'product': item.product.name,
-                    'description': item.description,
+                    'product': item.product.product_name,
+                    'description': item.product.product_description,
                     'qty': item.qty,
                     'estimated_unit_price': str(item.estimated_unit_price),
+                    'actual_unit_price': str(item.actual_unit_price),
                     'total_price': str(item.total_price)
                 }
                 for item in self.items.all()
@@ -461,12 +511,14 @@ class RequestForQuotation(models.Model):
 
 
 class RequestForQuotationItem(models.Model):
-    date_created = models.DateTimeField(auto_now_add=True)
+
     request_for_quotation = models.ForeignKey(RequestForQuotation, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    description = CKEditor5Field(null=True, blank=True)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
-    estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    estimated_unit_price = models.DecimalField(max_digits=20, decimal_places=2)
+    actual_unit_price = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+
+    date_created = models.DateTimeField(auto_now_add=True)
 
     objects = models.Manager()
 
@@ -485,7 +537,7 @@ class RequestForQuotationItem(models.Model):
     total_price = property(get_total_price, set_total_price, doc="total price property")
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name
 
     class Meta:
         ordering = ['-date_created']
@@ -536,7 +588,7 @@ class RFQVendorQuoteItem(models.Model):
     total_price = property(get_total_price, set_total_price, doc="total price property")
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name
 
 
 class PurchaseOrder(models.Model):
@@ -619,7 +671,7 @@ class PurchaseOrderItem(models.Model):
     total_price = property(get_total_price, set_total_price, doc="total price property")
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name
 
 
 class POVendorQuote(models.Model):
@@ -667,4 +719,4 @@ class POVendorQuoteItem(models.Model):
     total_price = property(get_total_price, set_total_price, doc="total price property")
 
     def __str__(self):
-        return self.product.name
+        return self.product.product_name
