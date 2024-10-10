@@ -33,49 +33,48 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
 
     @transaction.atomic
     def create(self, request):
-        serializer = TenantRegistrationSerializer(data=request.data)
-        if serializer.is_valid(raise_exception=True):
-            # Create tenant and user
-            tenant = serializer.save()
-            
-            # Set up domain
-            # frontend_url = request.data.get('frontend_url', 'http://localhost:8000')
-            # parsed_url = urlparse(frontend_url)
-            # frontend_domain = parsed_url.netloc.split(':')[0]
-            api_base_domain = settings.API_BASE_DOMAIN
-            sanitized_name = slugify(tenant.schema_name, allow_unicode=True)
-            
-            domain = Domain.objects.create(
-                domain=f"{sanitized_name}.{api_base_domain}",
-                tenant=tenant,
-                is_primary=True
-            )
+        try:
+            serializer = TenantRegistrationSerializer(data=request.data)
+            if serializer.is_valid(raise_exception=True):
+                # Create tenant and user
+                tenant = serializer.save()
 
-            # Retrieve the user (now associated with the tenant)
-            user = tenant.user
+                # Set up domain
+                api_base_domain = settings.API_BASE_DOMAIN
+                sanitized_name = slugify(tenant.schema_name, allow_unicode=True)
 
-            # Perform any additional tenant-specific setup
-            with tenant_context(tenant):
-                # Add any tenant-specific setup here
-                pass
+                domain = Domain.objects.create(
+                    domain=f"{sanitized_name}.{api_base_domain}",
+                    tenant=tenant,
+                    is_primary=True
+                )
 
-            # Generate and send verification email
-            token = RefreshToken.for_user(user)
-            token['email'] = user.email
-            token['tenant'] = tenant.schema_name
-            verification_url = f'https://{domain.domain}/email-verify?token={str(token.access_token)}'
+                # Retrieve the user (now associated with the tenant)
+                user = tenant.user
 
-            email_body = f'Hi {tenant.company_name},\n\nUse the link below to verify your email:\n{verification_url}'
-            email_data = {
-                'email_body': email_body,
-                'to_email': user.email,
-                'email_subject': 'Verify Your Email'
-            }
-            Util.send_email(email_data)
+                # Additional tenant-specific setup
+                with tenant_context(tenant):
+                    pass
 
-            return Response({
-                'detail': 'Tenant created successfully. Please confirm your email address.',
-                'tenant_url': f"https://{domain.domain}"
-            }, status=status.HTTP_201_CREATED)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                # Generate and send verification email
+                token = RefreshToken.for_user(user)
+                token['email'] = user.email
+                token['tenant'] = tenant.schema_name
+                verification_url = f'https://{domain.domain}/email-verify?token={str(token.access_token)}'
+
+                email_body = f'Hi {tenant.company_name},\n\nUse the link below to verify your email:\n{verification_url}'
+                email_data = {
+                    'email_body': email_body,
+                    'to_email': user.email,
+                    'email_subject': 'Verify Your Email'
+                }
+                Util.send_email(email_data)
+
+                return Response({
+                    'detail': 'Tenant created successfully. Please confirm your email address.',
+                    'tenant_url': f"https://{domain.domain}"
+                }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            transaction.set_rollback(True)
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
