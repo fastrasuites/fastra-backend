@@ -5,7 +5,7 @@ from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, \
     Product, RequestForQuotation, RequestForQuotationItem, \
     UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
     PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem, \
-    PRODUCT_CATEGORY
+    PRODUCT_CATEGORY, Currency
 
 
 # Switched to HyperlinkedIdentityField, HyperlinkedRelatedField for hyperlink support
@@ -63,10 +63,13 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
 
     def create(self, validated_data):
         items_data = validated_data.pop('items', [])
+        if not items_data:
+            raise serializers.ValidationError("At least one item is required to create a purchase request.")
         purchase_request = PurchaseRequest.objects.create(**validated_data)
         for item_data in items_data:
             PurchaseRequestItem.objects.create(purchase_request=purchase_request, **item_data)
         return purchase_request
+
 
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', [])
@@ -76,6 +79,8 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
         instance.status = validated_data.get('status', instance.status)
         instance.purpose = validated_data.get('purpose', instance.purpose)
         instance.suggested_vendor = validated_data.get('suggested_vendor', instance.suggested_vendor)
+        if not items_data:
+            raise serializers.ValidationError("At least one item is required to be in a purchase request.")
         instance.save()
         for item_data in items_data:
             PurchaseRequestItem.objects.create(purchase_request=instance, **item_data)
@@ -87,7 +92,15 @@ class UnitOfMeasureSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = UnitOfMeasure
-        fields = ['url', 'name', 'description', 'created_on', 'is_hidden']
+        fields = ['url', 'unit_name', 'unit_category', 'created_on', 'is_hidden']
+
+
+class CurrencySerializer(serializers.HyperlinkedModelSerializer):
+    url = serializers.HyperlinkedIdentityField(view_name='currency-detail')
+
+    class Meta:
+        model = Currency
+        fields = ['url', 'currency_name', 'currency_symbol', 'created_on', 'is_hidden']
 
 
 class ExcelUploadSerializer(serializers.Serializer):
@@ -215,6 +228,8 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
+        if not items_data:
+            raise serializers.ValidationError("At least one item is required to create a RFQ.")
         rfq = RequestForQuotation.objects.create(**validated_data)
         for item_data in items_data:
             RequestForQuotationItem.objects.create(request_for_quotation=rfq, **item_data)
@@ -263,13 +278,16 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
     purchase_order = serializers.HyperlinkedRelatedField(
         queryset=PurchaseOrder.objects.filter(is_hidden=False),
         view_name='purchase-order-detail')
+    unit_of_measure = serializers.HyperlinkedRelatedField(
+        queryset=UnitOfMeasure.objects.filter(is_hidden=False),
+        view_name='unit-of-measure-detail')
     # This field is a custom property on the model, not a serializer field.
     get_total_price = serializers.ReadOnlyField()
 
     class Meta:
         model = PurchaseOrderItem
         fields = ['id', 'url', 'purchase_order', 'product', 'description',
-                  'qty', 'estimated_unit_price', 'get_total_price']
+                  'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
 
 
 class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
@@ -278,6 +296,9 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     vendor = serializers.HyperlinkedRelatedField(
         queryset=Vendor.objects.filter(is_hidden=False),
         view_name='vendor-detail')
+    currency = serializers.HyperlinkedRelatedField(
+        queryset=Currency.objects.filter(is_hidden=False),
+        view_name='currency-detail')
     # This field is a custom property on the model, not a serializer field.
     po_total_price = serializers.ReadOnlyField()
 
@@ -285,6 +306,15 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         model = PurchaseOrder
         fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'vendor',
                   'items', 'po_total_price', 'is_hidden']
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        if not items_data:
+            raise serializers.ValidationError("At least one item is required to create a purchase order.")
+        po = PurchaseOrder.objects.create(**validated_data)
+        for item_data in items_data:
+            PurchaseOrderItem.objects.create(purchase_order=po, **item_data)
+        return po
 
 
 class POVendorQuoteItemSerializer(serializers.HyperlinkedModelSerializer):

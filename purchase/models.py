@@ -1,16 +1,14 @@
-from django.core.mail import send_mail, EmailMultiAlternatives, send_mass_mail, EmailMessage
+from django.core.mail import EmailMessage
 from django.db import models
-from django.contrib.auth.models import User, AbstractUser
 from django.conf import settings
 
 from django.utils import timezone, text
 from django.core.exceptions import ValidationError
-from django.db.models.signals import pre_save, post_save
+from django.db.models.signals import pre_save
 from django.dispatch import receiver
 from django_ckeditor_5.fields import CKEditor5Field
 
 import json
-
 
 PURCHASE_REQUEST_STATUS = (
     ('draft', 'Draft'),
@@ -98,7 +96,6 @@ class RejectedRFQManager(models.Manager):
         return super(RejectedRFQManager, self).get_queryset().filter(status='rejected')
 
 
-
 # For Purchase Orders
 class DraftPOManager(models.Manager):
     def get_queryset(self):
@@ -165,8 +162,8 @@ def generate_unique_po_id():
 
 
 class UnitOfMeasure(models.Model):
-    name = models.CharField(max_length=100)
-    description = CKEditor5Field(blank=True, null=True)
+    unit_name = models.CharField(max_length=100)
+    unit_category = models.CharField(max_length=100)
     created_on = models.DateTimeField(auto_now_add=True)
     is_hidden = models.BooleanField(default=False)
 
@@ -177,27 +174,26 @@ class UnitOfMeasure(models.Model):
         verbose_name_plural = 'Units of Measure'
 
     def __repr__(self):
-        return self.name
+        return self.unit_name
 
     def __str__(self):
-        return self.name
+        return self.unit_name
 
 
-# class ProductCategory(models.Model):
-#     name = models.CharField(max_length=100)
-#     description = CKEditor5Field(blank=True, null=True)
-#     created_on = models.DateTimeField(auto_now_add=True)
-#     updated_on = models.DateTimeField(auto_now=True)
-#     is_hidden = models.BooleanField(default=False)
-#
-#     objects = models.Manager()
-#
-#     class Meta:
-#         ordering = ['is_hidden', '-updated_on']
-#         verbose_name_plural = 'Product Categories'
-#
-#     def __str__(self):
-#         return self.name
+class Currency(models.Model):
+    currency_name = models.CharField(max_length=100)
+    currency_symbol = CKEditor5Field(blank=True, null=True)
+    created_on = models.DateTimeField(auto_now_add=True)
+    is_hidden = models.BooleanField(default=False)
+
+    objects = models.Manager()
+
+    class Meta:
+        ordering = ['is_hidden', '-created_on']
+        verbose_name_plural = 'Currencies'
+
+    def __str__(self):
+        return self.currency_name
 
 
 class Product(models.Model):
@@ -328,7 +324,7 @@ class PurchaseRequest(models.Model):
     requester = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_requests')
     # requester = models.CharField(max_length=200)
     # department = models.ForeignKey(Department, on_delete=models.CASCADE)
-    status = models.CharField(max_length=20,choices=PURCHASE_REQUEST_STATUS, default='draft')
+    status = models.CharField(max_length=20, choices=PURCHASE_REQUEST_STATUS, default='draft')
     purpose = CKEditor5Field(blank=True, null=True)
     suggested_vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
     is_hidden = models.BooleanField(default=False)
@@ -377,7 +373,6 @@ class PurchaseRequest(models.Model):
         self.change_status('rejected')
 
 
-
 class PurchaseRequestItem(models.Model):
     purchase_request = models.ForeignKey(PurchaseRequest, on_delete=models.CASCADE, related_name='items')
     date_created = models.DateTimeField(auto_now_add=True)
@@ -413,9 +408,6 @@ def update_total_price(sender, instance, **kwargs):
 #                 [manager.email],
 #                 fail_silently=False,
 #             )
-
-
-
 
 
 class RequestForQuotation(models.Model):
@@ -507,11 +499,10 @@ class RequestForQuotation(models.Model):
             'rfq_total_price': str(self.rfq_total_price)
         }
         message = json.dumps(rfq_data)
-        self.vendor.send_mass_email(subject, message)
+        self.vendor.send_email(subject, message)
 
 
 class RequestForQuotationItem(models.Model):
-
     request_for_quotation = models.ForeignKey(RequestForQuotation, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
@@ -594,10 +585,18 @@ class RFQVendorQuoteItem(models.Model):
 class PurchaseOrder(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_po_id, editable=False)
     status = models.CharField(max_length=200, choices=PURCHASE_ORDER_STATUS, default="draft")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_orders')
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
-    vendor = models.ForeignKey("Vendor", on_delete=models.CASCADE, related_name="orders")
+    vendor = models.ForeignKey("Vendor", on_delete=models.CASCADE, related_name="purchase_orders")
+    currency = models.ForeignKey("Currency", on_delete=models.SET_NULL, null=True, related_name='purchase_orders')
+    payment_terms = models.CharField(null=True, blank=True)
+    purchase_policy = models.CharField(null=True, blank=True)
+    delivery_terms = models.CharField(null=True, blank=True)
     is_hidden = models.BooleanField(default=False)
+
+    is_submitted = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=True)
 
     objects = models.Manager()
     po_draft = DraftPOManager()
@@ -607,6 +606,30 @@ class PurchaseOrder(models.Model):
 
     class Meta:
         ordering = ['is_hidden', '-date_updated']
+
+    def save(self, *args, **kwargs):
+        # If the purchase order is submitted, make it non-editable
+        if self.is_submitted:
+            self.can_edit = False
+        super(PurchaseOrder, self).save(*args, **kwargs)
+
+    def change_status(self, status):
+        """Utility method to change the status and save"""
+        self.status = status
+        self.save()
+
+    def submit(self):
+        """Mark the purchase order as pending"""
+        self.is_submitted = True
+        self.change_status('pending')
+
+    def approve(self):
+        """Mark the purchase order as approved"""
+        self.change_status('approved')
+
+    def reject(self):
+        """Mark the purchase order as rejected"""
+        self.change_status('rejected')
 
     def __str__(self):
         return self.id
@@ -627,12 +650,17 @@ class PurchaseOrder(models.Model):
             'date_updated': self.date_updated.strftime('%Y-%m-%d'),
             'status': self.status,
             'vendor': self.vendor.company_name,
+            'currency': self.currency.currency_name,
+            'payment_terms': self.payment_terms,
+            'purchase_policy': self.purchase_policy,
+            'delivery_terms': self.delivery_terms,
             'items': [
                 {
                     'product': item.product.name,
                     'description': item.description,
                     'qty': item.qty,
                     'estimated_unit_price': str(item.estimated_unit_price),
+                    'unit_of_measure': item.unit_of_measure,
                     'total_price': str(item.total_price)
                 }
                 for item in self.items.all()
@@ -640,7 +668,7 @@ class PurchaseOrder(models.Model):
             'po_total_price': str(self.po_total_price)
         }
         message = json.dumps(po_data)
-        self.vendor.send_mass_email(subject, message)
+        self.vendor.send_email(subject, message)
 
 
 class PurchaseOrderItem(models.Model):
@@ -649,6 +677,8 @@ class PurchaseOrderItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     description = CKEditor5Field(null=True, blank=True)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
+    unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True,
+                                        related_name="purchase_orders")
     estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
 
     objects = models.Manager()
@@ -671,7 +701,7 @@ class PurchaseOrderItem(models.Model):
     total_price = property(get_total_price, set_total_price, doc="total price property")
 
     def __str__(self):
-        return self.product.product_name
+        return f"{self.product.product_name} || {self.total_price}"
 
 
 class POVendorQuote(models.Model):
