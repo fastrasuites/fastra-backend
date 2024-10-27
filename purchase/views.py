@@ -138,8 +138,9 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
             # Create the RFQ
             rfq = RequestForQuotation.objects.create(
                 purchase_request=purchase_request,
-                vendor=purchase_request.suggested_vendor,  # Assuming suggested vendor is used
+                vendor=purchase_request.vendor,  # Assuming vendor is used
                 expiry_date=None,  # Can be set dynamically or left blank
+                currency=purchase_request.currency,  # Can be set dynamically or left blank
                 status='draft',
                 date_created=timezone.now(),
                 date_updated=timezone.now(),
@@ -151,6 +152,8 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
                 RequestForQuotationItem.objects.create(
                     request_for_quotation=rfq,
                     product=pr_item.product,
+                    description=pr_item.description,
+                    unit_of_measure=pr_item.unit_of_measure,
                     qty=pr_item.qty,
                     estimated_unit_price=pr_item.estimated_unit_price,
                 )
@@ -487,6 +490,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
             po = PurchaseOrder.objects.create(
                 vendor=rfq.vendor,
                 status='draft',
+                created_by=request.user,
                 currency=rfq.currency,
                 date_created=timezone.now(),
                 date_updated=timezone.now(),

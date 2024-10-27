@@ -240,28 +240,10 @@ class Department(models.Model):
         return self.name
 
 
-# class VendorCategory(models.Model):
-#     name = models.CharField(max_length=100)
-#     description = CKEditor5Field(blank=True, null=True)
-#     created_on = models.DateTimeField(auto_now_add=True)
-#     updated_on = models.DateTimeField(auto_now=True)
-#     is_hidden = models.BooleanField(default=False)
-
-#     objects = models.Manager()
-
-#     class Meta:
-#         ordering = ['is_hidden', '-updated_on']
-#         verbose_name_plural = 'Vendor Categories'
-
-#     def __str__(self):
-#         return self.name
-
-
 class Vendor(models.Model):
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
     company_name = models.CharField(max_length=200)
-    # category = models.ForeignKey(VendorCategory, on_delete=models.SET_NULL, null=True, related_name="vendors")
     email = models.EmailField(max_length=100)
     address = models.CharField(max_length=300, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
@@ -322,11 +304,11 @@ class PurchaseRequest(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     requester = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_requests')
-    # requester = models.CharField(max_length=200)
-    # department = models.ForeignKey(Department, on_delete=models.CASCADE)
+    currency = models.ForeignKey("Currency", on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='purchase_requests')
     status = models.CharField(max_length=20, choices=PURCHASE_REQUEST_STATUS, default='draft')
     purpose = CKEditor5Field(blank=True, null=True)
-    suggested_vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
     is_hidden = models.BooleanField(default=False)
     is_submitted = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=True)
@@ -377,8 +359,10 @@ class PurchaseRequestItem(models.Model):
     purchase_request = models.ForeignKey(PurchaseRequest, on_delete=models.CASCADE, related_name='items')
     date_created = models.DateTimeField(auto_now_add=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    description = CKEditor5Field(null=True, blank=True)
-    qty = models.PositiveIntegerField()
+    description = models.CharField(max_length=255, null=True, blank=True)
+    qty = models.PositiveIntegerField(default=1)
+    unit_of_measure = models.ForeignKey("UnitOfMeasure", on_delete=models.SET_NULL, null=True, blank=True,
+                                        related_name="purchase_requests")
     estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
@@ -395,6 +379,7 @@ class PurchaseRequestItem(models.Model):
 @receiver(pre_save, sender=PurchaseRequestItem)
 def update_total_price(sender, instance, **kwargs):
     instance.total_price = instance.qty * instance.estimated_unit_price
+
 
 # @receiver(post_save, sender=PurchaseRequest)
 # def notify_managers(sender, instance, created, **kwargs):
@@ -413,9 +398,12 @@ def update_total_price(sender, instance, **kwargs):
 class RequestForQuotation(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_rfq_id, editable=False)
     purchase_request = models.ForeignKey('PurchaseRequest', on_delete=models.SET_NULL, null=True, blank=True)
+    currency = models.ForeignKey("Currency", on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='rfqs')
     expiry_date = models.DateTimeField(null=True, blank=True,
                                        help_text="Leave blank for no expiry")
     vendor = models.ForeignKey('Vendor', on_delete=models.CASCADE)
+    vendor_category = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=100, choices=RFQ_STATUS, default='draft')
 
     date_created = models.DateTimeField(auto_now_add=True)
@@ -505,9 +493,11 @@ class RequestForQuotation(models.Model):
 class RequestForQuotationItem(models.Model):
     request_for_quotation = models.ForeignKey(RequestForQuotation, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    description = models.CharField(max_length=255)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
+    unit_of_measure = models.ForeignKey("UnitOfMeasure", on_delete=models.SET_NULL, null=True, blank=True,
+                                        related_name="rfqs")
     estimated_unit_price = models.DecimalField(max_digits=20, decimal_places=2)
-    actual_unit_price = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
 
     date_created = models.DateTimeField(auto_now_add=True)
 
@@ -675,7 +665,7 @@ class PurchaseOrderItem(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     purchase_order = models.ForeignKey("PurchaseOrder", on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    description = CKEditor5Field(null=True, blank=True)
+    description = models.CharField(max_length=255, null=True, blank=True)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
     unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True,
                                         related_name="purchase_orders")
