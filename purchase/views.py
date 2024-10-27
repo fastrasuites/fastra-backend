@@ -28,7 +28,7 @@ from django.utils import timezone
 from django.http import HttpResponse
 from urllib.parse import quote
 
-from .utils import generate_rfq_pdf
+from .utils import generate_model_pdf
 
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
@@ -397,7 +397,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
 
         try:
             # Generate the PDF
-            pdf_response = generate_rfq_pdf(rfq)
+            pdf_response = generate_model_pdf(rfq)
             if not pdf_response:
                 return Response({'error': 'Error generating PDF.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -405,7 +405,8 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
 
             # Create and send the email
             subject = f"Request for Quotation: {rfq.id}"
-            body = f"Please find attached the RFQ {rfq.id}. The deadline for response is {rfq.expiry_date.strftime('%Y-%m-%d') if rfq.expiry_date else 'None'}."
+            body = (f"Please find attached the RFQ {rfq.id}. The deadline"
+                    f" for response is {rfq.expiry_date.strftime('%Y-%m-%d') if rfq.expiry_date else 'None'}.")
             # email = EmailMessage(subject, body, settings.EMAIL_HOST_USER, [rfq.vendor.email])
             # email.attach(f"RFQ_{rfq.id}.pdf", pdf_content, 'application/pdf')
 
@@ -471,17 +472,48 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
 
     @action(detail=True, methods=['post', 'get'])
     def convert_to_po(self, request, pk=None):
-        rfq = self.get_object()
-        if rfq.status != 'approved':
-            return Response({'error': 'RFQ must be approved before converting to PO.'},
-                            status=status.HTTP_400_BAD_REQUEST)
-        if not rfq.actual_price:
-            return Response({'error': 'Actual price is required to convert to PO.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # Get the approved purchase request
+            rfq = self.get_object()
 
-        # Perform conversion logic here
-        # ...
+            if rfq.status != 'approved':
+                return Response({"detail": "Only approved Requests For Quotation can be converted to Purchase Orders."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if not rfq.actual_price:
+                return Response({'error': 'Actual price is required to convert to PO.'},
+                                status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({'status': 'converted to PO'}, status=status.HTTP_200_OK)
+            # Create the Purchase Order
+            po = PurchaseOrder.objects.create(
+                vendor=rfq.vendor,
+                status='draft',
+                currency=rfq.currency,
+                date_created=timezone.now(),
+                date_updated=timezone.now(),
+                is_hidden=False,
+            )
+
+            # Create po items from the RFQ items
+            for rfq_item in rfq.items.all():
+                PurchaseOrderItem.objects.create(
+                    purchase_order=po,
+                    product=rfq_item.product,
+                    description=rfq_item.description,
+                    qty=rfq_item.qty,
+                    unit_of_measure=rfq_item.unit_of_measure,
+                    estimated_unit_price=rfq_item.estimated_unit_price,
+                )
+
+            return Response({
+                "detail": "Purchase Order created successfully",
+                "po_id": po.id
+            }, status=status.HTTP_201_CREATED)
+
+        except RequestForQuotation.DoesNotExist:
+            return Response({"detail": "Request For Quotation not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        except Exception as e:
+            return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
@@ -509,13 +541,53 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['status', 'vendor__company_name']
 
+    def check_po_editable(self, po):
+        """Check if the PO is editable (not submitted or rejected)."""
+        if po.is_submitted:
+            return False, 'This purchase order has already been submitted and cannot be edited.'
+        return True, ''
+
+    def check_po_mailable(self, po):
+        """Check if the PO meets the criteria to be sent to vendors (not draft or rejected)."""
+        if po.status in ['rejected', 'draft']:
+            return False, 'This purchase order cannot be sent as it has been rejected or not submitted.'
+        if po.is_expired:
+            return False, 'This purchase order has expired and cannot be sent.'
+        return True, ''
+
     # for sending POs to vendor emails
-    @action(detail=True, methods=['get', 'post'])
+    @action(detail=True, methods=['post', 'get'])
     def send_email(self, request, pk=None):
         po = self.get_object()
+
         try:
-            po.send_email()
-            return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
+            # Generate the PDF
+            pdf_response = generate_model_pdf(po)
+            if not pdf_response:
+                return Response({'error': 'Error generating PDF.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            pdf_content = pdf_response.content
+
+            # Create and send the email
+            subject = f"Purchase Order: {po.id}"
+            body = f"Please find attached the RFQ {po.id}."
+            # email = EmailMessage(subject, body, settings.EMAIL_HOST_USER, [po.vendor.email])
+            # email.attach(f"PO_{po.id}.pdf", pdf_content, 'application/pdf')
+
+            mailto_link = f'mailto:{po.vendor.email}?subject={quote(subject)}&body={quote(body)}'
+
+            # Prepare the response
+            response = HttpResponse(pdf_content, content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="PO_{po.id}.pdf"'
+
+            # Embed the mailto link in the response headers for the front-end to use
+            response['X-Mailto-Link'] = mailto_link
+
+            return response
+
+            # email.send()
+
+            # return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
