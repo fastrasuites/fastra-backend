@@ -36,21 +36,25 @@ class PurchaseRequestItemSerializer(serializers.HyperlinkedModelSerializer):
     product = serializers.HyperlinkedRelatedField(
         queryset=Product.objects.filter(is_hidden=False),
         view_name='product-detail')
+    unit_of_measure = serializers.HyperlinkedRelatedField(
+        queryset=UnitOfMeasure.objects.filter(is_hidden=False),
+        view_name='unit-of-measure-detail'
+    )
     total_price = serializers.ReadOnlyField()
 
     class Meta:
         model = PurchaseRequestItem
-        fields = ['id', 'url', 'purchase_request', 'product', 'description', 'qty',
+        fields = ['id', 'url', 'purchase_request', 'product', 'description', 'qty', 'unit_of_measure',
                   'estimated_unit_price', 'total_price']
 
 
 class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-request-detail')
     requester = serializers.HyperlinkedRelatedField(view_name='user-detail', read_only=True)
-    suggested_vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
-                                                           view_name='vendor-detail')
-    # department = serializers.HyperlinkedRelatedField(queryset=Department.objects.filter(is_hidden=False),
-    #  view_name="department-detail")
+    currency = serializers.HyperlinkedRelatedField(queryset=Currency.objects.filter(is_hidden=False),
+                                                   view_name='currency-detail')
+    vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
+                                                 view_name='vendor-detail')
     items = PurchaseRequestItemSerializer(many=True, read_only=True)
     total_price = serializers.ReadOnlyField()
     can_edit = serializers.ReadOnlyField()
@@ -58,8 +62,8 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = PurchaseRequest
-        fields = ['url', 'status', 'date_created', 'date_updated', 'requester',
-                  'purpose', 'suggested_vendor', 'items', 'total_price', 'can_edit', 'is_submitted', 'is_hidden']
+        fields = ['url', 'status', 'date_created', 'date_updated', 'requester', 'currency',
+                  'purpose', 'vendor', 'items', 'total_price', 'can_edit', 'is_submitted', 'is_hidden']
 
     def create(self, validated_data):
         items_data = validated_data.pop('items', [])
@@ -73,12 +77,12 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
 
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', [])
-        # instance.date_updated = validated_data.get('date_updated', instance.date_updated)
+        instance.date_updated = validated_data.get('date_updated', instance.date_updated)
         instance.requester = validated_data.get('requester', instance.requester)
-        # instance.department = validated_data.get('department', instance.department)
+        instance.currency = validated_data.get('currency', instance.currency)
         instance.status = validated_data.get('status', instance.status)
         instance.purpose = validated_data.get('purpose', instance.purpose)
-        instance.suggested_vendor = validated_data.get('suggested_vendor', instance.suggested_vendor)
+        instance.vendor = validated_data.get('vendor', instance.vendor)
         if not items_data:
             raise serializers.ValidationError("At least one item is required to be in a purchase request.")
         instance.save()
@@ -110,10 +114,6 @@ class ExcelUploadSerializer(serializers.Serializer):
 
 class VendorSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='vendor-detail')
-    # category = serializers.HyperlinkedRelatedField(
-    #     view_name='vendor-category-detail',
-    #     # queryset=VendorCategory.objects.filter(is_hidden=False)
-    # )
     profile_picture = serializers.ImageField(required=False)
 
     class Meta:
@@ -127,16 +127,6 @@ class VendorSerializer(serializers.HyperlinkedModelSerializer):
         if Vendor.objects.filter(email=data['email']).exclude(pk=self.instance.pk if self.instance else None).exists():
             raise serializers.ValidationError('A vendor with this email already exists.')
         return data
-
-
-# class VendorCategorySerializer(serializers.HyperlinkedModelSerializer):
-#     url = serializers.HyperlinkedIdentityField(view_name='vendor-category-detail')
-#     vendors = VendorSerializer(many=True, read_only=True)
-
-#     class Meta:
-#         model = VendorCategory
-#         fields = ['url', 'name', 'description', 'vendors', 'is_hidden']
-#         read_only_fields = ['created_on', 'updated_on']
 
 
 class ProductSerializer(serializers.HyperlinkedModelSerializer):
@@ -185,20 +175,12 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
         return super().create(validated_data)
 
 
-# class ProductCategorySerializer(serializers.HyperlinkedModelSerializer):
-#     products = ProductSerializer(many=True, read_only=True)
-#     url = serializers.HyperlinkedIdentityField(view_name='product-category-detail')
-#
-#     class Meta:
-#         model = ProductCategory
-#         fields = ['url', 'name', 'description', 'created_on', 'updated_on', 'products', 'is_hidden']
-#         read_only_fields = ['created_on', 'updated_on']
-
-
 class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='request-for-quotation-item-detail')
     product = serializers.HyperlinkedRelatedField(queryset=Product.objects.filter(is_hidden=False),
                                                   view_name='product-detail')
+    unit_of_measure = serializers.HyperlinkedRelatedField(queryset=UnitOfMeasure.objects.filter(is_hidden=False),
+                                                          view_name='unit-of-measure-detail')
     request_for_quotation = serializers.HyperlinkedRelatedField(
         queryset=RequestForQuotation.objects.filter(is_hidden=False),
         view_name='request-for-quotation-detail')
@@ -207,22 +189,24 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = RequestForQuotationItem
-        fields = ['id', 'url', 'request_for_quotation', 'product',
-                  'qty', 'estimated_unit_price', 'actual_unit_price', 'get_total_price']
+        fields = ['id', 'url', 'request_for_quotation', 'product', 'description',
+                  'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
 
 
 class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='request-for-quotation-detail')
     purchase_request = serializers.HyperlinkedRelatedField(queryset=PurchaseRequest.objects.filter(is_hidden=False),
                                                            view_name='purchase-request-detail')
-    items = RequestForQuotationItemSerializer(many=True, read_only=True)
+    currency = serializers.HyperlinkedRelatedField(queryset=PurchaseRequest.objects.filter(is_hidden=False),
+                                                   view_name='currency-detail')
     vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
                                                  view_name='vendor-detail')
     rfq_total_price = serializers.ReadOnlyField()
+    items = RequestForQuotationItemSerializer(many=True, read_only=True)
 
     class Meta:
         model = RequestForQuotation
-        fields = ['url', 'expiry_date', 'vendor', 'purchase_request',
+        fields = ['url', 'expiry_date', 'vendor', 'vendor_category', 'purchase_request', 'currency',
                   'status', 'rfq_total_price', 'items', 'is_hidden', 'is_expired']
         read_only_fields = ['date_created', 'date_updated', 'rfq_total_price']
 
