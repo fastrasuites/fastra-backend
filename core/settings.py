@@ -368,5 +368,4 @@ SIMPLE_JWT = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-API_BASE_DOMAIN = 'fastrasuite.com'
-# API_BASE_DOMAIN = 'localhost'
+API_BASE_DOMAIN = os.getenv('API_BASE_DOMAIN', 'fastrasuite.com/api')
