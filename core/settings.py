@@ -91,9 +91,10 @@ TENANT_APPS = [
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
 
 MIDDLEWARE = [
+    # Middleware for tenant-awareness
+    'registration.middleware.TenantMiddleware',
     # Middleware for accessing schemas and permissions
     'django_tenants.middleware.main.TenantMainMiddleware',
-
     'django.middleware.security.SecurityMiddleware',
     "whitenoise.middleware.WhiteNoiseMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -316,6 +317,7 @@ REST_FRAMEWORK = {
         # to accommodate for our default authentication
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
+        'rest_framework.authentication.TokenAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
 
     ),
@@ -337,7 +339,7 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-AUTH_USER_MODEL = 'auth.User'
+AUTH_USER_MODEL = 'registration.GlobalUser'
 
 # JWT settings
 SIMPLE_JWT = {
