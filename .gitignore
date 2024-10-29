@@ -5,3 +5,7 @@
 *.vscode/
 *.idea/
 media/
+scr*.py
+*.xlsx
+*.html
+.DS_STORE
