@@ -2,8 +2,8 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
-# from users.models import TenantUser
-from accounting.models import TenantUser
+from users.models import TenantUser
+# from accounting.models import TenantUser
 from .models import Tenant, UserProfile
 from django.contrib.auth.models import User, Group
 from django.contrib.auth.password_validation import validate_password
@@ -91,7 +91,7 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
 
         return data
 
-    @transaction.atomic
+
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         otp, hashed_otp = generate_otp()
@@ -113,10 +113,13 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
             otp_requested_at=timezone.now(),
             created_by=user
         )
-        admin_group, created = Group.objects.get_or_create(name='Admin')
+
+
+
         with tenant_context(tenant):
+            admin_group, created = Group.objects.get_or_create(name='Admin')
             TenantUser.objects.create(
-                user=user,
+                user_id=user.id,
                 tenant=tenant,
                 role=admin_group
             )

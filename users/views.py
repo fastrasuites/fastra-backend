@@ -7,8 +7,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth.models import Group, Permission, User
 
-from accounting.models import TenantUser
-# from .models import TenantUser
+# from accounting.models import TenantUser
+from .models import TenantUser
 from .serializers import UserSerializer,TenantUserSerializer, GroupSerializer, PermissionSerializer, GroupPermissionSerializer, PasswordChangeSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.sites.shortcuts import get_current_site

@@ -26,7 +26,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import PermissionDenied
 from .permissions import IsAdminUser
-from django.db import transaction
+from django.db import transaction, connection
 from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
 
@@ -114,6 +114,7 @@ class LoginView(APIView):
         if serializer.is_valid():
             email = serializer.validated_data['email']
             password = serializer.validated_data['password']
+            connection.set_schema('public')
             user = authenticate(request, email=email, password=password)
 
             if user is not None:

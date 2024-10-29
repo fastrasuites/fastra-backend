@@ -5,8 +5,8 @@ from django.utils.translation import gettext as _
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.contrib.auth.password_validation import validate_password
 
-# from users.models import TenantUser
-from accounting.models import TenantUser
+from users.models import TenantUser
+# from accounting.models import TenantUser
 
 class PermissionSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='permission-detail')
