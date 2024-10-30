@@ -6,11 +6,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth.models import Group, Permission, User
+
 from .models import TenantUser
-from .serializers import UserSerializer,TenantUserSerializer, GroupSerializer, PermissionSerializer, GroupPermissionSerializer, PasswordChangeSerializer
+from .serializers import UserSerializer, TenantUserSerializer, GroupSerializer, PermissionSerializer, \
+    GroupPermissionSerializer, PasswordChangeSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.sites.shortcuts import get_current_site
 from .utils import Util
+
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
@@ -47,6 +50,7 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(active_instances, many=True)
         return Response(serializer.data)
 
+
 class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = []
@@ -60,6 +64,7 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -93,7 +98,7 @@ class TenantUserViewSet(SearchDeleteViewSet):
 
         token = RefreshToken.for_user(tenant_user)
         token['email'] = email
-        
+
         current_site = get_current_site(self.request).domain
         verification_url = f'https://{current_site}/email-verify?token={str(token.access_token)}'
 
@@ -115,11 +120,10 @@ class TenantUserViewSet(SearchDeleteViewSet):
             'user': serializer.data
         }, status=status.HTTP_201_CREATED, headers=headers)
 
-
     def sync_user_permissions(self, user):
         # Get all permissions from the user's groups
         group_permissions = Permission.objects.filter(group__user=user).distinct()
-        
+
         # Add these permissions to the user's direct permissions
         user.user_permissions.set(group_permissions)
 
@@ -145,8 +149,6 @@ class TenantUserViewSet(SearchDeleteViewSet):
         tenant_user = serializer.save()
         self.sync_user_permissions(tenant_user.user)
 
-
-
     @action(detail=True, methods=['post'])
     def change_password(self, request, pk=None):
         tenant_user = self.get_object()
@@ -158,11 +160,13 @@ class TenantUserViewSet(SearchDeleteViewSet):
             return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class GroupViewSet(viewsets.ModelViewSet):
     queryset = Group.objects.all()
     serializer_class = GroupSerializer
     permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
     search_fields = ['name']
+
 
 class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Permission.objects.all()
@@ -176,13 +180,14 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
             return Permission.objects.filter(content_type__app_label=app_label)
         return Permission.objects.all()
 
+
 class GroupPermissionViewSet(viewsets.ModelViewSet):
     serializer_class = GroupPermissionSerializer
     permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
 
     def get_queryset(self):
         # Return an empty queryset or implement logic if needed
-        return Group.objects.none() 
+        return Group.objects.none()
 
     def create(self, request):
         serializer = self.get_serializer(data=request.data)
@@ -190,34 +195,33 @@ class GroupPermissionViewSet(viewsets.ModelViewSet):
         group = serializer.validated_data['group']
         permissions = serializer.validated_data['permissions']
         group.permissions.set(permissions)
-        
+
         # Return permission names instead of IDs
         permission_names = [perm.name for perm in permissions]
-        
+
         return Response({
             'group': group.id,
             'permissions': permission_names  # Return names instead of IDs
         }, status=status.HTTP_201_CREATED)
-
-
 
     # @action(detail=False, methods=['get'])
     # def group_permissions(self, request):
     #     group_id = request.query_params.get('group_id')
     #     if not group_id:
     #         return Response({"error": "group_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
     #     try:
     #         group = Group.objects.get(id=group_id)
     #     except Group.DoesNotExist:
     #         return Response({"error": "Group not found"}, status=status.HTTP_404_NOT_FOUND)
-        
+
     #     permissions = group.permissions.all()
-        
+
     #     # Return permission names instead of full objects or IDs
     #     permission_names = [perm.name for perm in permissions]
-        
+
     #     return Response({'permissions': permission_names})
+
 
 class PasswordChangeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
