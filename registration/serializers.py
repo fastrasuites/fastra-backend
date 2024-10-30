@@ -97,12 +97,9 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         otp, hashed_otp = generate_otp()
-        print("Validated", validated_data)
         email = user_data.get('email')
         password = user_data.get('password1')
-        print("PASS", password)
-        password = make_password(password)
-        print("PASS 2", password)
+        # password = make_password(password)
 
         existing_user = User.objects.filter(email=email).first()
         if existing_user:
@@ -127,9 +124,9 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
                 user_id=user.id,
                 tenant=tenant,
                 role=admin_group,
-                password=password
+                # password=password
             )
-            # tenant_user.set_tenant_password(password)
+            tenant_user.set_tenant_password(password)
             tenant_user.save()
 
         return tenant, otp
