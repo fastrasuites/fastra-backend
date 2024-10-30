@@ -72,7 +72,7 @@ class VerifyEmail(generics.GenericAPIView):
 
         except Tenant.DoesNotExist:
             return Response({'error': 'Tenant not found.'}, status=status.HTTP_404_NOT_FOUND)
-        
+
 class ResendVerificationEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
@@ -122,27 +122,29 @@ class LoginView(APIView):
 
             full_host = request.get_host().split(':')[0]
             schema_name = full_host.split('.')[0]
-            try:
-                tenant = Tenant.objects.get(schema_name__exact=schema_name)
-                connection.set_schema(schema_name)
-            except Tenant.DoesNotExist:
-                return Response({'error': 'Tenant not found for this schema.'},
-                                status=status.HTTP_404_NOT_FOUND)
+
             connection.set_schema('public')
             try:
                 user = User.objects.get(email=email)
             except User.DoesNotExist:
                 return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+            try:
+                tenant = Tenant.objects.get(schema_name__exact=schema_name)
+            except Tenant.DoesNotExist:
+                return Response({'error': 'Tenant not found.'},
+                                status=status.HTTP_404_NOT_FOUND)
+
+            # if not tenant.is_verified:
+            #     return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
             connection.set_schema(schema_name)
             try:
                 tenant_user = TenantUser.objects.get(user_id=user.id, tenant=tenant)
-                if tenant_user.tenant_password and not tenant_user.check_tenant_password(password):
+                if tenant_user.password and not tenant_user.check_tenant_password(password):
                     return Response({'error': 'Invalid credentials'},
                                     status=status.HTTP_401_UNAUTHORIZED)
                 connection.set_schema('public')
                 user = authenticate(request, email=email, password=password)
-                print("USER", user)
                 auth_login(request, user)
                 refresh = RefreshToken.for_user(user)
                 refresh['tenant_id'] = tenant_user.tenant.id
@@ -158,7 +160,7 @@ class LoginView(APIView):
                 }, status=status.HTTP_200_OK)
 
             except TenantUser.DoesNotExist:
-                return Response({'error': 'User is not associated with this tenant.'},
+                return Response({'error': 'User does not have access this tenant.'},
                                 status=status.HTTP_404_NOT_FOUND)
 
 class RequestForgottenPasswordView(APIView):

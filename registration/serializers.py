@@ -1,3 +1,4 @@
+from django.contrib.auth.hashers import make_password
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
@@ -85,7 +86,7 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
                 user_profile = existing_user.profile
                 if not user_profile.allow_multiple_tenants:
                     raise serializers.ValidationError({"email": "A user with this email already exists."})
-                tenant_count = TenantUser.objects.filter(user=existing_user).count()
+                tenant_count = Tenant.objects.filter(created_by=existing_user).count()
                 if tenant_count >= user_profile.max_tenants:
                     raise serializers.ValidationError({"email": "This user has reached the maximum allowed tenants."})
 
@@ -95,9 +96,12 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         otp, hashed_otp = generate_otp()
-
+        print("Validated", validated_data)
         email = user_data.get('email')
-        password = user_data.get('password')
+        password = user_data.get('password1')
+        print("PASS", password)
+        password = make_password(password)
+        print("PASS 2", password)
 
         existing_user = User.objects.filter(email=email).first()
         if existing_user:
@@ -123,9 +127,10 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
             tenant_user = TenantUser.objects.create(
                 user_id=user.id,
                 tenant=tenant,
-                role=admin_group
+                role=admin_group,
+                password=password
             )
-            tenant_user.set_tenant_password(password)
+            # tenant_user.set_tenant_password(password)
             tenant_user.save()
 
         return tenant, otp
