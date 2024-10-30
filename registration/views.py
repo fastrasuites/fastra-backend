@@ -40,10 +40,8 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Create tenant, user, and generate OTP
             tenant, otp = serializer.save()
 
-            # Create domain for tenant
             api_base_domain = settings.API_BASE_DOMAIN
             sanitized_name = slugify(tenant.schema_name, allow_unicode=True)
 
@@ -52,8 +50,7 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
                 tenant=tenant,
                 is_primary=True
             )
-
-            # Send OTP via email for email verification
+            verification_url = f"https://{domain.domain}/api/company/email-verify?token={otp}&tenant="
             email_body = (
                 f"Hi {tenant.company_name},\n\n"
                 f"Thank you for registering. Your OTP for email verification is: {otp}\n\n"

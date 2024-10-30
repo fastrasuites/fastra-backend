@@ -6,6 +6,8 @@ from rest_framework import viewsets, generics
 from rest_framework import status
 from django.utils.text import slugify
 from django.contrib.auth import login, authenticate, get_user_model
+
+from users.models import TenantUser
 from .models import CompanyProfile, OTP
 from registration.models import Tenant, Domain
 from .serializers import TenantSerializer, LoginSerializer, \
@@ -29,6 +31,7 @@ from .permissions import IsAdminUser
 from django.db import transaction, connection
 from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
+from django.contrib.auth import login as auth_login
 
 class VerifyEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]
@@ -109,58 +112,54 @@ class LoginView(APIView):
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
 
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
+
         if serializer.is_valid():
             email = serializer.validated_data['email']
             password = serializer.validated_data['password']
+
+            full_host = request.get_host().split(':')[0]
+            schema_name = full_host.split('.')[0]
+            try:
+                tenant = Tenant.objects.get(schema_name__exact=schema_name)
+                connection.set_schema(schema_name)
+            except Tenant.DoesNotExist:
+                return Response({'error': 'Tenant not found for this schema.'},
+                                status=status.HTTP_404_NOT_FOUND)
             connection.set_schema('public')
-            user = authenticate(request, email=email, password=password)
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
-            if user is not None:
-                if user.profile.is_verified:
-                    login(request, user)
-                    refresh = RefreshToken.for_user(user)
-                    print(refresh.payload)
-                    # Get the tenant associated with the user
-                    try:
-                        # tenant = Tenant.objects.get(user=user)
-                        # domain = Domain.objects.get(tenant=tenant)
+            connection.set_schema(schema_name)
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id, tenant=tenant)
+                if tenant_user.tenant_password and not tenant_user.check_tenant_password(password):
+                    return Response({'error': 'Invalid credentials'},
+                                    status=status.HTTP_401_UNAUTHORIZED)
+                connection.set_schema('public')
+                user = authenticate(request, email=email, password=password)
+                print("USER", user)
+                auth_login(request, user)
+                refresh = RefreshToken.for_user(user)
+                refresh['tenant_id'] = tenant_user.tenant.id
 
-                        # refresh['tenant_id'] = tenant.id
-                        # refresh['domain'] = domain.domain
+                return Response({
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': {
+                        'id': user.id,
+                        'username': user.username,
+                        'email': user.email,
+                    }
+                }, status=status.HTTP_200_OK)
 
-                        print(refresh.payload)
-
-                        # Construct the tenant-specific URL
-                        # tenant_url = f"{domain.domain}"
-
-                        # Set the schema to be used in the current request
-                        # connection.set_schema(tenant.schema_name)
-                        # with schema_context(tenant.schema_name):
-                            # pass
-
-                        return Response({
-                                'refresh': str(refresh),
-                                'access': str(refresh.access_token),
-                                'user': {
-                                    'id': user.id,
-                                    'username': user.username,
-                                    'email': user.email,
-                                },
-                                # 'redirect_url': tenant_url
-                            }, status=status.HTTP_200_OK)
-                        
-                    except (Tenant.DoesNotExist, Domain.DoesNotExist):
-                        return Response({'error': 'Tenant or domain not found for this user.'},
-                                        status=status.HTTP_404_NOT_FOUND)
-                else:
-                    return Response({'error': 'Please verify your email before logging in.'},
-                                    status=status.HTTP_403_FORBIDDEN)
-            else:
-                return Response({'error': 'Invalid credentials'},
-                                status=status.HTTP_401_UNAUTHORIZED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            except TenantUser.DoesNotExist:
+                return Response({'error': 'User is not associated with this tenant.'},
+                                status=status.HTTP_404_NOT_FOUND)
 
 class RequestForgottenPasswordView(APIView):
     serializer_class = RequestForgottenPasswordSerializer

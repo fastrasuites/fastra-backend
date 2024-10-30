@@ -35,13 +35,13 @@ class TenantUser(models.Model):
     in_app_notifications = models.BooleanField(default=False)
     email_notifications = models.BooleanField(default=False)
     is_hidden = models.BooleanField(default=False)
-    tenant_password = models.CharField(max_length=128, blank=True, null=True)
+    password = models.CharField(max_length=128, blank=True, null=True)
 
     def set_tenant_password(self, raw_password):
-        self.tenant_password = make_password(raw_password)
+        self.password = make_password(raw_password)
 
     def check_tenant_password(self, raw_password):
-        return check_password(raw_password, self.tenant_password)
+        return check_password(raw_password, self.password)
 
     @property
     def user(self):
