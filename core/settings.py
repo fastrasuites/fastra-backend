@@ -370,3 +370,4 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'fastrasuite.com')
 # API_BASE_DOMAIN = 'localhost'
+FRONTEND_URL=os.getenv("FRONTEND_URL", 'https://fastrasuite.com')

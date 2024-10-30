@@ -50,12 +50,21 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
                 tenant=tenant,
                 is_primary=True
             )
-            verification_url = f"https://{domain.domain}/api/company/email-verify?token={otp}&tenant="
+            frontend_url = settings.FRONTEND_URL
+            verification_url = f"{frontend_url}/email-verify?token={otp}&tenant={tenant.schema_name}"
+
+            # email_body = (
+            #     f"Hi {tenant.company_name},\n\n"
+            #     f"Thank you for registering. Your OTP for email verification is: {otp}\n\n"
+            #     f"Please use this OTP to verify your email address and complete your registration."
+            # )
             email_body = (
                 f"Hi {tenant.company_name},\n\n"
-                f"Thank you for registering. Your OTP for email verification is: {otp}\n\n"
-                f"Please use this OTP to verify your email address and complete your registration."
+                f"Thank you for registering. To complete your registration, please verify your email by clicking the link below:\n\n"
+                f"{verification_url}\n\n"
+                f"If you did not register for an account, please ignore this email."
             )
+            print(email_body)
             email_data = {
                 'email_body': email_body,
                 'to_email': tenant.created_by.email,

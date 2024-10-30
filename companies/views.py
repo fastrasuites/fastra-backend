@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework.views import APIView
 from django.shortcuts import render, redirect
 from django.urls import reverse
@@ -7,6 +8,7 @@ from rest_framework import status
 from django.utils.text import slugify
 from django.contrib.auth import login, authenticate, get_user_model
 
+from registration.utils import check_otp_time_expired, compare_password
 from users.models import TenantUser
 from .models import CompanyProfile, OTP
 from registration.models import Tenant, Domain
@@ -35,43 +37,41 @@ from django.contrib.auth import login as auth_login
 
 class VerifyEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]
-    def get(self, request):
-        token = request.GET.get('token')
-        # frontend_url = request.GET.get('frontend_url', 'http://localhost:3000')
-        # current_site = get_current_site(self.request).domain
 
-        if not token:
-            return Response({'error': 'No token provided'}, status=status.HTTP_400_BAD_REQUEST)
+    def get(self, request):
+        otp_token = request.GET.get('token')
+        current_site = get_current_site(request).domain
+
+        if not otp_token:
+            return Response({'error': 'No Token provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Extract tenant subdomain/schema name from the request's current site domain
+        tenant_subdomain = current_site.split('.')[0]
 
         try:
-            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-            user = User.objects.get(email=payload['email'])
+            # Find tenant based on the extracted subdomain
+            tenant = Tenant.objects.get(schema_name=tenant_subdomain)
 
-            if not user.profile.is_verified:
-                user.profile.is_verified = True
-                user.profile.save()
-                status_message = 'Email successfully verified'
+            # Validate the OTP
+            if not compare_password(otp_token, tenant.otp):
+                return Response({'status': 'invalid', 'message': 'Invalid Token.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Check if OTP is expired
+            if check_otp_time_expired(tenant.otp_requested_at):
+                return Response({'status': 'expired', 'message': 'Token has expired.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+            # Toggle verification status if OTP is valid and has not expired
+            if not tenant.is_verified:
+                tenant.is_verified = True
+                tenant.otp_verified_at = timezone.now()
+                tenant.save()
+                return Response({'status': 'verified', 'message': 'Email successfully verified.'}, status=status.HTTP_200_OK)
             else:
-                status_message = 'Email already verified'
+                return Response({'status': 'already_verified', 'message': 'Email already verified.'}, status=status.HTTP_200_OK)
 
-            # Construct tenant-specific frontend URL
-            tenant_subdomain = payload['tenant']  # Assuming tenant info is included in the token
-            frontend_url = f"https://{tenant_subdomain}.fastrasuite.com/email-verify-status"
-
-            # Redirect with status and token
-            redirect_url = f"{frontend_url}?status={status_message}&token={token}"
-            return redirect(redirect_url)
-
-        except jwt.ExpiredSignatureError:
-            # Redirect with expiration status and token for resending
-            tenant_subdomain = payload['tenant'] if 'tenant' in locals() else 'default'  # Handle case if tenant is not found
-            frontend_url = f"https://{tenant_subdomain}.fastrasuite.com/email-verify-status"
-            redirect_url = f"{frontend_url}?status=expired&token={token}"
-            return redirect(redirect_url)
-        except jwt.DecodeError:
-            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({'error': 'User does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+        except Tenant.DoesNotExist:
+            return Response({'error': 'Tenant not found.'}, status=status.HTTP_404_NOT_FOUND)
         
 class ResendVerificationEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]

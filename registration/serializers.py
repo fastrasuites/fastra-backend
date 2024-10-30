@@ -97,6 +97,8 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
         otp, hashed_otp = generate_otp()
 
         email = user_data.get('email')
+        password = user_data.get('password')
+
         existing_user = User.objects.filter(email=email).first()
         if existing_user:
             user = existing_user
@@ -118,10 +120,12 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
 
         with tenant_context(tenant):
             admin_group, created = Group.objects.get_or_create(name='Admin')
-            TenantUser.objects.create(
+            tenant_user = TenantUser.objects.create(
                 user_id=user.id,
                 tenant=tenant,
                 role=admin_group
             )
+            tenant_user.set_tenant_password(password)
+            tenant_user.save()
 
         return tenant, otp
