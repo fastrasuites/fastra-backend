@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework.views import APIView
 from django.shortcuts import render, redirect
 from django.urls import reverse
@@ -6,6 +7,9 @@ from rest_framework import viewsets, generics
 from rest_framework import status
 from django.utils.text import slugify
 from django.contrib.auth import login, authenticate, get_user_model
+
+from registration.utils import check_otp_time_expired, compare_password
+from users.models import TenantUser
 from .models import CompanyProfile, OTP
 from registration.models import Tenant, Domain
 from .serializers import TenantSerializer, LoginSerializer, \
@@ -26,50 +30,53 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import PermissionDenied
 from .permissions import IsAdminUser
-from django.db import transaction
+from django.db import transaction, connection
 from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
+from django.contrib.auth import login as auth_login
+
 
 class VerifyEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]
-    def get(self, request):
-        token = request.GET.get('token')
-        # frontend_url = request.GET.get('frontend_url', 'http://localhost:3000')
-        # current_site = get_current_site(self.request).domain
 
-        if not token:
-            return Response({'error': 'No token provided'}, status=status.HTTP_400_BAD_REQUEST)
+    def get(self, request):
+        otp_token = request.GET.get('token')
+        current_site = get_current_site(request).domain
+
+        if not otp_token:
+            return Response({'error': 'No Token provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Extract tenant subdomain/schema name from the request's current site domain
+        tenant_subdomain = current_site.split('.')[0]
 
         try:
-            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-            user = User.objects.get(email=payload['email'])
+            # Find tenant based on the extracted subdomain
+            tenant = Tenant.objects.get(schema_name=tenant_subdomain)
 
-            if not user.profile.is_verified:
-                user.profile.is_verified = True
-                user.profile.save()
-                status_message = 'Email successfully verified'
+            # Validate the OTP
+            if not compare_password(otp_token, tenant.otp):
+                return Response({'status': 'invalid', 'message': 'Invalid Token.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Check if OTP is expired
+            if check_otp_time_expired(tenant.otp_requested_at):
+                return Response({'status': 'expired', 'message': 'Token has expired.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Toggle verification status if OTP is valid and has not expired
+            if not tenant.is_verified:
+                tenant.is_verified = True
+                tenant.otp_verified_at = timezone.now()
+                tenant.save()
+                return Response({'status': 'verified', 'message': 'Email successfully verified.'},
+                                status=status.HTTP_200_OK)
             else:
-                status_message = 'Email already verified'
+                return Response({'status': 'already_verified', 'message': 'Email already verified.'},
+                                status=status.HTTP_200_OK)
 
-            # Construct tenant-specific frontend URL
-            tenant_subdomain = payload['tenant']  # Assuming tenant info is included in the token
-            frontend_url = f"https://{tenant_subdomain}.fastrasuite.com/email-verify-status"
+        except Tenant.DoesNotExist:
+            return Response({'error': 'Tenant not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-            # Redirect with status and token
-            redirect_url = f"{frontend_url}?status={status_message}&token={token}"
-            return redirect(redirect_url)
 
-        except jwt.ExpiredSignatureError:
-            # Redirect with expiration status and token for resending
-            tenant_subdomain = payload['tenant'] if 'tenant' in locals() else 'default'  # Handle case if tenant is not found
-            frontend_url = f"https://{tenant_subdomain}.fastrasuite.com/email-verify-status"
-            redirect_url = f"{frontend_url}?status=expired&token={token}"
-            return redirect(redirect_url)
-        except jwt.DecodeError:
-            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({'error': 'User does not exist'}, status=status.HTTP_400_BAD_REQUEST)
-        
 class ResendVerificationEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
@@ -77,8 +84,7 @@ class ResendVerificationEmail(generics.GenericAPIView):
         token = request.GET.get('token')
         if not token:
             return Response({'error': 'Token is missing'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        
+
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
             user = User.objects.get(email=payload['email'])
@@ -111,55 +117,54 @@ class LoginView(APIView):
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
+
         if serializer.is_valid():
             email = serializer.validated_data['email']
             password = serializer.validated_data['password']
-            user = authenticate(request, email=email, password=password)
 
-            if user is not None:
-                if user.profile.is_verified:
-                    login(request, user)
-                    refresh = RefreshToken.for_user(user)
-                    print(refresh.payload)
-                    # Get the tenant associated with the user
-                    try:
-                        # tenant = Tenant.objects.get(user=user)
-                        # domain = Domain.objects.get(tenant=tenant)
+            full_host = request.get_host().split(':')[0]
+            schema_name = full_host.split('.')[0]
 
-                        # refresh['tenant_id'] = tenant.id
-                        # refresh['domain'] = domain.domain
+            connection.set_schema('public')
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+            try:
+                tenant = Tenant.objects.get(schema_name__exact=schema_name)
+            except Tenant.DoesNotExist:
+                return Response({'error': 'Tenant not found.'},
+                                status=status.HTTP_404_NOT_FOUND)
 
-                        print(refresh.payload)
+            # if not tenant.is_verified:
+            #     return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
-                        # Construct the tenant-specific URL
-                        # tenant_url = f"{domain.domain}"
+            connection.set_schema(schema_name)
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id, tenant=tenant)
+                if tenant_user.password and not tenant_user.check_tenant_password(password):
+                    return Response({'error': 'Invalid credentials'},
+                                    status=status.HTTP_401_UNAUTHORIZED)
+                connection.set_schema('public')
+                user = authenticate(request, email=email, password=password)
+                auth_login(request, user)
+                refresh = RefreshToken.for_user(user)
+                refresh['tenant_id'] = tenant_user.tenant.id
 
-                        # Set the schema to be used in the current request
-                        # connection.set_schema(tenant.schema_name)
-                        # with schema_context(tenant.schema_name):
-                            # pass
+                return Response({
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': {
+                        'id': user.id,
+                        'username': user.username,
+                        'email': user.email,
+                    }
+                }, status=status.HTTP_200_OK)
 
-                        return Response({
-                                'refresh': str(refresh),
-                                'access': str(refresh.access_token),
-                                'user': {
-                                    'id': user.id,
-                                    'username': user.username,
-                                    'email': user.email,
-                                },
-                                # 'redirect_url': tenant_url
-                            }, status=status.HTTP_200_OK)
-                        
-                    except (Tenant.DoesNotExist, Domain.DoesNotExist):
-                        return Response({'error': 'Tenant or domain not found for this user.'},
-                                        status=status.HTTP_404_NOT_FOUND)
-                else:
-                    return Response({'error': 'Please verify your email before logging in.'},
-                                    status=status.HTTP_403_FORBIDDEN)
-            else:
-                return Response({'error': 'Invalid credentials'},
-                                status=status.HTTP_401_UNAUTHORIZED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            except TenantUser.DoesNotExist:
+                return Response({'error': 'User does not have access this tenant.'},
+                                status=status.HTTP_404_NOT_FOUND)
+
 
 class RequestForgottenPasswordView(APIView):
     serializer_class = RequestForgottenPasswordSerializer
@@ -175,7 +180,7 @@ class RequestForgottenPasswordView(APIView):
                     return Response({'error': 'Email is not verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
                 otp = OTP.objects.create(user=user)
-                
+
                 send_mail(
                     'Forgotten Password OTP',
                     f'Your OTP for forgotten password is: {otp.code}',
@@ -226,16 +231,18 @@ class ResendOTPView(APIView):
     def post(self, request):
         email = request.session.get('forgotten_password_email')
         if not email:
-            return Response({'error': 'No email found in session. Please initiate the forgotten password process again.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'No email found in session. Please initiate the forgotten password process again.'},
+                status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user = User.objects.get(email=email)
             # Invalidate any existing OTPs
             OTP.objects.filter(user=user, is_used=False).update(is_used=True)
-            
+
             # Create new OTP
             otp = OTP.objects.create(user=user)
-            
+
             # Send email with new OTP
             send_mail(
                 'New Forgotten Password OTP',
@@ -247,6 +254,7 @@ class ResendOTPView(APIView):
             return Response({'message': 'New OTP sent successfully'}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({'error': 'No user found with this email address'}, status=status.HTTP_404_NOT_FOUND)
+
 
 class TenantViewSet(viewsets.ModelViewSet):
     queryset = Tenant.objects.all()
@@ -274,7 +282,6 @@ class UpdateCompanyProfileView(generics.UpdateAPIView):
             instance._prefetched_objects_cache = {}
 
         return Response(serializer.data)
-    
 
     def handle_exception(self, exc):
         if isinstance(exc, PermissionDenied):
