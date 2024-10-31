@@ -115,9 +115,10 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
             company_name=validated_data['company_name'],
             otp=hashed_otp,
             otp_requested_at=timezone.now(),
-            created_by=user
+            created_by=user,
+            is_verified=False
         )
-
+        tenant.save()
         with tenant_context(tenant):
             admin_group, created = Group.objects.get_or_create(name='Admin')
             tenant_user = TenantUser.objects.create(
