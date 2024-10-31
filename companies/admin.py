@@ -1,7 +1,8 @@
 from django.contrib import admin
 from django_tenants.admin import TenantAdminMixin
 
-from .models import Tenant, Domain
+from registration.models import Domain
+from .models import Tenant
 
 
 class DomainInline(admin.TabularInline):

@@ -5,3 +5,6 @@
 *.vscode/
 *.idea/
 media/
+properties.html
+properties.xlsx
+scr*.py

@@ -1,12 +1,20 @@
+from django.contrib.auth.hashers import make_password
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
-from .models import Tenant
-from django.contrib.auth.models import User
+
+from users.models import TenantUser
+# from accounting.models import TenantUser
+from .models import Tenant, UserProfile
+from django.contrib.auth.models import User, Group
 from django.contrib.auth.password_validation import validate_password
 from django.utils.text import slugify
 
 from django_tenants.utils import schema_context
 from django_tenants.utils import tenant_context
-from companies.models import UserProfile
+
+from .utils import generate_otp
+
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -14,9 +22,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = ['is_verified']
         read_only_fields = ['is_verified']
 
+
 def generate_default_username(company_name):
     company_name_parts = company_name.split()
     return f"admin_{slugify('_'.join(company_name_parts))}"
+
 
 class UserSerializer(serializers.ModelSerializer):
     password1 = serializers.CharField(write_only=True, required=True, validators=[validate_password])
@@ -35,7 +45,6 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"password2": "Password fields didn't match."})
         return attrs
 
-    
     def create(self, validated_data):
         validated_data.pop('password2')
         user = User.objects.create_superuser(
@@ -50,9 +59,9 @@ class UserSerializer(serializers.ModelSerializer):
         ret['is_verified'] = instance.profile.is_verified if hasattr(instance, 'profile') else False
         return ret
 
+
 class TenantRegistrationSerializer(serializers.ModelSerializer):
     user = UserSerializer()
-    # frontend_url = serializers.URLField(required=False)
 
     class Meta:
         model = Tenant
@@ -60,15 +69,8 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
 
     def validate_company_name(self, value):
         if Tenant.objects.filter(company_name__iexact=value).exists():
-            raise serializers.ValidationError("A tenant with this company name already exists.")
+            raise serializers.ValidationError("A tenant with the provided company name already exists.")
         return value
-
-    def validate_schema_name(self, value):
-        schema_name = slugify(value)
-        if Tenant.objects.filter(schema_name__iexact=schema_name).exists():
-            raise serializers.ValidationError("A tenant with this schema name already exists.")
-        return schema_name
-
 
     def validate(self, data):
         user_data = data.get('user', {})
@@ -79,37 +81,52 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
         if not user_serializer.is_valid():
             raise serializers.ValidationError({"user": user_serializer.errors})
 
-        # Validate email uniqueness
         email = user_data.get('email')
-        if email and User.objects.filter(email=email).exists():
-            raise serializers.ValidationError({"email": "A user with this email already exists."})
+        if email:
+            existing_user = User.objects.filter(email=email).first()
+            if existing_user:
+                user_profile = existing_user.profile
+                if not user_profile.allow_multiple_tenants:
+                    raise serializers.ValidationError({"email": "A user with this email already exists."})
+                tenant_count = Tenant.objects.filter(created_by=existing_user).count()
+                if tenant_count >= user_profile.max_tenants:
+                    raise serializers.ValidationError({"email": "This user has reached the maximum allowed tenants."})
 
         return data
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
-        
-        # Create Tenant first
-        schema_name = self.validate_schema_name(validated_data['company_name'])
-        tenant = Tenant.objects.create(
-            schema_name=schema_name,
-            company_name=validated_data['company_name']
-        )
+        otp, hashed_otp = generate_otp()
+        email = user_data.get('email')
+        password = user_data.get('password1')
+        # password = make_password(password)
 
-        # Generate username based on company name if not provided
-        if 'username' not in user_data:
-            user_data['username'] = generate_default_username(validated_data['company_name'])
-
-        # Create User within Tenant context
-        with tenant_context(tenant):
+        existing_user = User.objects.filter(email=email).first()
+        if existing_user:
+            user = existing_user
+        else:
             user_serializer = UserSerializer(data=user_data)
             user_serializer.is_valid(raise_exception=True)
             user = user_serializer.save()
 
-            # Associate user with tenant
-            tenant.user = user
-            tenant.save()
+        schema_name = slugify(validated_data['company_name'])
+        tenant = Tenant.objects.create(
+            schema_name=schema_name,
+            company_name=validated_data['company_name'],
+            otp=hashed_otp,
+            otp_requested_at=timezone.now(),
+            created_by=user
+        )
 
-        return tenant
-    
-    
+        with tenant_context(tenant):
+            admin_group, created = Group.objects.get_or_create(name='Admin')
+            tenant_user = TenantUser.objects.create(
+                user_id=user.id,
+                tenant=tenant,
+                role=admin_group,
+                # password=password
+            )
+            tenant_user.set_tenant_password(password)
+            tenant_user.save()
+
+        return tenant, otp

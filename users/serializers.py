@@ -1,10 +1,14 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User, Group, Permission
-from .models import TenantUser
 import re
 from django.utils.translation import gettext as _
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.contrib.auth.password_validation import validate_password
+
+from users.models import TenantUser
+
+
+# from accounting.models import TenantUser
 
 class PermissionSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='permission-detail')
@@ -22,6 +26,7 @@ class PermissionSerializer(serializers.HyperlinkedModelSerializer):
         instance.save()
         return instance
 
+
 class GroupSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='group-detail')
 
@@ -36,6 +41,7 @@ class GroupSerializer(serializers.HyperlinkedModelSerializer):
         instance.name = validated_data.get('name', instance.name)
         instance.save()
         return instance
+
 
 class GroupPermissionSerializer(serializers.Serializer):
     url = serializers.HyperlinkedIdentityField(view_name='group-permissions-detail')
@@ -65,6 +71,7 @@ class GroupPermissionSerializer(serializers.Serializer):
         representation = super().to_representation(instance)
         representation['permission_names'] = self.get_permission_names(instance)
         return representation
+
 
 class UserSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='user-detail')
@@ -111,15 +118,17 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         instance.save()
         return instance
 
+
 class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='tenant-user-detail')
     user = UserSerializer()
     # user = serializers.HyperlinkedRelatedField(view_name='user-detail', queryset=User.objects.all())
-    groups = serializers.HyperlinkedRelatedField(queryset=Group.objects.all(), many=True, view_name='group-detail', required=False)
+    groups = serializers.HyperlinkedRelatedField(queryset=Group.objects.all(), many=True, view_name='group-detail',
+                                                 required=False)
 
     class Meta:
         model = TenantUser
-        fields = ['url', 'id', 'user', 'role', 'phone_number', 'language', 'timezone', 
+        fields = ['url', 'id', 'user', 'role', 'phone_number', 'language', 'timezone',
                   'in_app_notifications', 'email_notifications', 'groups']
 
     def validate(self, data):
@@ -137,7 +146,8 @@ class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
 
         username = user_data.get('username')
         if username and not re.match(r'^[a-zA-Z\s]+$', username):
-            raise serializers.ValidationError({"username": _("Enter a valid username. This value may contain only letters and spaces.")})
+            raise serializers.ValidationError(
+                {"username": _("Enter a valid username. This value may contain only letters and spaces.")})
 
         return data
 
@@ -157,7 +167,7 @@ class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
             user_serializer = UserSerializer(instance.user, data=user_data, partial=True)
             if user_serializer.is_valid():
                 user_serializer.save()
-        
+
         groups = validated_data.pop('groups', None)
         if groups is not None:
             instance.user.groups.set(groups)
@@ -166,6 +176,7 @@ class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         return instance
+
 
 class PasswordChangeSerializer(serializers.Serializer):
     old_password = serializers.CharField(min_length=8, max_length=128, write_only=True)
