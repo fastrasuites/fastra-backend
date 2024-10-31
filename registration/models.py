@@ -30,8 +30,7 @@ class Domain(DomainMixin):
     """
     Domain model representing the tenant's domain.
     """
-    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE)
-    is_primary = models.BooleanField(default=True)
+    pass
 
 
 
