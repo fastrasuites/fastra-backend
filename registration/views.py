@@ -70,7 +70,7 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
                 'to_email': tenant.created_by.email,
                 'email_subject': 'Verify Your Email'
             }
-            Util.send_email(email_data)
+            # Util.send_email(email_data)
             return Response({
                 'detail': 'Tenant created successfully. Please verify your email with the OTP sent.',
                 'tenant_url': f"https://{domain.domain}"
