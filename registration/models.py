@@ -23,7 +23,7 @@ class Tenant(TenantMixin):
     otp = models.CharField(max_length=255, null=True)
     otp_requested_at = models.DateTimeField(null=False, default=timezone.now)
     otp_verified_at = models.DateTimeField(null=True)
-    is_verified = models.BooleanField(default=False, null=False, blank=False)
+    is_verified = models.BooleanField(default=False)
 
 
 class Domain(DomainMixin):
