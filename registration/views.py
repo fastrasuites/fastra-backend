@@ -64,13 +64,12 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
                 f"{verification_url}\n\n"
                 f"If you did not register for an account, please ignore this email."
             )
-            print(email_body)
             email_data = {
                 'email_body': email_body,
                 'to_email': tenant.created_by.email,
                 'email_subject': 'Verify Your Email'
             }
-            # Util.send_email(email_data)
+            Util.send_email(email_data)
             return Response({
                 'detail': 'Tenant created successfully. Please verify your email with the OTP sent.',
                 'tenant_url': f"https://{domain.domain}"
