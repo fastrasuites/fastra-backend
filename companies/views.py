@@ -136,8 +136,8 @@ class LoginView(APIView):
                 return Response({'error': 'Tenant not found.'},
                                 status=status.HTTP_404_NOT_FOUND)
 
-            # if not tenant.is_verified:
-            #     return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not tenant.is_verified:
+                return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
             connection.set_schema(schema_name)
             try:
