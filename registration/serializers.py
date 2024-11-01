@@ -101,6 +101,9 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
         password = user_data.get('password1')
         # password = make_password(password)
 
+        if 'username' not in user_data:
+            user_data['username'] = generate_default_username(validated_data['company_name'])
+
         existing_user = User.objects.filter(email=email).first()
         if existing_user:
             user = existing_user
