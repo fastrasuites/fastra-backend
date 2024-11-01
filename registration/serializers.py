@@ -120,6 +120,10 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
         )
         tenant.save()
         with tenant_context(tenant):
+            from django.core.management import call_command
+            call_command('migrate', app_label='registration', database='default')
+
+        with tenant_context(tenant):
             admin_group, created = Group.objects.get_or_create(name='Admin')
             tenant_user = TenantUser.objects.create(
                 user_id=user.id,
