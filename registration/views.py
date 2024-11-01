@@ -78,5 +78,5 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
         except Exception as e:
             print(e)
             transaction.set_rollback(True)
-            return Response({'detail': 'An error occurred during registration. Please try again.'},
+            return Response({'detail': f'An error occurred during registration. Please try again. {str(e)}'},
                             status=status.HTTP_400_BAD_REQUEST)
