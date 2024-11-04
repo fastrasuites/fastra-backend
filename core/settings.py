@@ -371,4 +371,4 @@ SIMPLE_JWT = {
 CORS_ALLOW_ALL_ORIGINS = True
 
 API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'fastrasuite.com')
-FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastra-frontend.vercel.app/')
+FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastra-frontend.vercel.app')
