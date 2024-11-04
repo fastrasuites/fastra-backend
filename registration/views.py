@@ -51,7 +51,7 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
                 is_primary=True
             )
             frontend_url = settings.FRONTEND_URL
-            verification_url = f"{frontend_url}/email-verify?token={otp}&tenant={tenant.schema_name}"
+            verification_url = f"{frontend_url}/verify-email?token={otp}&tenant={tenant.schema_name}"
 
             # email_body = (
             #     f"Hi {tenant.company_name},\n\n"
