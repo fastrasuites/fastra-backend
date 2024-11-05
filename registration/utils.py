@@ -25,7 +25,7 @@ def generate_otp():
     return otp, hashed_otp
 
 
-def check_otp_time_expired(otp_requested_at, duration=5, use_pyotp=False):
+def check_otp_time_expired(otp_requested_at, duration=60, use_pyotp=False):
     if not is_aware(otp_requested_at):
         otp_requested_at = make_aware(otp_requested_at)
 
