@@ -5,11 +5,12 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install necessary system dependencies
+# Install necessary system dependencies, including netcat
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     build-essential \
+    netcat \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory in the container
@@ -22,6 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire project into the container
 COPY . /app/
 
+# Copy the wait-for-it script and make it executable
 COPY wait-for-it.sh /wait-for-it.sh
 RUN chmod +x /wait-for-it.sh
 
