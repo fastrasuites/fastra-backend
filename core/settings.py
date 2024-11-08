@@ -69,6 +69,7 @@ CORS_ALLOW_METHODS = [
 SHARED_APPS = [
     'drf_spectacular',
     'django_tenants',
+    'corsheaders',
     'registration',
 
     # 'tenant_users.permissions',
@@ -84,7 +85,7 @@ SHARED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     # 'drf_yasg',
-    'corsheaders',
+
 ]
 
 TENANT_APPS = [
