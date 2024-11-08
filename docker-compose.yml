@@ -4,7 +4,7 @@ services:
   web:
     build: .
     container_name: fastra-web
-    command: gunicorn core.wsgi:application --bind unix:/gunicorn.sock
+    command: bash -c "python manage.py wait_for_db && gunicorn core.wsgi:application --bind unix:/gunicorn.sock"
     volumes:
       - /opt/fastra-backend:/app
       - /opt/fastra-backend/staticfiles:/app/staticfiles
@@ -33,6 +33,12 @@ services:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_HOST_AUTH_METHOD=trust
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USER}", "-d", "${DB_NAME}", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+      timeout: 5s
     networks:
       - app_network
 
