@@ -45,7 +45,7 @@ CORS_ALLOWED_ORIGINS = [
     'https://www.fastra-frontend.vercel.app',
     'https://fastrasuite.com',
     'https://www.fastrasuite.com',
-    'https://*.fastra-frontend.vercel.app',
+    'https://*.fastrasuite.com',
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
