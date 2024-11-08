@@ -4,7 +4,7 @@ services:
   web:
     build: .
     container_name: fastra-web
-    command: bash -c "python /app/wait_for_postgres.py && gunicorn core.wsgi:application --bind unix:/gunicorn.sock"
+    command: bash -c "python /app/wait_for_postgres.py && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind unix:/gunicorn.sock"
     volumes:
       - /opt/fastra-backend:/app
       - /opt/fastra-backend/staticfiles:/app/staticfiles
