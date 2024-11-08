@@ -4,12 +4,11 @@ services:
   web:
     build: .
     container_name: fastra-web
-    command: bash -c "python /app/wait_for_postgres.py && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind unix:/gunicorn.sock"
+    command: bash -c "python /app/wait_for_postgres.py && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:8000"
     volumes:
       - /opt/fastra-backend:/app
       - /opt/fastra-backend/staticfiles:/app/staticfiles
       - /opt/fastra-backend/media:/app/media
-      - /opt/fastra-backend/gunicorn.sock:/gunicorn.sock
     environment:
       - DEBUG=False
       - DJANGO_SECRET_KEY=${SECRET_KEY}
@@ -23,6 +22,8 @@ services:
         condition: service_healthy
     networks:
       - app_network
+    expose:
+      - "8000"  # Expose port 8000 for communication between containers
 
   db:
     image: postgres:14
@@ -50,7 +51,6 @@ services:
       - /etc/nginx/sites-enabled/fastra-backend.conf
       - /opt/fastra-backend/staticfiles:/opt/fastra-backend/staticfiles
       - /opt/fastra-backend/media:/opt/fastra-backend/media
-      - /opt/fastra-backend/gunicorn.sock:/gunicorn.sock
     ports:
       - "80:80"
       - "443:443"

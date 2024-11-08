@@ -30,4 +30,7 @@ RUN mkdir -p /gunicorn
 EXPOSE 8000
 
 # Start Gunicorn, binding to a Unix socket instead of a TCP port
-CMD ["gunicorn", "core.wsgi:application", "--bind", "unix:/gunicorn.sock"]
+#CMD ["gunicorn", "core.wsgi:application", "--bind", "unix:/gunicorn.sock"]
+
+# Start Gunicorn, binding to a TCP port instead of a Unix socket
+CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000"]
