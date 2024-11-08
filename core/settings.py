@@ -29,7 +29,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'thisCan.beNot.a.secret.rightNow?')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG') == 'True'
-
+print("DEBUG", DEBUG)
 ALLOWED_HOSTS = [
     'localhost',
     '*',
@@ -37,9 +37,29 @@ ALLOWED_HOSTS = [
     'www.fastrasuite.com'
     '.fastrasuite.com',
     '*.fastrasuite.com',
-    '95.179.214.79'
+    '95.179.214.79',
+    'fastra-frontend.vercel.app',
+    'www.fastra-frontend.vercel.app',
+    '*.vercel.app',
+     'vercel.app',
+     '*.fastra-frontend.vercel.app',
+     'fastra-frontend.vercel'
 ]
 
+
+CORS_ORIGIN_WHITELIST = ALLOWED_HOSTS
+CORS_ALLOWED_ORIGINS = [
+    'https://fastra-frontend.vercel.app',
+    'https://www.fastra-frontend.vercel.app',
+    'https://fastrasuite.com',
+    'https://www.fastrasuite.com',
+]
+CORS_ALLOW_HEADERS = [
+    'Authorization',
+    'Content-Type',
+    'Accept',
+    'X-CSRFToken'
+]
 # Application definition
 
 SHARED_APPS = [
