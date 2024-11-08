@@ -23,12 +23,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire project into the container
 COPY . /app/
 
-# Copy the wait-for-it script and make it executable
-COPY wait-for-it.sh /wait-for-it.sh
-RUN chmod +x /wait-for-it.sh
+#COPY wait-for-it.sh /wait-for-it.sh
+#RUN chmod +x /wait-for-it.sh
 
 # Run the collectstatic command after ensuring the database is ready
-RUN /wait-for-it.sh db python manage.py collectstatic --noinput
+RUN python manage.py collectstatic --noinput
 
 # Create the directory for the Gunicorn socket
 RUN mkdir -p /gunicorn
