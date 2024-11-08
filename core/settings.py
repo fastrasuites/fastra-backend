@@ -30,15 +30,15 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'thisCan.beNot.a.secret.rightNow?')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = [
-    'localhost',
-    'fastrasuite.com',
-    'www.fastrasuite.com',
-    '95.179.214.79',
-    'fastra-frontend.vercel.app',
-    'www.fastra-frontend.vercel.app',
-    '*.vercel.app',
-]
+# ALLOWED_HOSTS = [
+#     'localhost',
+#     'fastrasuite.com',
+#     'www.fastrasuite.com',
+#     '95.179.214.79',
+#     'fastra-frontend.vercel.app',
+#     'www.fastra-frontend.vercel.app',
+#     '*.vercel.app',
+# ]
 
 CORS_ALLOWED_ORIGINS = [
     'https://fastra-frontend.vercel.app',
@@ -46,9 +46,9 @@ CORS_ALLOWED_ORIGINS = [
     'https://fastrasuite.com',
     'https://www.fastrasuite.com',
 ]
-
 CORS_ALLOW_ALL_ORIGINS = False
-# CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_CREDENTIALS = True
+
 
 # CORS_ALLOW_HEADERS = [
 #     'Authorization',
@@ -112,6 +112,14 @@ TENANT_APPS = [
 
     'companies',
 ]
+# For serving static files with WhiteNoise
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFileStorage'
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
 
@@ -206,9 +214,6 @@ SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
 
 PG_EXTRA_SEARCH_PATHS = ['extensions']
 
-MEDIA_URL = '/media/'
-# MEDIA_ROOT = os.path.join(BASE_DIR, '/media')
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 customColorPalette = [
     {
@@ -242,10 +247,7 @@ customColorPalette = [
 # STATICFILES_DIRS = [
 #     os.path.join(BASE_DIR, 'static'),
 # ]
-STATIC_URL = '/static/'
 
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-# STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFileStorage'
 STATICFILES_FINDERS = (
     "django.contrib.staticfiles.finders.FileSystemFinder",
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",
@@ -337,11 +339,13 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer' if DEBUG else 'rest_framework.renderers.JSONRenderer'
     ],
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
     ],
 }
+
 
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND')
@@ -383,7 +387,6 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
 
 API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'fastrasuite.com')
 FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastra-frontend.vercel.app')
