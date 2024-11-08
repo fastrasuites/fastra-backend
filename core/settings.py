@@ -40,14 +40,14 @@ ALLOWED_HOSTS = [
     '*.vercel.app',
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    'https://fastra-frontend.vercel.app',
-    'https://www.fastra-frontend.vercel.app',
-    'https://fastrasuite.com',
-    'https://www.fastrasuite.com',
-]
+# CORS_ALLOWED_ORIGINS = [
+#     'https://fastra-frontend.vercel.app',
+#     'https://www.fastra-frontend.vercel.app',
+#     'https://fastrasuite.com',
+#     'https://www.fastrasuite.com',
+# ]
 
-CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_ALL_ORIGINS = True
 # CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_HEADERS = [
@@ -57,14 +57,14 @@ CORS_ALLOW_HEADERS = [
     'X-CSRFToken',
 ]
 
-CORS_ALLOW_METHODS = [
-    'GET',
-    'POST',
-    'PUT',
-    'PATCH',
-    'DELETE',
-    'OPTIONS',
-]
+# CORS_ALLOW_METHODS = [
+#     'GET',
+#     'POST',
+#     'PUT',
+#     'PATCH',
+#     'DELETE',
+#     'OPTIONS',
+# ]
 
 SHARED_APPS = [
     'drf_spectacular',
