@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: fastra-web
+    command: gunicorn core.wsgi:application --bind unix:/gunicorn.sock
+    volumes:
+      - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+      - gunicorn_socket:/gunicorn.sock
+    environment:
+      - DEBUG=False
+      - DJANGO_SECRET_KEY=${SECRET_KEY}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_PORT=5432
+    depends_on:
+      - db
+    networks:
+      - app_network
+
+  db:
+    image: postgres:14
+    container_name: fastra-db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    networks:
+      - app_network
+
+  nginx:
+    image: nginx:latest
+    container_name: fastra-nginx
+    volumes:
+      - ./nginx:/etc/nginx/conf.d
+      - static_volume:/opt/fastra-backend/staticfiles
+      - media_volume:/opt/fastra-backend/media
+      - gunicorn_socket:/gunicorn.sock
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web
+    networks:
+      - app_network
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+  gunicorn_socket:
+
+networks:
+  app_network:
+    driver: bridge
