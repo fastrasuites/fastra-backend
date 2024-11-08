@@ -32,35 +32,40 @@ DEBUG = os.getenv('DEBUG') == 'True'
 print("DEBUG", DEBUG)
 ALLOWED_HOSTS = [
     'localhost',
-    '*',
     'fastrasuite.com',
-    'www.fastrasuite.com'
-    '.fastrasuite.com',
-    '*.fastrasuite.com',
+    'www.fastrasuite.com',
     '95.179.214.79',
     'fastra-frontend.vercel.app',
     'www.fastra-frontend.vercel.app',
     '*.vercel.app',
-     'vercel.app',
-     '*.fastra-frontend.vercel.app',
-     'fastra-frontend.vercel'
 ]
 
-
-CORS_ORIGIN_WHITELIST = ALLOWED_HOSTS
 CORS_ALLOWED_ORIGINS = [
     'https://fastra-frontend.vercel.app',
     'https://www.fastra-frontend.vercel.app',
     'https://fastrasuite.com',
     'https://www.fastrasuite.com',
+    'https://*.fastra-frontend.vercel.app',
 ]
+
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
 CORS_ALLOW_HEADERS = [
     'Authorization',
     'Content-Type',
     'Accept',
-    'X-CSRFToken'
+    'X-CSRFToken',
 ]
-# Application definition
+
+CORS_ALLOW_METHODS = [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+]
 
 SHARED_APPS = [
     'drf_spectacular',
@@ -123,6 +128,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     "corsheaders.middleware.CorsMiddleware",
+
 
     # Custom Middleware for tenant authentication
     # 'companies.middlewares.TenantMiddleware',
