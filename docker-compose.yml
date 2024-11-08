@@ -4,7 +4,7 @@ services:
   web:
     build: .
     container_name: fastra-web
-    command: bash -c "python manage.py wait_for_db && gunicorn core.wsgi:application --bind unix:/gunicorn.sock"
+    command: bash -c "python /app/wait_for_postgres.py && gunicorn core.wsgi:application --bind unix:/gunicorn.sock"
     volumes:
       - /opt/fastra-backend:/app
       - /opt/fastra-backend/staticfiles:/app/staticfiles
@@ -19,7 +19,8 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - app_network
 
