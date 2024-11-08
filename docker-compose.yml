@@ -6,10 +6,10 @@ services:
     container_name: fastra-web
     command: gunicorn core.wsgi:application --bind unix:/gunicorn.sock
     volumes:
-      - .:/app
-      - static_volume:/app/staticfiles
-      - media_volume:/app/media
-      - gunicorn_socket:/gunicorn.sock
+      - /opt/fastra-backend:/app
+      - /opt/fastra-backend/staticfiles:/app/staticfiles
+      - /opt/fastra-backend/media:/app/media
+      - /opt/fastra-backend/gunicorn.sock:/gunicorn.sock
     environment:
       - DEBUG=False
       - DJANGO_SECRET_KEY=${SECRET_KEY}
@@ -40,10 +40,10 @@ services:
     image: nginx:latest
     container_name: fastra-nginx
     volumes:
-      - ./nginx:/etc/nginx/conf.d
-      - static_volume:/opt/fastra-backend/staticfiles
-      - media_volume:/opt/fastra-backend/media
-      - gunicorn_socket:/gunicorn.sock
+      - /etc/nginx/sites-enabled:/etc/nginx/conf.d
+      - /opt/fastra-backend/staticfiles:/opt/fastra-backend/staticfiles
+      - /opt/fastra-backend/media:/opt/fastra-backend/media
+      - /opt/fastra-backend/gunicorn.sock:/gunicorn.sock
     ports:
       - "80:80"
       - "443:443"
@@ -54,9 +54,6 @@ services:
 
 volumes:
   postgres_data:
-  static_volume:
-  media_volume:
-  gunicorn_socket:
 
 networks:
   app_network:

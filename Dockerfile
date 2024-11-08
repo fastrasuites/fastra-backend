@@ -1,29 +1,35 @@
+# Use the official Python image
 FROM python:3.11-slim
 
-ENV PYTHONUNBUFFERED 1
-ENV PYTHONDONTWRITEBYTECODE 1
+# Set environment variables to prevent Python from buffering stdout/stderr
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
-RUN apt-get update && apt-get install -y libpq-dev
-
-# Set the working directory to /app in the container
-WORKDIR /app
-
-# Copy requirements.txt into the container
-COPY requirements.txt /app/
-
+# Install necessary system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install the dependencies
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy requirements.txt and install Python dependencies
+COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the project into the container
+# Copy the entire project into the container
 COPY . /app/
 
-# Expose the port Django will run on (default: 8000)
+# Collect static files
+RUN python manage.py collectstatic --noinput
+
+# Create the directory for the Gunicorn socket
+RUN mkdir -p /gunicorn
+
+# Expose the port (though it's not needed since we're using a Unix socket)
 EXPOSE 8000
 
-# Run the Django app using gunicorn for production
-CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000"]
+# Start Gunicorn, binding to a Unix socket instead of a TCP port
+CMD ["gunicorn", "core.wsgi:application", "--bind", "unix:/gunicorn.sock"]
