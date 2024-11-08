@@ -47,7 +47,7 @@ services:
     image: nginx:latest
     container_name: fastra-nginx
     volumes:
-      - /etc/nginx/sites-enabled:/etc/nginx/conf.d
+      - /etc/nginx/sites-enabled/fastra-backend.conf
       - /opt/fastra-backend/staticfiles:/opt/fastra-backend/staticfiles
       - /opt/fastra-backend/media:/opt/fastra-backend/media
       - /opt/fastra-backend/gunicorn.sock:/gunicorn.sock
