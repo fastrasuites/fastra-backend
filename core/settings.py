@@ -32,11 +32,10 @@ DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = [
     'localhost',
+    '127.0.0.1',
     'fastrasuite.com',
     'www.fastrasuite.com',
-    '95.179.214.79',
     'fastra-frontend.vercel.app',
-    'www.fastra-frontend.vercel.app',
     '*.vercel.app',
 ]
 
@@ -46,25 +45,25 @@ CORS_ALLOWED_ORIGINS = [
     'https://fastrasuite.com',
     'https://www.fastrasuite.com',
 ]
+
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'Authorization',
+    'Content-Type',
+    'Accept',
+    'X-CSRFToken',
+    'X-Requested-With',
+]
+CORS_ALLOW_METHODS = [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+]
 
-
-# CORS_ALLOW_HEADERS = [
-#     'Authorization',
-#     'Content-Type',
-#     'Accept',
-#     'X-CSRFToken',
-# ]
-
-# CORS_ALLOW_METHODS = [
-#     'GET',
-#     'POST',
-#     'PUT',
-#     'PATCH',
-#     'DELETE',
-#     'OPTIONS',
-# ]
 
 SHARED_APPS = [
     'drf_spectacular',
@@ -125,8 +124,8 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
 
 MIDDLEWARE = [
-    'django_tenants.middleware.main.TenantMainMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'django_tenants.middleware.main.TenantMainMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -136,6 +135,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
 
 ROOT_URLCONF = 'core.urls'
 

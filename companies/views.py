@@ -1,4 +1,5 @@
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
 from django.shortcuts import render, redirect
 from django.urls import reverse
@@ -39,6 +40,7 @@ from django.contrib.auth import login as auth_login
 class VerifyEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
+    @csrf_exempt
     def get(self, request):
         otp_token = request.GET.get('token')
         current_site = get_current_site(request).domain
