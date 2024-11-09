@@ -23,12 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire project into the container
 COPY . /app/
 
-# Create the directory for the Gunicorn socket
-RUN mkdir -p /gunicorn
-
-
+# Expose port 8000 to communicate with Gunicorn
 EXPOSE 8000
 
-
 # Start Gunicorn, binding to a TCP port instead of a Unix socket
-CMD ["gunicorn", "--bind", ":8000", "--workers", "3", "core.wsgi:application", "--bind"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "core.wsgi:application"]
