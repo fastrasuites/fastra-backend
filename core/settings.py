@@ -30,15 +30,15 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'thisCan.beNot.a.secret.rightNow?')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
-# ALLOWED_HOSTS = [
-#     'localhost',
-#     'fastrasuite.com',
-#     'www.fastrasuite.com',
-#     '95.179.214.79',
-#     'fastra-frontend.vercel.app',
-#     'www.fastra-frontend.vercel.app',
-#     '*.vercel.app',
-# ]
+ALLOWED_HOSTS = [
+    'localhost',
+    'fastrasuite.com',
+    'www.fastrasuite.com',
+    '95.179.214.79',
+    'fastra-frontend.vercel.app',
+    'www.fastra-frontend.vercel.app',
+    '*.vercel.app',
+]
 
 CORS_ALLOWED_ORIGINS = [
     'https://fastra-frontend.vercel.app',
