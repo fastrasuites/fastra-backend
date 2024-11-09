@@ -1,10 +1,10 @@
 version: '3.8'
 
 services:
-  web:
+  server:
     build: .
     container_name: fastra-web
-    hostname: web
+    hostname: server
     command: bash -c "python /app/wait_for_postgres.py && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:8000"
     volumes:
       - /opt/fastra-backend:/app
@@ -57,7 +57,7 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      - web
+      - server
     networks:
       - app_network
 

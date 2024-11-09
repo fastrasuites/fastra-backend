@@ -26,7 +26,5 @@ COPY . /app/
 # Expose port 8000 to communicate with Gunicorn
 EXPOSE 8000
 
-HEALTHCHECK CMD curl --fail http://localhost:8000 || exit 1
-
-# CMD to wait for the database and then start the app using Gunicorn
-CMD ["sh", "-c", "nc -z -v -w30 db 5432 && gunicorn --bind 0.0.0.0:8000 --workers 3 core.wsgi:application"]
+# Start Gunicorn, binding to a TCP port instead of a Unix socket
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "core.wsgi:application"]
