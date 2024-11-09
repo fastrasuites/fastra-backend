@@ -26,11 +26,9 @@ COPY . /app/
 # Create the directory for the Gunicorn socket
 RUN mkdir -p /gunicorn
 
-# Expose the port (though it's not needed since we're using a Unix socket)
+
 EXPOSE 8000
 
-# Start Gunicorn, binding to a Unix socket instead of a TCP port
-#CMD ["gunicorn", "core.wsgi:application", "--bind", "unix:/gunicorn.sock"]
 
 # Start Gunicorn, binding to a TCP port instead of a Unix socket
-CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["gunicorn", "--bind", ":8000", "--workers", "3", "core.wsgi:application", "--bind"]

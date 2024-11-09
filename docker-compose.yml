@@ -23,7 +23,7 @@ services:
     networks:
       - app_network
     expose:
-      - "8000"  # Expose port 8000 for communication between containers
+      - "8000"
 
   db:
     image: postgres:14
