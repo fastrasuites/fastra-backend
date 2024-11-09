@@ -26,5 +26,4 @@ COPY . /app/
 # Expose port 8000 to communicate with Gunicorn
 EXPOSE 8000
 
-# Start Gunicorn, binding to a TCP port instead of a Unix socket
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "core.wsgi:application"]
+CMD ["gunicorn", "--bind", "127.0.0.1:8000", "--workers", "3", "core.wsgi:application"]
