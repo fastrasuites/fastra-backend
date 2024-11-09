@@ -4,6 +4,7 @@ services:
   web:
     build: .
     container_name: fastra-web
+    hostname: web
     command: bash -c "python /app/wait_for_postgres.py && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:8000"
     volumes:
       - /opt/fastra-backend:/app
@@ -66,3 +67,5 @@ volumes:
 networks:
   app_network:
     driver: bridge
+    name: app_network
+
