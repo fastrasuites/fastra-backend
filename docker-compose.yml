@@ -16,34 +16,12 @@ services:
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_HOST=db
+      - DB_HOST=${DB_HOST}
       - DB_PORT=5432
-    depends_on:
-      db:
-        condition: service_healthy
     networks:
       - app_network
     expose:
       - "8000"
-
-  db:
-    image: postgres:14
-    container_name: fastra-db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_DB=${DB_NAME}
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_HOST_AUTH_METHOD=trust
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${DB_USER}", "-d", "${DB_NAME}", "-h", "localhost"]
-      interval: 10s
-      retries: 5
-      start_period: 5s
-      timeout: 5s
-    networks:
-      - app_network
 
   nginx:
     image: nginx:latest
@@ -67,5 +45,3 @@ volumes:
 networks:
   app_network:
     driver: bridge
-    name: app_network
-
