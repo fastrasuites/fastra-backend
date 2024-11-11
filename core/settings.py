@@ -28,47 +28,23 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'thisCan.beNot.a.secret.rightNow?')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+DEBUG = os.getenv('DEBUG') == 'True'
 
 ALLOWED_HOSTS = [
     'localhost',
-    '127.0.0.1',
+    '*',
     'fastrasuite.com',
-    'www.fastrasuite.com',
-    'fastra-frontend.vercel.app',
-    '*.vercel.app',
+    'www.fastrasuite.com'
+    '.fastrasuite.com',
+    '*.fastrasuite.com',
+    '95.179.214.79'
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    'https://fastra-frontend.vercel.app',
-    'https://www.fastra-frontend.vercel.app',
-    'https://fastrasuite.com',
-    'https://www.fastrasuite.com',
-]
-
-CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_HEADERS = [
-    'Authorization',
-    'Content-Type',
-    'Accept',
-    'X-CSRFToken',
-    'X-Requested-With',
-]
-CORS_ALLOW_METHODS = [
-    'GET',
-    'POST',
-    'PUT',
-    'PATCH',
-    'DELETE',
-    'OPTIONS',
-]
-
+# Application definition
 
 SHARED_APPS = [
     'drf_spectacular',
     'django_tenants',
-    'corsheaders',
     'registration',
 
     # 'tenant_users.permissions',
@@ -84,7 +60,7 @@ SHARED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     # 'drf_yasg',
-
+    'corsheaders',
 ]
 
 TENANT_APPS = [
@@ -111,31 +87,28 @@ TENANT_APPS = [
 
     'companies',
 ]
-# For serving static files with WhiteNoise
-# STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
-
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    # Middleware for accessing schemas and permissions
     'django_tenants.middleware.main.TenantMainMiddleware',
+
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-]
+    "corsheaders.middleware.CorsMiddleware",
 
+    # Custom Middleware for tenant authentication
+    # 'companies.middlewares.TenantMiddleware',
+    # 'users.middlewares.TenantMiddleware',
+
+]
 
 ROOT_URLCONF = 'core.urls'
 
@@ -215,6 +188,9 @@ SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
 
 PG_EXTRA_SEARCH_PATHS = ['extensions']
 
+MEDIA_URL = '/media/'
+# MEDIA_ROOT = os.path.join(BASE_DIR, '/media')
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 customColorPalette = [
     {
@@ -248,7 +224,10 @@ customColorPalette = [
 # STATICFILES_DIRS = [
 #     os.path.join(BASE_DIR, 'static'),
 # ]
+STATIC_URL = '/static/'
 
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+# STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFileStorage'
 STATICFILES_FINDERS = (
     "django.contrib.staticfiles.finders.FileSystemFinder",
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",
@@ -333,21 +312,22 @@ AUTHENTICATION_BACKENDS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        # I added the SessionAuthentication and BasicAuthentication classes before JWTAuthentication
+        # to accommodate for our default authentication
         'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+
     ),
-    'DEFAULT_PERMISSION_CLASSES': ('rest_framework.permissions.IsAuthenticated',),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.DjangoModelPermissions',
+        # 'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
+    'PAGE_SIZE': 10,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-    'DEFAULT_RENDERER_CLASSES': [
-        'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer' if DEBUG else 'rest_framework.renderers.JSONRenderer'
-    ],
-    'DEFAULT_PARSER_CLASSES': [
-        'rest_framework.parsers.JSONParser',
-    ],
+
 }
-
-
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND')
 EMAIL_HOST = os.getenv('EMAIL_HOST')
@@ -388,6 +368,7 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
+CORS_ALLOW_ALL_ORIGINS = True
 
 API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'fastrasuite.com')
 FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastra-frontend.vercel.app')
