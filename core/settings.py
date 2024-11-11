@@ -37,7 +37,14 @@ ALLOWED_HOSTS = [
     'www.fastrasuite.com'
     '.fastrasuite.com',
     '*.fastrasuite.com',
-    '95.179.214.79'
+    '95.179.214.79',
+    "fastra-frontend.vercel.app"
+]
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOWED_ORIGINS = [
+    "https://fastra-frontend.vercel.app",
 ]
 
 # Application definition
