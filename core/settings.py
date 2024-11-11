@@ -99,8 +99,9 @@ INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in S
 
 MIDDLEWARE = [
     # Middleware for accessing schemas and permissions
-    'django_tenants.middleware.main.TenantMainMiddleware',
 
+    'django_tenants.middleware.main.TenantMainMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     "whitenoise.middleware.WhiteNoiseMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',

@@ -15,7 +15,7 @@ from rest_framework_simplejwt.views import (
 
 urlpatterns = [
     # path('', include(router.urls)),
-    path('email-verify/', VerifyEmail.as_view(), name='email-verify'),
+    path('email-verify', VerifyEmail.as_view(), name='email-verify'),
     path('resend-verification-email/', ResendVerificationEmail.as_view(), name='resend-verification-email'),
     path('login/', LoginView.as_view(), name='login'),
     path('request-forgotten-password/', RequestForgottenPasswordView.as_view(), name='request-password-reset'),
