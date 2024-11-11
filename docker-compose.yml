@@ -14,9 +14,13 @@ services:
       - media_volume:/app/media
     ports:
       - "8000:8000"
-    depends_on:
-      - db
     restart: always
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
 
 volumes:
   static_volume:
