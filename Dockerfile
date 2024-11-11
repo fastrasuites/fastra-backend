@@ -1,30 +1,29 @@
-# Use the official Python image
+# Use an official Python image.
 FROM python:3.11-slim
 
-# Set environment variables to prevent Python from buffering stdout/stderr
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100
 
-# Install necessary system dependencies, including netcat
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libpq-dev \
-    build-essential \
-    netcat-openbsd \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set the working directory in the container
+# Set the working directory inside the container
 WORKDIR /app
 
-# Copy requirements.txt and install Python dependencies
+# Copy the requirements file into the container
 COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Install dependencies
+RUN apt-get update \
+    && apt-get install -y gcc libpq-dev \
+    && pip install --upgrade pip \
+    && pip install -r requirements.txt
 
 # Copy the entire project into the container
 COPY . /app/
 
-# Expose port 8000 to communicate with Gunicorn
+# Expose the port for the application
 EXPOSE 8000
 
-# Start Gunicorn, binding to a TCP port instead of a Unix socket
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "core.wsgi:application"]
+# Run migrations and start the server
+CMD ["sh", "-c", "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
