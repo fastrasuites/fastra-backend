@@ -23,14 +23,14 @@ class Location(models.Model):
     location_type = models.CharField(choices=LOCATION_TYPES, default="internal", max_length=10)
     address = models.CharField(max_length=255, null=True)
     location_manager = models.ForeignKey(
-        TenantUser,
+        'TenantUser',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='managed_locations'
     )
     store_keeper = models.ForeignKey(
-        TenantUser,
+        'TenantUser',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -77,3 +77,59 @@ class MultiLocation(models.Model):
 def prevent_multiple_instances(sender, instance, **kwargs):
     if not instance.pk and sender.objects.exists():
         raise ValidationError('Only one instance of MultiLocation Model is allowed')
+
+
+class StockAdjustment(models.Model):
+    adjustment_type = models.CharField(max_length=20, default="Stock Level Update")
+    adjustment_date = models.DateTimeField(auto_now_add=True)
+    warehouse_location = models.ForeignKey('Location', on_delete=models.PROTECT)
+    notes = models.TextField(blank=True,null=True)
+
+    def __str__(self):
+        return f"Stock Adjustment - {self.adjustment_date.strftime('%Y-%m-%d %H:%M')}"
+
+    class Meta:
+        verbose_name = 'Stock Adjustment'
+        verbose_name_plural = 'Stock Adjustments'
+        ordering = ['-adjustment_date']
+
+
+class StockAdjustmentItem(models.Model):
+    stock_adjustment = models.ForeignKey(
+        'StockAdjustment',
+        on_delete=models.CASCADE,
+        related_name='adjustment_lines'
+    )
+    product = models.ForeignKey('Product', on_delete=models.PROTECT)
+    unit_of_measure = models.CharField(
+        max_length=50,
+        editable=False,
+    )
+    current_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        editable=False,
+        verbose_name='Current Quantity'
+    )
+    adjusted_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='Adjusted Quantity'
+    )
+
+    def __str__(self):
+        return f"{self.product.product_name} - {self.adjusted_quantity}"
+
+    def save(self, *args, **kwargs):
+        if self.product:
+            if not self.unit_of_measure:
+                self.unit_of_measure = self.product.unit_of_measure
+            if not self.current_quantity:
+                self.current_quantity = self.product.available_product_quantity
+        else:
+            raise ValidationError("Invalid Product")
+        super().save(*args, **kwargs)
+
+    class Meta:
+        verbose_name = 'Adjustment Line'
+        verbose_name_plural = 'Adjustment Lines'
