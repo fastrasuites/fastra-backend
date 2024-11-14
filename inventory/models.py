@@ -11,6 +11,11 @@ LOCATION_TYPES = (
     ('partner', 'Partner'),
 )
 
+STOCK_ADJ_STATUS = (
+    ('draft', 'Draft'),
+    ('done', 'Done')
+)
+
 
 # Create your models here.
 
@@ -38,12 +43,11 @@ class Location(models.Model):
     )
     contact_information = models.CharField(max_length=100, null=True, blank=True)
     is_hidden = models.BooleanField(default=False)
-    multi_location = models.ForeignKey('MultiLocation', on_delete=models.SET_DEFAULT)
 
     objects = models.Manager()
 
     class Meta:
-        ordering = ['is_hidden', '-created_on']
+        ordering = ['is_hidden', '-date_created']
 
     def __str__(self):
         return self.id
@@ -73,6 +77,7 @@ class MultiLocation(models.Model):
             raise ValidationError('Only one instance of MultiLocation is allowed')
         return super().save(*args, **kwargs)
 
+
 @receiver(pre_save, sender=MultiLocation)
 def prevent_multiple_instances(sender, instance, **kwargs):
     if not instance.pk and sender.objects.exists():
@@ -81,12 +86,37 @@ def prevent_multiple_instances(sender, instance, **kwargs):
 
 class StockAdjustment(models.Model):
     adjustment_type = models.CharField(max_length=20, default="Stock Level Update")
-    adjustment_date = models.DateTimeField(auto_now_add=True)
-    warehouse_location = models.ForeignKey('Location', on_delete=models.PROTECT)
-    notes = models.TextField(blank=True,null=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
+    warehouse_location = models.ForeignKey('Location', on_delete=models.PROTECT,
+                                           default=Location.objects.filter(location_type='internal').first())
+    notes = models.TextField(blank=True, null=True)
+    status = models.CharField(choices=STOCK_ADJ_STATUS, max_length=10, default='draft')
+    is_done = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=True)
+    is_hidden = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"Stock Adjustment - {self.adjustment_date.strftime('%Y-%m-%d %H:%M')}"
+        return f"Stock Adjustment - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
+
+    def save(self, *args, **kwargs):
+        # If the purchase request is submitted, make it non-editable
+        if self.is_done:
+            self.can_edit = False
+        super(StockAdjustment, self).save(*args, **kwargs)
+
+    def change_status(self, status):
+        """Utility method to change the status and save"""
+        self.status = status
+        self.save()
+
+    def submit(self):
+        """Mark the stock adjustment as draft"""
+        self.change_status('draft')
+
+    def final_submit(self):
+        self.is_done = True
+        self.change_status('done')
 
     class Meta:
         verbose_name = 'Stock Adjustment'
@@ -98,7 +128,7 @@ class StockAdjustmentItem(models.Model):
     stock_adjustment = models.ForeignKey(
         'StockAdjustment',
         on_delete=models.CASCADE,
-        related_name='adjustment_lines'
+        related_name='stock_adjustment_items'
     )
     product = models.ForeignKey('Product', on_delete=models.PROTECT)
     unit_of_measure = models.CharField(

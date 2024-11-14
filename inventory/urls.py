@@ -14,11 +14,19 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.urls import path
+from django.urls import path, include
+from rest_framework import routers
 
-from .views import index
+from .views import LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet
+
+router = routers.DefaultRouter()
+
+router.register(r'location', LocationViewSet, basename='location')
+router.register(r'configuration/multi-location', MultiLocationViewSet, basename='multi-location')
+router.register(r'stock-adjustment', StockAdjustmentViewSet, basename='stock-adjustment')
+router.register(r'stock-adjustment/stock-adjustment-item', StockAdjustmentItemViewSet,
+                basename='stock-adjustment-item')
 
 urlpatterns = [
-    path('', index, name='index'),
-
+    path('', include(router.urls)),
 ]
