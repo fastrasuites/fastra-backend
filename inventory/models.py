@@ -1,7 +1,7 @@
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.dispatch import receiver
-from django.db.models.signals import pre_save
+from django.db.models.signals import pre_save, pre_delete
 
 from users.models import TenantUser
 from purchase.models import Product
@@ -28,14 +28,14 @@ class Location(models.Model):
     location_type = models.CharField(choices=LOCATION_TYPES, default="internal", max_length=10)
     address = models.CharField(max_length=255, null=True)
     location_manager = models.ForeignKey(
-        'TenantUser',
+        TenantUser,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='managed_locations'
     )
     store_keeper = models.ForeignKey(
-        'TenantUser',
+        TenantUser,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -55,8 +55,14 @@ class Location(models.Model):
     def __repr__(self):
         return self.id
 
+    def get_active_locations(self):
+        multi_location_option = MultiLocation.objects.first().filter(is_activated=True)
+        if not multi_location_option and self.objects.all().filter(is_hidden=False).count() >= 3:
+            return Location.objects.last()
+        return self.objects.all().exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
+
     def save(self, *args, **kwargs):
-        self.id = f"{self.location_code}{self.id_number}"
+        self.id = f"{self.location_code}{self.id_number:05d}"
         if (MultiLocation.objects.first().filter(is_activated=False)
                 and self.objects.all().filter(is_hidden=False).count() >= 3):
             raise Exception("Maximum number of locations reached")
@@ -72,10 +78,24 @@ class MultiLocation(models.Model):
     def __str__(self):
         return f"{self.is_activated}"
 
+    def __repr__(self):
+        return f"{self.is_activated}"
+
+    def clean(self):
+        if not self.pk and MultiLocation.objects.exists():
+            raise ValidationError('Only one instance of this model is allowed')
+
     def save(self, *args, **kwargs):
-        if not self.pk and self.objects.exists():
-            raise ValidationError('Only one instance of MultiLocation is allowed')
-        return super().save(*args, **kwargs)
+        self.clean()
+        return super(MultiLocation, self).save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        # Prevent deletion
+        raise ValidationError("This instance cannot be deleted")
+
+@receiver(pre_delete, sender=MultiLocation)
+def prevent_deletion(sender, instance, **kwargs):
+    raise ValidationError("This instance cannot be deleted")
 
 
 @receiver(pre_save, sender=MultiLocation)
@@ -88,8 +108,7 @@ class StockAdjustment(models.Model):
     adjustment_type = models.CharField(max_length=20, default="Stock Level Update")
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
-    warehouse_location = models.ForeignKey('Location', on_delete=models.PROTECT,
-                                           default=Location.objects.filter(location_type='internal').first())
+    warehouse_location = models.ForeignKey(Location, on_delete=models.PROTECT)
     notes = models.TextField(blank=True, null=True)
     status = models.CharField(choices=STOCK_ADJ_STATUS, max_length=10, default='draft')
     is_done = models.BooleanField(default=False)
@@ -100,7 +119,7 @@ class StockAdjustment(models.Model):
         return f"Stock Adjustment - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
 
     def save(self, *args, **kwargs):
-        # If the purchase request is submitted, make it non-editable
+        self.warehouse_location = Location.objects.last()
         if self.is_done:
             self.can_edit = False
         super(StockAdjustment, self).save(*args, **kwargs)
@@ -121,7 +140,7 @@ class StockAdjustment(models.Model):
     class Meta:
         verbose_name = 'Stock Adjustment'
         verbose_name_plural = 'Stock Adjustments'
-        ordering = ['-adjustment_date']
+        ordering = ['-date_updated', '-date_created']
 
 
 class StockAdjustmentItem(models.Model):
@@ -130,7 +149,7 @@ class StockAdjustmentItem(models.Model):
         on_delete=models.CASCADE,
         related_name='stock_adjustment_items'
     )
-    product = models.ForeignKey('Product', on_delete=models.PROTECT)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
     unit_of_measure = models.CharField(
         max_length=50,
         editable=False,

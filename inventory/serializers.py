@@ -10,7 +10,8 @@ class LocationSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='location-detail')
     location_manager = serializers.HyperlinkedRelatedField(queryset=TenantUser.objects.filter(is_hidden=False),
                                                            view_name='tenant-user-detail')
-    store_keeper = serializers.HyperlinkedRelatedField(view_name='tenant-user-detail')
+    store_keeper = serializers.HyperlinkedRelatedField(queryset=TenantUser.objects.filter(is_hidden=False),
+                                                       view_name='tenant-user-detail')
 
     class Meta:
         model = Location
@@ -53,10 +54,17 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         read_only_fields = ['date_created', 'date_updated']
 
     def create(self, validated_data):
+        """
+        Create a new Stock Adjustment with its associated items.
+        """
         items_data = validated_data.pop('items')
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a Stock Adjustment.")
         stock_adjustment = StockAdjustment.objects.create(**validated_data)
         for item_data in items_data:
             StockAdjustmentItem.objects.create(stock_adjustment=stock_adjustment, **item_data)
+            # Update the product's quantity'
+            product = item_data.get('product')
+            product.current_quantity = item_data.get('adjusted_quantity')
+            product.save()
         return stock_adjustment

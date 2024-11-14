@@ -5,6 +5,11 @@ class Command(BaseCommand):
     help = 'Creates two default Location instances and a multiLocation instance'
 
     def handle(self, *args, **options):
+        settings = MultiLocation.objects.create(
+            is_activated=False
+        )
+
+        self.stdout.write(self.style.SUCCESS(f'Created MultiLocation option: Set to {settings}'))
 
         # Create the first Location instance
         location1 = Location.objects.create(
@@ -14,8 +19,8 @@ class Command(BaseCommand):
             location_name="Supplier Location",
             location_type="partner",
             address="NullAddress",
-            location_manager="",
-            store_keeper="",
+            location_manager=None,
+            store_keeper=None,
             contact_information=""
         )
         self.stdout.write(self.style.SUCCESS(f'Created Location: {location1}'))
@@ -27,9 +32,9 @@ class Command(BaseCommand):
             location_code="CUST",
             location_name="Customer Location",
             location_type="partner",
-            address="",
-            location_manager="",
-            store_keeper="",
+            address="NullAddress",
+            location_manager=None,
+            store_keeper=None,
             contact_information=""
         )
         self.stdout.write(self.style.SUCCESS(f'Created Location: {location2}'))

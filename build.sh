@@ -6,7 +6,6 @@ pip install -r requirements.txt
 
 python manage.py collectstatic --no-input
 
+python manage.py migrate
 # For Inventory
 python manage.py create_default_locations
-
-python manage.py migrate

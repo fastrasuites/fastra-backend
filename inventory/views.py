@@ -1,4 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
+from django.core.exceptions import ValidationError
 from rest_framework import viewsets, status, filters, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -77,11 +78,21 @@ class LocationViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['id', 'location_name', 'location_type', 'location_manager__username']
 
+    @action(detail=False, methods=['GET'])
+    def get_active_locations(self):
+        multi_location_option = MultiLocation.objects.first().filter(is_activated=True)
+        if not multi_location_option and super().get_queryset().count() >= 3:
+            return Location.objects.last()
+        return super().get_queryset().exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
+
 
 class MultiLocationViewSet(viewsets.ModelViewSet):
     queryset = MultiLocation.objects.all()
     serializer_class = MultiLocationSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def destroy(self, request, *args, **kwargs):
+        raise ValidationError("This MultiLocation instance cannot be deleted")
 
     @action(detail=True, methods=['GET', 'POST'])
     def change_status(self):
@@ -107,8 +118,13 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
         stock_adj_status = self.request.query_params.get('status')
         if stock_adj_status:
             queryset = queryset.filter(status=stock_adj_status)
-
         return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        stock_adj = serializer.save()
+        return Response(self.get_serializer(stock_adj).data, status=status.HTTP_201_CREATED)
 
     def check_editable(self, stock_adj):
         """Check if the stock adjustment is editable (not validated)."""
