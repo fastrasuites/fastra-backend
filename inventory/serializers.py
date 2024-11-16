@@ -19,13 +19,12 @@ class LocationSerializer(serializers.HyperlinkedModelSerializer):
                   'store_keeper', 'contact_information', 'is_hidden']
         read_only_fields = ['date_created']
 
-
 class MultiLocationSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='multi-location-detail')
 
     class Meta:
         model = MultiLocation
-        fields = ['is_activated']
+        fields = ['url', 'is_activated']
 
 
 class StockAdjustmentItemSerializer(serializers.HyperlinkedModelSerializer):

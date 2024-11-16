@@ -91,20 +91,44 @@ class MultiLocationViewSet(viewsets.ModelViewSet):
     serializer_class = MultiLocationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+
     def destroy(self, request, *args, **kwargs):
         raise ValidationError("This MultiLocation instance cannot be deleted")
 
     @action(detail=True, methods=['GET', 'POST'])
-    def change_status(self):
-        option = self.get_object()
-        return not option.is_activated
+    def change_status(self, request, pk=None):
+        try:
+            instance = self.get_object()
+            instance.is_activated = not instance.is_activated
+            instance.save()
+
+            return Response({
+                'status': 'success',
+                'message': f'MultiLocation {"activated" if instance.is_activated else "deactivated"} successfully',
+                'is_activated': instance.is_activated
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['GET'])
-    def check_status(self):
-        option = self.get_object()
-        if option.is_activated:
-            return Response({'status': 'MultiLocation activated'})
-        return Response({'status': 'MultiLocation Deactivated'})
+    def check_status(self, request, pk=None):
+        try:
+            instance = self.get_object()
+            return Response({
+                'status': 'success',
+                'message': 'MultiLocation is ' + ('activated' if instance.is_activated else 'deactivated'),
+                'is_activated': instance.is_activated
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 class StockAdjustmentViewSet(SearchDeleteViewSet):

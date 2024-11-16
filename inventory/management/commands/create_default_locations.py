@@ -38,9 +38,3 @@ class Command(BaseCommand):
             contact_information=""
         )
         self.stdout.write(self.style.SUCCESS(f'Created Location: {location2}'))
-
-        settings = MultiLocation.objects.create(
-            is_activated=False
-        )
-
-        self.stdout.write(self.style.SUCCESS(f'MultiLocation is set to {settings}'))
