@@ -49,7 +49,7 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = StockAdjustment
-        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'is_hidden', 'items']
+        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'status', 'is_hidden', 'items']
         read_only_fields = ['date_created', 'date_updated']
 
     def create(self, validated_data):
