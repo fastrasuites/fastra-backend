@@ -5,6 +5,10 @@ from django.contrib.auth.hashers import make_password, check_password
 from django.core.mail import EmailMessage
 from django.utils import timezone
 from django.utils.timezone import is_aware, make_aware
+from django.db import connection
+from contextlib import contextmanager
+
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 class Util:
@@ -40,3 +44,21 @@ def check_otp_time_expired(otp_requested_at, duration=60, use_pyotp=False):
 
 def compare_password(input_password, hashed_password):
     return check_password(input_password, hashed_password)
+
+
+@contextmanager
+def set_tenant_schema(schema_name):
+    connection.set_schema(schema_name)
+    try:
+        yield
+    finally:
+        connection.set_schema('public')
+
+
+
+
+def generate_tokens(user):
+    refresh = RefreshToken.for_user(user)
+
+    return str(refresh.access_token), str(refresh)
+

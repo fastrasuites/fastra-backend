@@ -314,18 +314,24 @@ TENANT_MODEL = 'registration.Tenant'
 TENANT_DOMAIN_MODEL = 'registration.Domain'
 
 AUTHENTICATION_BACKENDS = [
-    'companies.authenticate.EmailBackend',
+    # 'companies.authenticate.EmailBackend',
+    'core.backends.tenant_auth_backend.TenantUserBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
 REST_FRAMEWORK = {
+    # 'DEFAULT_AUTHENTICATION_CLASSES': (
+    #     # I added the SessionAuthentication and BasicAuthentication classes before JWTAuthentication
+    #     # to accommodate for our default authentication
+    #     # 'rest_framework.authentication.SessionAuthentication',
+    #     # 'rest_framework.authentication.BasicAuthentication',
+    #     # 'rest_framework_simplejwt.authentication.JWTAuthentication',
+    # # 'rest_framework_simplejwt.authentication.JWTAuthentication',
+    # "rest_framework.authentication.SessionAuthentication",
+    # ),
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        # I added the SessionAuthentication and BasicAuthentication classes before JWTAuthentication
-        # to accommodate for our default authentication
+        'companies.middlewares.TenantJWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.DjangoModelPermissions',
