@@ -118,7 +118,7 @@ class TenantMiddleware:
 class TenantJWTAuthentication(JWTAuthentication):
     def authenticate(self, request):
         resolved_url = resolve(request.path)
-        public_routes = ['registration', 'register']
+        public_routes = ['registration', 'register', 'schema', 'swagger-ui']
         if resolved_url.view_name in public_routes:
             with set_tenant_schema('public'):
                 return None
