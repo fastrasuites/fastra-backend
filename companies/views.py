@@ -117,11 +117,19 @@ class ResendVerificationEmail(generics.GenericAPIView):
 
 
 class LoginView(APIView):
+    serializer_class = LoginSerializer
     permission_classes = [AllowAny]
 
     def post(self, request):
-        email = request.data.get('email')
-        password = request.data.get('password')
+        serializer = LoginSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            password = serializer.validated_data['password']
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # email = request.data.get('email')
+        # password = request.data.get('password')
         full_host = request.get_host().split(':')[0]
         schema_name = full_host.split('.')[0]
 
@@ -145,7 +153,11 @@ class LoginView(APIView):
         return Response({
             'refresh_token': str(refresh),
             'access_token': str(refresh.access_token),
-            'user': {'id': user.id},
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+            }
         }, status=status.HTTP_200_OK)
 
 
