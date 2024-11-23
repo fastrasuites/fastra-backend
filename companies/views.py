@@ -1,5 +1,6 @@
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.views import APIView
 from django.shortcuts import render, redirect
 from django.urls import reverse
@@ -8,8 +9,10 @@ from rest_framework import viewsets, generics
 from rest_framework import status
 from django.utils.text import slugify
 from django.contrib.auth import login, authenticate, get_user_model
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from registration.utils import check_otp_time_expired, compare_password
+from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
+from registration.utils import check_otp_time_expired, compare_password, set_tenant_schema, generate_tokens
 from users.models import TenantUser
 from .models import CompanyProfile, OTP
 from registration.models import Tenant, Domain
@@ -55,6 +58,9 @@ class VerifyEmail(generics.GenericAPIView):
             # Find tenant based on the extracted subdomain
             tenant = Tenant.objects.get(schema_name=tenant_subdomain)
 
+            if tenant.is_verified:
+                return Response({'status': 'already_verified', 'message': 'Email already verified.'},
+                                status=status.HTTP_200_OK)
             # Validate the OTP
             if not compare_password(otp_token, tenant.otp):
                 return Response({'status': 'invalid', 'message': 'Invalid Token.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -70,9 +76,6 @@ class VerifyEmail(generics.GenericAPIView):
                 tenant.otp_verified_at = timezone.now()
                 tenant.save()
                 return Response({'status': 'verified', 'message': 'Email successfully verified.'},
-                                status=status.HTTP_200_OK)
-            else:
-                return Response({'status': 'already_verified', 'message': 'Email already verified.'},
                                 status=status.HTTP_200_OK)
 
         except Tenant.DoesNotExist:
@@ -119,53 +122,100 @@ class LoginView(APIView):
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
-
         if serializer.is_valid():
             email = serializer.validated_data['email']
             password = serializer.validated_data['password']
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            full_host = request.get_host().split(':')[0]
-            schema_name = full_host.split('.')[0]
+        # email = request.data.get('email')
+        # password = request.data.get('password')
+        full_host = request.get_host().split(':')[0]
+        schema_name = full_host.split('.')[0]
 
-            connection.set_schema('public')
+        with set_tenant_schema('public'):
             try:
-                user = User.objects.get(email=email)
-            except User.DoesNotExist:
-                return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
-            try:
-                tenant = Tenant.objects.get(schema_name__exact=schema_name)
+                tenant = Tenant.objects.get(schema_name=schema_name)
             except Tenant.DoesNotExist:
-                return Response({'error': 'Tenant not found.'},
-                                status=status.HTTP_404_NOT_FOUND)
+                raise TenantNotFoundException()
 
-            if not tenant.is_verified:
-                return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not tenant.is_verified:
+            return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            connection.set_schema(schema_name)
-            try:
-                tenant_user = TenantUser.objects.get(user_id=user.id, tenant=tenant)
-                if tenant_user.password and not tenant_user.check_tenant_password(password):
-                    return Response({'error': 'Invalid credentials'},
-                                    status=status.HTTP_401_UNAUTHORIZED)
-                connection.set_schema('public')
-                user = authenticate(request, email=email, password=password)
-                auth_login(request, user)
-                refresh = RefreshToken.for_user(user)
-                refresh['tenant_id'] = tenant_user.tenant.id
+        user = authenticate(request, email=email, password=password, schema_name=schema_name)
+        if user is None:
+            raise InvalidCredentialsException()
 
-                return Response({
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token),
-                    'user': {
-                        'id': user.id,
-                        'username': user.username,
-                        'email': user.email,
-                    }
-                }, status=status.HTTP_200_OK)
+        refresh = RefreshToken.for_user(user)
+        refresh['tenant_id'] = tenant.id
+        refresh['schema_name'] = schema_name
 
-            except TenantUser.DoesNotExist:
-                return Response({'error': 'User does not have access this tenant.'},
-                                status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            'refresh_token': str(refresh),
+            'access_token': str(refresh.access_token),
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+            }
+        }, status=status.HTTP_200_OK)
+
+
+
+#
+# class LoginView(APIView):
+#     serializer_class = LoginSerializer
+#     permission_classes = [AllowAny]
+#
+#     def post(self, request):
+#         serializer = LoginSerializer(data=request.data)
+#
+#         if serializer.is_valid():
+#             email = serializer.validated_data['email']
+#             password = serializer.validated_data['password']
+#
+#             full_host = request.get_host().split(':')[0]
+#             schema_name = full_host.split('.')[0]
+#
+#             connection.set_schema('public')
+#             try:
+#                 user = User.objects.get(email=email)
+#             except User.DoesNotExist:
+#                 return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+#             try:
+#                 tenant = Tenant.objects.get(schema_name__exact=schema_name)
+#             except Tenant.DoesNotExist:
+#                 return Response({'error': 'Tenant not found.'},
+#                                 status=status.HTTP_404_NOT_FOUND)
+#
+#             if not tenant.is_verified:
+#                 return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+#
+#             connection.set_schema(schema_name)
+#             try:
+#                 tenant_user = TenantUser.objects.get(user_id=user.id, tenant=tenant)
+#                 if tenant_user.password and not tenant_user.check_tenant_password(password):
+#                     return Response({'error': 'Invalid credentials'},
+#                                     status=status.HTTP_401_UNAUTHORIZED)
+#                 connection.set_schema('public')
+#                 user = authenticate(request, email=email, password=password)
+#                 auth_login(request, user)
+#                 refresh = RefreshToken.for_user(user)
+#                 refresh['tenant_id'] = tenant_user.tenant.id
+#
+#                 return Response({
+#                     'refresh': str(refresh),
+#                     'access': str(refresh.access_token),
+#                     'user': {
+#                         'id': user.id,
+#                         'username': user.username,
+#                         'email': user.email,
+#                     }
+#                 }, status=status.HTTP_200_OK)
+#
+#             except TenantUser.DoesNotExist:
+#                 return Response({'error': 'User does not have access this tenant.'},
+#                                 status=status.HTTP_404_NOT_FOUND)
 
 
 class RequestForgottenPasswordView(APIView):
@@ -290,3 +340,11 @@ class UpdateCompanyProfileView(generics.UpdateAPIView):
             return Response({"detail": "Only the admin user can update the company profile."},
                             status=status.HTTP_403_FORBIDDEN)
         return super().handle_exception(exc)
+
+
+
+class ProtectedView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({"message": f"Hello, {request.user.username}. You are logged in!"})

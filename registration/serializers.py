@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from users.models import TenantUser
+from users.serializers import TenantUserSerializer
 # from accounting.models import TenantUser
 from .models import Tenant, UserProfile
 from django.contrib.auth.models import User, Group
@@ -62,6 +63,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 class TenantRegistrationSerializer(serializers.ModelSerializer):
     user = UserSerializer()
+    company_name = serializers.CharField(required=True)
 
     class Meta:
         model = Tenant
@@ -132,5 +134,4 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
             )
             tenant_user.set_tenant_password(password)
             tenant_user.save()
-
         return tenant, otp
