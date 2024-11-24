@@ -110,6 +110,8 @@ def prevent_multiple_instances(sender, instance, **kwargs):
 
 
 class StockAdjustment(models.Model):
+    id = models.CharField(max_length=15, primary_key=True)
+    id_number = models.PositiveIntegerField(auto_created=True)
     adjustment_type = models.CharField(max_length=20, default="Stock Level Update")
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
@@ -124,6 +126,7 @@ class StockAdjustment(models.Model):
         return f"Stock Adjustment - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
 
     def save(self, *args, **kwargs):
+        self.id = f"{self.warehouse_location.location_code}IN{self.id_number:05d}"
         self.warehouse_location = Location.objects.last()
         if self.is_done:
             self.can_edit = False
