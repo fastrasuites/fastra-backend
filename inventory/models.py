@@ -16,6 +16,11 @@ STOCK_ADJ_STATUS = (
     ('done', 'Done')
 )
 
+SCRAP_STATUS = (
+    ('draft', 'Draft'),
+    ('done', 'Done')
+)
+
 
 # Create your models here.
 
@@ -182,3 +187,74 @@ class StockAdjustmentItem(models.Model):
     class Meta:
         verbose_name = 'Adjustment Line'
         verbose_name_plural = 'Adjustment Lines'
+
+
+class Scrap(models.Model):
+    id = models.CharField(max_length=15, primary_key=True)
+    id_number = models.PositiveIntegerField(auto_created=True)
+    adjustment_type = models.CharField(max_length=20, default="Stock Level Update")
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
+    warehouse_location = models.ForeignKey(Location, on_delete=models.PROTECT)
+    notes = models.TextField(blank=True, null=True)
+    status = models.CharField(choices=SCRAP_STATUS, max_length=10, default='draft')
+    is_done = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=True)
+    is_hidden = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Scrap - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
+
+    def save(self, *args, **kwargs):
+        self.id = f"{self.warehouse_location.location_code}IN{self.id_number:05d}"
+        self.warehouse_location = Location.objects.last()
+        if self.is_done:
+            self.can_edit = False
+        super(Scrap, self).save(*args, **kwargs)
+
+    def change_status(self, status):
+        """Utility method to change the status and save"""
+        self.status = status
+        self.save()
+
+    def submit(self):
+        """Mark the scrap as draft"""
+        self.change_status('draft')
+
+    def final_submit(self):
+        self.is_done = True
+        self.change_status('done')
+
+    class Meta:
+        ordering = ['-date_updated', '-date_created']
+
+
+class ScrapItem(models.Model):
+    stock_adjustment = models.ForeignKey(
+        'Scrap',
+        on_delete=models.CASCADE,
+        related_name='scrap_items'
+    )
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    scrap_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        editable=False,
+        verbose_name='Scrap Quantity'
+    )
+    adjusted_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='Adjusted Quantity'
+    )
+
+    def __str__(self):
+        return f"{self.product.product_name} - {self.adjusted_quantity}"
+
+    def save(self, *args, **kwargs):
+        if self.product:
+            if not self.scrap_quantity:
+                self.scrap_quantity = self.product.available_product_quantity
+        else:
+            raise ValidationError("Invalid Product")
+        super().save(*args, **kwargs)
