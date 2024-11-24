@@ -50,7 +50,7 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = StockAdjustment
         fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'status', 'is_hidden', 'items']
-        read_only_fields = ['date_created', 'date_updated']
+        read_only_fields = ['date_created', 'date_updated', 'adjustment_type']
 
     def create(self, validated_data):
         """
@@ -64,6 +64,6 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
             StockAdjustmentItem.objects.create(stock_adjustment=stock_adjustment, **item_data)
             # Update the product's quantity'
             product = item_data.get('product')
-            product.current_quantity = item_data.get('adjusted_quantity')
+            product.available_product_quantity = item_data.get('adjusted_quantity')
             product.save()
         return stock_adjustment
