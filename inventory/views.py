@@ -4,9 +4,9 @@ from rest_framework import viewsets, status, filters, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Location, MultiLocation, StockAdjustment, StockAdjustmentItem
+from .models import Location, MultiLocation, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap
 from .serializers import LocationSerializer, MultiLocationSerializer, StockAdjustmentSerializer, \
-    StockAdjustmentItemSerializer
+    StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer
 
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
@@ -128,6 +128,52 @@ class StockAdjustmentItemViewSet(viewsets.ModelViewSet):
     queryset = StockAdjustmentItem.objects.all()
     serializer_class = StockAdjustmentItemSerializer
     # permission_classes = [permissions.IsAuthenticated]
+
+
+class ScrapViewSet(SearchDeleteViewSet):
+    queryset = Scrap.objects.all()
+    serializer_class = ScrapSerializer
+    search_fields = ['date_created', 'status', 'warehouse_location']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        scrap_status = self.request.query_params.get('status')
+        if scrap_status:
+            queryset = queryset.filter(status=scrap_status)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        scrap = serializer.save()
+        return Response(self.get_serializer(scrap).data, status=status.HTTP_201_CREATED)
+
+    def check_editable(self, scrap):
+        """Check if the scrap is editable (not validated)."""
+        if scrap.is_validated:
+            return False, 'This stock adjustment has already been submitted and cannot be edited.'
+        return True, ''
+
+    @action(detail=True, methods=['post', 'get'])
+    def final_submit(self, request, pk=None):
+        scrap = self.get_object()
+        editable, message = self.check_editable(scrap)
+        if not editable:
+            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
+
+        items_data = scrap.scrap_items
+        for item_data in items_data:
+            item_data.product.available_product_quantity = item_data.adjusted_quantity
+
+        scrap.final_submit()
+        return Response({'status': 'done'})
+
+
+class ScrapItemViewSet(viewsets.ModelViewSet):
+    queryset = ScrapItem.objects.all()
+    serializer_class = ScrapItemSerializer
+    # permission_classes = [permissions.IsAuthenticated]
+
 
 
 class MultiLocationViewSet(viewsets.ModelViewSet):

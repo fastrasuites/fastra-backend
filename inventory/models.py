@@ -233,7 +233,7 @@ class Scrap(models.Model):
 
 
 class ScrapItem(models.Model):
-    stock_adjustment = models.ForeignKey(
+    scrap = models.ForeignKey(
         'Scrap',
         on_delete=models.CASCADE,
         related_name='scrap_items'

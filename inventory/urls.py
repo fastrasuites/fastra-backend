@@ -17,7 +17,8 @@ Including another URLconf
 from django.urls import path, include
 from rest_framework import routers
 
-from .views import LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet
+from .views import (LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
+                    ScrapViewSet, ScrapItemViewSet)
 
 router = routers.DefaultRouter()
 
@@ -26,6 +27,8 @@ router.register(r'configuration/multi-location', MultiLocationViewSet, basename=
 router.register(r'stock-adjustment', StockAdjustmentViewSet, basename='stock-adjustment')
 router.register(r'stock-adjustment/stock-adjustment-item', StockAdjustmentItemViewSet,
                 basename='stock-adjustment-item')
+router.register(r'scrap', ScrapViewSet, basename='scrap')
+router.register(r'scrap/scrap-item', ScrapItemViewSet, basename='scrap-item')
 
 urlpatterns = [
     path('', include(router.urls)),
