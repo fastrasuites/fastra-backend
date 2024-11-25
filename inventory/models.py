@@ -1,7 +1,13 @@
 from django.db import models
+from django.db.models.signals import pre_save, pre_delete, post_save
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
+from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
+from django.contrib.contenttypes.models import ContentType
 from django.dispatch import receiver
-from django.db.models.signals import pre_save, pre_delete
+from django.utils import timezone
+
+from decimal import Decimal
 
 from users.models import TenantUser
 from purchase.models import Product
@@ -20,6 +26,21 @@ SCRAP_STATUS = (
     ('draft', 'Draft'),
     ('done', 'Done')
 )
+
+STOCK_MOVE_STATUS = (
+    ('draft', 'Draft'),
+    ('pending', 'Pending'),
+    ('done', 'Done'),
+    ('cancelled', 'Cancelled'),
+)
+
+STOCK_MOVE_TYPES = [
+    ('IN', 'Incoming'),
+    ('OUT', 'Outgoing'),
+    ('RETURN', 'Return'),
+    ('INTERNAL', 'Internal Transfer'),
+    ('ADJUSTMENT', 'Inventory Adjustment'),
+]
 
 
 # Create your models here.
@@ -97,6 +118,7 @@ class MultiLocation(models.Model):
     def delete(self, *args, **kwargs):
         # Prevent deletion
         raise ValidationError("This instance cannot be deleted")
+
 
 @receiver(pre_delete, sender=MultiLocation)
 def prevent_deletion(sender, instance, **kwargs):
@@ -209,7 +231,7 @@ class Scrap(models.Model):
         return f"Scrap - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
 
     def save(self, *args, **kwargs):
-        self.id = f"{self.warehouse_location.location_code}IN{self.id_number:05d}"
+        self.id = f"{self.warehouse_location.location_code}-IN-{self.id_number:05d}"
         self.warehouse_location = Location.objects.last()
         if self.is_done:
             self.can_edit = False
@@ -261,3 +283,147 @@ class ScrapItem(models.Model):
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
+
+
+class StockMove(models.Model):
+    """Records movement of products across different inventory operations"""
+    id = models.CharField(max_length=15, primary_key=True)
+    id_number = models.PositiveIntegerField(auto_created=True)
+    reference = models.CharField(max_length=20, unique=True)
+    product = models.ForeignKey(
+        'Product',
+        on_delete=models.PROTECT,
+        related_name='stock_moves'
+    )
+    quantity = models.DecimalField(
+        max_digits=15,
+        decimal_places=3,
+        validators=[MinValueValidator(Decimal('0.001'))]
+    )
+    move_type = models.CharField(max_length=10, choices=STOCK_MOVE_TYPES)
+
+    # Generic foreign key to link to different inventory record types
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.CharField(max_length=20)  # Changed from PositiveIntegerField to CharField
+    inventory_record = GenericForeignKey('content_type', 'object_id')
+    source_document_id = models.CharField(
+        max_length=50,
+        help_text="Reference number of the source document"
+    )
+
+    source_location = models.ForeignKey(
+        'Location',
+        on_delete=models.PROTECT,
+        related_name='source_moves',
+        null=True,
+        blank=True
+    )
+    destination_location = models.ForeignKey(
+        'Location',
+        on_delete=models.PROTECT,
+        related_name='destination_moves',
+        null=True,
+        blank=True
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STOCK_MOVE_STATUS,
+        default='draft'
+    )
+    date_moved = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Actual date when the stock movement occurred"
+    )
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_modified = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        'TenantUser',
+        on_delete=models.PROTECT,
+        related_name='stock_moves_created'
+    )
+    moved_by = models.ForeignKey(
+        'TenantUser',
+        on_delete=models.PROTECT,
+        related_name='stock_moves_moved',
+        null=True,
+        blank=True
+    )
+
+    class Meta:
+        ordering = ['-date_created']
+        indexes = [
+            models.Index(fields=['content_type', 'object_id']),
+            models.Index(fields=['status', 'move_type']),
+            models.Index(fields=['date_moved']),
+            models.Index(fields=['source_document_id']),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.reference:
+            prefix = f"MOV/{self.move_type}/"
+            last_move = StockMove.objects.filter(
+                reference__startswith=prefix
+            ).order_by('reference').last()
+
+            if last_move:
+                last_number = int(last_move.reference.split('/')[-1])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+
+            self.reference = f"{prefix}{new_number:06d}"
+
+        super().save(*args, **kwargs)
+
+    def confirm_move(self, user):
+        """Confirm the stock movement"""
+        self.state = 'done'
+        self.date_moved = timezone.now()
+        self.moved_by = user
+        self.save()
+
+
+class IncomingInventoryRecordItem(models.Model):
+    pass
+
+
+class OutgoingInventoryRecordItem(models.Model):
+    pass
+
+
+# Signal handler for automatic stock move creation
+@receiver(post_save, sender=IncomingInventoryRecordItem)
+def create_incoming_stock_move(sender, instance, created, **kwargs):
+    """Create stock move when an incoming inventory record item is created"""
+    if created:
+        StockMove.objects.create(
+            product=instance.product,
+            unit_of_measure=instance.product.unit_of_measure,
+            quantity=instance.quantity,
+            move_type='IN',
+            inventory_record=instance.incoming_record,  # replace with the appropriate inventory record
+            source_document_id=instance.incoming_record_id,  # replace with the appropriate inventory record id
+            destination_location=instance.incoming_record.warehouse_location,
+            # replace with the appropriate inventory record location
+            status='draft',
+            created_by=instance.incoming_record.created_by  # replace with the appropriate inventory record creator
+        )
+
+
+@receiver(post_save, sender=OutgoingInventoryRecordItem)
+def create_outgoing_stock_move(sender, instance, created, **kwargs):
+    """Create stock move when an outgoing inventory record item is created"""
+    if created:
+        StockMove.objects.create(
+            product=instance.product,
+            unit_of_measure=instance.product.unit_of_measure,
+            quantity=instance.quantity,
+            move_type='OUT',
+            inventory_record=instance.outgoing_record,  # replace with the appropriate inventory record
+            source_document_reference=instance.outgoing_record_id,  # replace with the appropriate inventory record id
+            source_location=instance.outgoing_record.warehouse_location,
+            # replace with the appropriate inventory record location
+            state='draft',
+            created_by=instance.delivery.created_by  # replace with the appropriate inventory record creator
+        )
