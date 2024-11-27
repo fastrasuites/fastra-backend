@@ -31,20 +31,33 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'thisCan.beNot.a.secret.rightNow?')
 DEBUG = os.getenv('DEBUG') == 'True'
 
 ALLOWED_HOSTS = [
+    # general
     'localhost',
     '*',
+
+    # frontend
     'fastrasuite.com',
-    'www.fastrasuite.com'
-    '.fastrasuite.com',
+    'www.fastrasuite.com',
     '*.fastrasuite.com',
-    '95.179.214.79',
-    "fastra-frontend.vercel.app"
+
+    # backend
+    'fastrasuiteapi.com.ng',
+    'www.fastrasuiteapi.com.ng',
+    '*.fastrasuiteapi.com.ng',
 ]
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
-    "https://fastra-frontend.vercel.app",
+    # frontend
+    'https://fastrasuite.com',
+    'https://www.fastrasuite.com',
+    'https://*.fastrasuite.com',
+
+    # backend
+    'https://fastrasuiteapi.com.ng',
+    'https://www.fastrasuiteapi.com.ng',
+    'https://*.fastrasuiteapi.com.ng',
 ]
 
 # Application definition
@@ -54,8 +67,6 @@ SHARED_APPS = [
     'django_tenants',
     'registration',
 
-    # 'tenant_users.permissions',
-    # 'tenant_users.tenants',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -90,7 +101,6 @@ TENANT_APPS = [
     'purchase',
     'sales',
     'users',
-    # 'tenant_users.permissions',
 
     'companies',
 ]
@@ -99,7 +109,6 @@ INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in S
 
 MIDDLEWARE = [
     # Middleware for accessing schemas and permissions
-
     'django_tenants.middleware.main.TenantMainMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -384,5 +393,5 @@ SIMPLE_JWT = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'fastrasuite.com')
-FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastra-frontend.vercel.app')
+API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'https://fastrasuiteapi.com.ng')
+FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastrasuite.com')
