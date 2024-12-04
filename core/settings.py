@@ -121,7 +121,8 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
 
     # Custom Middleware for tenant authentication
-    # 'companies.middlewares.TenantMiddleware',
+    'companies.middlewares.TenantMiddleware',
+    'companies.middlewares.DebugTenantMainMiddleware',
     # 'users.middlewares.TenantMiddleware',
 
 ]
@@ -390,7 +391,22 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
 
 API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'https://fastrasuiteapi.com.ng')
 FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastrasuite.com')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django_tenants': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+    },
+}

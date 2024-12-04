@@ -2,8 +2,12 @@
 # from django_tenants.utils import get_tenant_model, get_public_schema_name
 # from django.db import connection
 # from .models import Domain  # Import your Domain model
+import logging
+
+from django.db import connection
 from django.urls import get_resolver, resolve
 from django.urls.resolvers import RegexPattern
+from django_tenants.middleware.main import TenantMainMiddleware
 
 from core.errors.exceptions import TenantNotFoundException
 from registration.models import Tenant
@@ -144,3 +148,9 @@ class TenantJWTAuthentication(JWTAuthentication):
             validated_token = self.get_validated_token(raw_token)
             user = self.get_user(validated_token)
             return (user, validated_token)
+
+class DebugTenantMainMiddleware(TenantMainMiddleware):
+    def process_request(self, request):
+        print(f"Starting TenantMainMiddleware with hostname: {request.get_host()}")
+        super().process_request(request)
+        print(f"Schema set to: {connection.schema_name}")

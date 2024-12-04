@@ -9,6 +9,8 @@ from rest_framework import permissions
 from rest_framework.decorators import action, permission_classes
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
+
+from core.utils import enforce_tenant_schema
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, Product, RequestForQuotation, \
     RequestForQuotationItem, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
     PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem, PRODUCT_CATEGORY
@@ -176,11 +178,15 @@ class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
 
+
 class DepartmentViewSet(SoftDeleteWithModelViewSet):
-    queryset = Department.objects.all()
     serializer_class = DepartmentSerializer
     permission_classes = [permissions.IsAuthenticated]
+    queryset = Department.objects.all()
 
+    @enforce_tenant_schema
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
 
 class UnitOfMeasureViewSet(SearchDeleteViewSet):
     queryset = UnitOfMeasure.objects.all()
