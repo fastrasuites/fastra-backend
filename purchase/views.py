@@ -34,7 +34,7 @@ from .utils import generate_model_pdf
 from companies.permissions import HasTenantAccess
 from rest_framework.permissions import IsAuthenticated
 
-@enforce_tenant_schema
+
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
     """
     A viewset that provides default `list()`, `create()`, `retrieve()`, `update()`, `partial_update()`,
