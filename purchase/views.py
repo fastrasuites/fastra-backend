@@ -34,7 +34,7 @@ from .utils import generate_model_pdf
 from companies.permissions import HasTenantAccess
 from rest_framework.permissions import IsAuthenticated
 
-@enforce_tenant_schema@enforce_tenant_schema
+@enforce_tenant_schema
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
     """
     A viewset that provides default `list()`, `create()`, `retrieve()`, `update()`, `partial_update()`,
@@ -42,12 +42,14 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
     hidden instances, a custom action to revert the hidden field back to False.
     """
 
+    @enforce_tenant_schema
     def get_queryset(self):
         # # Filter out hidden instances by default
         # return self.queryset.filter(is_hidden=False)
         return super().get_queryset()
 
     @action(detail=True, methods=['get', 'post'])
+    @enforce_tenant_schema
     def toggle_hidden(self, request, pk=None, *args, **kwargs):
         # Toggle the hidden status of an instance
         instance = self.get_object()
@@ -56,6 +58,7 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
         return Response({'status': f'Hidden status set to {instance.is_hidden}'}, status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False)
+    @enforce_tenant_schema
     def hidden(self, request, *args, **kwargs):
         # List all hidden instances
         hidden_instances = self.queryset.filter(is_hidden=True)
@@ -67,6 +70,7 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=False)
+    @enforce_tenant_schema
     def active(self, request, *args, **kwargs):
         # List all active instances
         active_instances = self.queryset.filter(is_hidden=False)
@@ -77,7 +81,7 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(active_instances, many=True)
         return Response(serializer.data)
 
-@enforce_tenant_schema
+
 class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
     """
     A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
@@ -88,6 +92,7 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
     search_fields = []
 
     @action(detail=False)
+    @enforce_tenant_schema
     def search(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset()).filter(is_hidden=False)
         page = self.paginate_queryset(queryset)
@@ -97,23 +102,26 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-@enforce_tenant_schema
+
 class PurchaseRequestViewSet(SearchDeleteViewSet):
     queryset = PurchaseRequest.objects.all()
     serializer_class = PurchaseRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['id', 'requester__username', 'suggested_vendor__name']
 
+    @enforce_tenant_schema
     def perform_create(self, serializer):
         serializer.save(requester=self.request.user)
 
     @action(detail=True, methods=['post', 'get'])
+    @enforce_tenant_schema
     def submit(self, request, pk=None):
         purchase_request = self.get_object()
         purchase_request.submit()
         return Response({'status': 'submitted'})
 
     @action(detail=True, methods=['post', 'get'])
+    @enforce_tenant_schema
     def approve(self, request, pk=None):
         purchase_request = self.get_object()
         if request.user.has_perm('approve_purchase_request'):
@@ -122,6 +130,7 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
         return Response({'status': 'permission denied'}, status=403)
 
     @action(detail=True, methods=['post', 'get'])
+    @enforce_tenant_schema
     def reject(self, request, pk=None):
         purchase_request = self.get_object()
         if request.user.has_perm('reject_purchase_request'):
@@ -130,6 +139,7 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
         return Response({'status': 'permission denied'}, status=403)
 
     @action(detail=True, methods=['POST', 'GET'])
+    @enforce_tenant_schema
     def convert_to_rfq(self, request, pk=None):
         try:
             # Get the approved purchase request
@@ -173,23 +183,24 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-@enforce_tenant_schema
+
 class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
     queryset = PurchaseRequestItem.objects.all()
     serializer_class = PurchaseRequestItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
-@enforce_tenant_schema
+
 class DepartmentViewSet(SearchDeleteViewSet):
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated, HasTenantAccess]
     queryset = Department.objects.all()
 
     @enforce_tenant_schema
+    @enforce_tenant_schema
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
-@enforce_tenant_schema
+
 class UnitOfMeasureViewSet(SearchDeleteViewSet):
     queryset = UnitOfMeasure.objects.all()
     serializer_class = UnitOfMeasureSerializer
@@ -203,7 +214,7 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
 #     permission_classes = [permissions.IsAuthenticated]
 #     search_fields = ['name',]
 
-@enforce_tenant_schema
+
 class VendorViewSet(viewsets.ModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
@@ -211,6 +222,7 @@ class VendorViewSet(viewsets.ModelViewSet):
     search_fields = ['company_name', 'email']
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
+    @enforce_tenant_schema
     def upload_excel(self, request):
         serializer = ExcelUploadSerializer(data=request.data)
         if serializer.is_valid():
@@ -269,6 +281,7 @@ class VendorViewSet(viewsets.ModelViewSet):
             return Response(serializer.errors, status=400)
 
     @action(detail=True, methods=['POST'])
+    @enforce_tenant_schema
     def upload_profile_picture(self, request, pk=None):
         vendor = self.get_object()
         if 'profile_picture' not in request.FILES:
@@ -278,7 +291,7 @@ class VendorViewSet(viewsets.ModelViewSet):
         vendor.save()
         return Response({"message": "Profile picture uploaded successfully"}, status=200)
 
-@enforce_tenant_schema
+
 class ProductViewSet(SearchDeleteViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
@@ -286,6 +299,7 @@ class ProductViewSet(SearchDeleteViewSet):
     search_fields = ['product_name', 'product_category', 'unit_of_measure__name', ]
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
+    @enforce_tenant_schema
     def upload_excel(self, request):
         serializer = ExcelUploadSerializer(data=request.data)
         if serializer.is_valid():
@@ -368,6 +382,7 @@ class ProductViewSet(SearchDeleteViewSet):
 
     @action(detail=False, methods=['DELETE', 'GET'], permission_classes=[IsAdminUser], url_path='delete-all',
             url_name='delete_all_products')
+    @enforce_tenant_schema
     def delete_all_products(self, request):
         deleted_count, _ = Product.objects.all().delete()
 
@@ -376,19 +391,21 @@ class ProductViewSet(SearchDeleteViewSet):
             status=status.HTTP_200_OK
         )
 
-@enforce_tenant_schema
+
 class RequestForQuotationViewSet(SearchDeleteViewSet):
     queryset = RequestForQuotation.objects.all()
     serializer_class = RequestForQuotationSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['vendor__company_name', 'status', 'purchase_request__id']
 
+    @enforce_tenant_schema
     def check_rfq_editable(self, rfq):
         """Check if the RFQ is editable (not submitted or rejected)."""
         if rfq.is_submitted:
             return False, 'This RFQ has already been submitted and cannot be edited.'
         return True, ''
 
+    @enforce_tenant_schema
     def check_rfq_mailable(self, rfq):
         """Check if the RFQ meets the criteria to be sent to vendors (not draft or rejected)."""
         if rfq.status in ['rejected', 'draft']:
@@ -399,6 +416,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
 
     # for sending RFQs to vendor emails
     @action(detail=True, methods=['post', 'get'])
+    @enforce_tenant_schema
     def send_email(self, request, pk=None):
         rfq = self.get_object()
 
@@ -439,6 +457,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post', 'get'])
+    @enforce_tenant_schema
     def submit(self, request, pk=None):
         rfq = self.get_object()
         editable, message = self.check_rfq_editable(rfq)
@@ -450,6 +469,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         return Response({'status': 'pending'})
 
     @action(detail=True, methods=['post', 'get'])
+    @enforce_tenant_schema
     def approve(self, request, pk=None):
         rfq = self.get_object()
         if request.user.has_perm('approve_request_for_quotation'):
@@ -458,6 +478,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         return Response({'status': 'permission denied'}, status=403)
 
     @action(detail=True, methods=['post', 'get'])
+    @enforce_tenant_schema
     def reject(self, request, pk=None):
         rfq = self.get_object()
         if request.user.has_perm('reject_request_for_quotation'):
@@ -465,6 +486,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
             return Response({'status': 'rejected'})
         return Response({'status': 'permission denied'}, status=403)
 
+    @enforce_tenant_schema
     def get_queryset(self):
         queryset = super().get_queryset()  # Use the superclass queryset
         rfq_status = self.request.query_params.get('status')
@@ -482,6 +504,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         return queryset
 
     @action(detail=True, methods=['post', 'get'])
+    @enforce_tenant_schema
     def convert_to_po(self, request, pk=None):
         try:
             # Get the approved purchase request
@@ -527,38 +550,40 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-@enforce_tenant_schema
+
 class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
     queryset = RequestForQuotationItem.objects.all()
     serializer_class = RequestForQuotationItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-@enforce_tenant_schema
+
 class RFQVendorQuoteViewSet(SearchDeleteViewSet):
     queryset = RFQVendorQuote.objects.all()
     serializer_class = RFQVendorQuoteSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['vendor__company_name', ]
 
-@enforce_tenant_schema
+
 class RFQVendorQuoteItemViewSet(viewsets.ModelViewSet):
     queryset = RFQVendorQuoteItem.objects.all()
     serializer_class = RFQVendorQuoteItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-@enforce_tenant_schema
+
 class PurchaseOrderViewSet(SearchDeleteViewSet):
     queryset = PurchaseOrder.objects.all()
     serializer_class = PurchaseOrderSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['status', 'vendor__company_name']
 
+    @enforce_tenant_schema
     def check_po_editable(self, po):
         """Check if the PO is editable (not submitted or rejected)."""
         if po.is_submitted:
             return False, 'This purchase order has already been submitted and cannot be edited.'
         return True, ''
 
+    @enforce_tenant_schema
     def check_po_mailable(self, po):
         """Check if the PO meets the criteria to be sent to vendors (not draft or rejected)."""
         if po.status in ['rejected', 'draft']:
@@ -569,6 +594,7 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
 
     # for sending POs to vendor emails
     @action(detail=True, methods=['post', 'get'])
+    @enforce_tenant_schema
     def send_email(self, request, pk=None):
         po = self.get_object()
 
@@ -603,20 +629,20 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@enforce_tenant_schema
+
 class PurchaseOrderItemViewSet(viewsets.ModelViewSet):
     queryset = PurchaseOrderItem.objects.all()
     serializer_class = PurchaseOrderItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-@enforce_tenant_schema
+
 class POVendorQuoteViewSet(SearchDeleteViewSet):
     queryset = POVendorQuote.objects.all()
     serializer_class = POVendorQuoteSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['vendor__company_name', ]
 
-@enforce_tenant_schema
+
 class POVendorQuoteItemViewSet(viewsets.ModelViewSet):
     queryset = POVendorQuoteItem.objects.all()
     serializer_class = POVendorQuoteItemSerializer
