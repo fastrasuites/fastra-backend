@@ -34,7 +34,7 @@ from .utils import generate_model_pdf
 from companies.permissions import HasTenantAccess
 from rest_framework.permissions import IsAuthenticated
 
-
+@enforce_tenant_schema@enforce_tenant_schema
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
     """
     A viewset that provides default `list()`, `create()`, `retrieve()`, `update()`, `partial_update()`,
@@ -77,7 +77,7 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(active_instances, many=True)
         return Response(serializer.data)
 
-
+@enforce_tenant_schema
 class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
     """
     A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
@@ -97,7 +97,7 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-
+@enforce_tenant_schema
 class PurchaseRequestViewSet(SearchDeleteViewSet):
     queryset = PurchaseRequest.objects.all()
     serializer_class = PurchaseRequestSerializer
@@ -173,23 +173,23 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-
+@enforce_tenant_schema
 class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
     queryset = PurchaseRequestItem.objects.all()
     serializer_class = PurchaseRequestItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
-
+@enforce_tenant_schema
 class DepartmentViewSet(SearchDeleteViewSet):
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated, HasTenantAccess]
     queryset = Department.objects.all()
 
-    # @enforce_tenant_schema
+    @enforce_tenant_schema
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
-
+@enforce_tenant_schema
 class UnitOfMeasureViewSet(SearchDeleteViewSet):
     queryset = UnitOfMeasure.objects.all()
     serializer_class = UnitOfMeasureSerializer
@@ -203,7 +203,7 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
 #     permission_classes = [permissions.IsAuthenticated]
 #     search_fields = ['name',]
 
-
+@enforce_tenant_schema
 class VendorViewSet(viewsets.ModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
@@ -278,7 +278,7 @@ class VendorViewSet(viewsets.ModelViewSet):
         vendor.save()
         return Response({"message": "Profile picture uploaded successfully"}, status=200)
 
-
+@enforce_tenant_schema
 class ProductViewSet(SearchDeleteViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
@@ -376,7 +376,7 @@ class ProductViewSet(SearchDeleteViewSet):
             status=status.HTTP_200_OK
         )
 
-
+@enforce_tenant_schema
 class RequestForQuotationViewSet(SearchDeleteViewSet):
     queryset = RequestForQuotation.objects.all()
     serializer_class = RequestForQuotationSerializer
@@ -527,26 +527,26 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-
+@enforce_tenant_schema
 class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
     queryset = RequestForQuotationItem.objects.all()
     serializer_class = RequestForQuotationItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-
+@enforce_tenant_schema
 class RFQVendorQuoteViewSet(SearchDeleteViewSet):
     queryset = RFQVendorQuote.objects.all()
     serializer_class = RFQVendorQuoteSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['vendor__company_name', ]
 
-
+@enforce_tenant_schema
 class RFQVendorQuoteItemViewSet(viewsets.ModelViewSet):
     queryset = RFQVendorQuoteItem.objects.all()
     serializer_class = RFQVendorQuoteItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-
+@enforce_tenant_schema
 class PurchaseOrderViewSet(SearchDeleteViewSet):
     queryset = PurchaseOrder.objects.all()
     serializer_class = PurchaseOrderSerializer
@@ -603,20 +603,20 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
+@enforce_tenant_schema
 class PurchaseOrderItemViewSet(viewsets.ModelViewSet):
     queryset = PurchaseOrderItem.objects.all()
     serializer_class = PurchaseOrderItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-
+@enforce_tenant_schema
 class POVendorQuoteViewSet(SearchDeleteViewSet):
     queryset = POVendorQuote.objects.all()
     serializer_class = POVendorQuoteSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['vendor__company_name', ]
 
-
+@enforce_tenant_schema
 class POVendorQuoteItemViewSet(viewsets.ModelViewSet):
     queryset = POVendorQuoteItem.objects.all()
     serializer_class = POVendorQuoteItemSerializer
