@@ -635,6 +635,13 @@ class PurchaseOrderItemViewSet(viewsets.ModelViewSet):
     serializer_class = PurchaseOrderItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    @enforce_tenant_schema
+    def get(self, request, *args, **kwargs):
+        # Custom logic can be added here
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
 
 class POVendorQuoteViewSet(SearchDeleteViewSet):
     queryset = POVendorQuote.objects.all()
@@ -642,8 +649,22 @@ class POVendorQuoteViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['vendor__company_name', ]
 
+    @enforce_tenant_schema
+    def get(self, request, *args, **kwargs):
+        # Custom logic can be added here
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
 
 class POVendorQuoteItemViewSet(viewsets.ModelViewSet):
     queryset = POVendorQuoteItem.objects.all()
     serializer_class = POVendorQuoteItemSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    @enforce_tenant_schema
+    def get(self, request, *args, **kwargs):
+        # Custom logic can be added here
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
