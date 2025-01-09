@@ -31,6 +31,8 @@ from django.http import HttpResponse
 from urllib.parse import quote
 
 from .utils import generate_model_pdf
+from companies.permissions import HasTenantAccess
+from rest_framework.permissions import IsAuthenticated
 
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
@@ -179,12 +181,12 @@ class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
 
 
 
-class DepartmentViewSet(SoftDeleteWithModelViewSet):
+class DepartmentViewSet(SearchDeleteViewSet):
     serializer_class = DepartmentSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasTenantAccess]
     queryset = Department.objects.all()
 
-    @enforce_tenant_schema
+    # @enforce_tenant_schema
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 

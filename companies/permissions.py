@@ -1,14 +1,17 @@
 from rest_framework import permissions
-from django_tenants.utils import get_tenant
+from rest_framework.permissions import IsAdminUser
+from users.models import TenantUser
 
-class IsAdminUser(permissions.BasePermission):
-    """
-    Custom permission to only allow the admin user of a tenant to make changes.
-    """
-
+class HasTenantAccess(permissions.BasePermission):
     def has_permission(self, request, view):
-        # Get the current tenant
-        tenant = get_tenant(request)
-        
-        # Check if the current user is the admin (first user) of the tenant
-        return request.user.is_authenticated and request.user == tenant.user
+        if not request.user.is_authenticated:
+            return False
+
+        try:
+            TenantUser.objects.get(
+                user_id=request.user.id,
+                tenant=request.tenant
+            )
+            return True
+        except TenantUser.DoesNotExist:
+            return False
