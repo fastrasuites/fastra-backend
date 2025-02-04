@@ -53,6 +53,7 @@ class VerifyEmail(generics.GenericAPIView):
 
         # Extract tenant subdomain/schema name from the request's current site domain
         tenant_subdomain = current_site.split('.')[0]
+        print(tenant_subdomain)
 
         try:
             # Find tenant based on the extracted subdomain
@@ -130,25 +131,41 @@ class LoginView(APIView):
 
         # email = request.data.get('email')
         # password = request.data.get('password')
-        full_host = request.get_host().split(':')[0]
-        schema_name = full_host.split('.')[0]
+        #full_host = request.get_host().split(':')[0]
+        #schema_name = full_host.split('.')[0]
 
+        #schema_name = slugify(company_name)
+
+        #with set_tenant_schema('public'):
+            #try:
+                #tenant_s = Tenant.objects.get(schema_name=schema_name)
+            #except Tenant.DoesNotExist:
+                #raise TenantNotFoundException()
+
+        #if not tenant.is_verified:
+            #return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = authenticate(request, email=email, password=password)
+        tenant_id = request.session.get('tenant_id')
+        tenant_schema_name = request.session.get('tenant_schema_name')
+        tenant_company_name = request.session.get('tenant_company_name')
         with set_tenant_schema('public'):
             try:
-                tenant = Tenant.objects.get(schema_name=schema_name)
+                tenant = Tenant.objects.get(schema_name=tenant_schema_name)
             except Tenant.DoesNotExist:
                 raise TenantNotFoundException()
 
         if not tenant.is_verified:
             return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = authenticate(request, email=email, password=password, schema_name=schema_name)
+        print("i got here")
         if user is None:
             raise InvalidCredentialsException()
-
+        
+        
         refresh = RefreshToken.for_user(user)
-        refresh['tenant_id'] = tenant.id
-        refresh['schema_name'] = schema_name
+        refresh['tenant_id'] = tenant_id
+        refresh['schema_name'] = tenant_schema_name
 
         return Response({
             'refresh_token': str(refresh),
@@ -157,7 +174,10 @@ class LoginView(APIView):
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
-            }
+            },
+            "tenant_id": tenant_id,
+            "tenant_schemaname": tenant_schema_name,
+            "tenant_companyname": tenant_company_name
         }, status=status.HTTP_200_OK)
 
 

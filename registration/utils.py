@@ -14,8 +14,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 class Util:
     @staticmethod
     def send_email(data):
-        email = EmailMessage(subject=data['email_subject'], body=data['email_body'], to=[data['to_email']])
-        email.send(fail_silently=False)
+        try:
+            email = EmailMessage(subject=data['email_subject'], body=data['email_body'], to=[data['to_email']])
+            email.send(fail_silently=False)
+        except Exception as e:
+            # Log or handle exception as needed
+            print(f"Error sending email: {e}")
 
 
 def generate_otp():
