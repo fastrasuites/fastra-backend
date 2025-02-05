@@ -135,7 +135,7 @@ class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
 
     def validate(self, data):
         user_data = data.get('user', {})
-        Tenant_details = data.get('tenant_details', {})
+        tenant_details = data.get('tenant_details', {})
         if not user_data:
             raise serializers.ValidationError({"user": "User data is required."})
 
@@ -147,11 +147,11 @@ class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
         if email and User.objects.filter(email=email).exists():
             raise serializers.ValidationError({"email": "A user with this email already exists."})
 
-        tenant_schema_name = Tenant_details.schema_name
+        tenant_schema_name = tenant_details.schema_name
         if tenant_schema_name and Tenant.objects.filter(schema_name=tenant_schema_name).exists():
             raise serializers.ValidationError({"Tenant schema name": "No Tenant schema or tenant doesnt exist"})
         
-        tenant_id = Tenant_details.tenant_id
+        tenant_id = tenant_details.tenant_id
         if tenant_id:
             raise serializers.ValidationError({"tenant id": "Tenant id is required"}) 
         
@@ -163,17 +163,17 @@ class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
         return data
 
     def create(self, validated_data):
-        tenant_details = validated_data.pop('tenant_detials')
+        tenant_details = validated_data.pop('tenant_details')
         tenant = Tenant.objects.get(schema_name=tenant_details.schema_name)
         if not tenant:
-           raise TenantNotFoundException()
+            raise TenantNotFoundException()
          
         user_data = validated_data.pop('user')
         groups = validated_data.pop('groups', [])
         user_serializer = UserSerializer(data=user_data)
         user_serializer.is_valid(raise_exception=True)
         user = user_serializer.save()
-        tenant_user = TenantUser.objects.create(user=user.id, tenant=tenant **validated_data)
+        tenant_user = TenantUser.objects.create(user=user.id, tenant=tenant, **validated_data)
         user.groups.add(*groups)
         return tenant_user
 
