@@ -10,6 +10,7 @@ from django.utils.text import slugify
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     password = serializers.CharField(write_only=True, required=True)
+    
 
 
 # RESET PASSWORD

@@ -72,6 +72,7 @@ SHARED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_extensions',
 
     'django_ckeditor_5',
     'rest_framework',
@@ -165,6 +166,7 @@ DATABASES = {
         'PORT': os.getenv("DB_PORT")
     }
 }
+print("databasename", os.getenv("DB_NAME") )
 
 DATABASE_ROUTERS = (
     'django_tenants.routers.TenantSyncRouter',
