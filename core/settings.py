@@ -52,6 +52,7 @@ CORS_ALLOWED_ORIGINS = [
     # frontend
     'https://fastrasuite.com',
     'https://www.fastrasuite.com',
+    'https://app.fastrasuite.com'
 
     # backend
     # 'https://fastrasuiteapi.com.ng',
@@ -166,7 +167,6 @@ DATABASES = {
         'PORT': os.getenv("DB_PORT")
     }
 }
-print("databasename", os.getenv("DB_NAME") )
 
 DATABASE_ROUTERS = (
     'django_tenants.routers.TenantSyncRouter',
