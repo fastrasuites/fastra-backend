@@ -155,8 +155,9 @@ class LoginView(APIView):
             except Tenant.DoesNotExist:
                 raise TenantNotFoundException()
 
-        if not tenant.is_verified:
+        """ if not tenant.is_verified:
             return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+        """
 
         print("i got here")
         if user is None:
