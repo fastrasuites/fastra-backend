@@ -16,7 +16,7 @@ from registration.utils import check_otp_time_expired, compare_password, set_ten
 from users.models import TenantUser
 from .models import CompanyProfile, OTP
 from registration.models import Tenant, Domain
-from .serializers import TenantSerializer, LoginSerializer, \
+from .serializers import TenantSerializer, \
     RequestForgottenPasswordSerializer, ForgottenPasswordSerializer, CompanyProfileSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .utils import Util
