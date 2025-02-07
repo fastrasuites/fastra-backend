@@ -102,9 +102,9 @@ class ResendVerificationEmail(generics.GenericAPIView):
 
             # current_site = get_current_site(request).domain
             current_site = f"{payload['tenant']}.fastrasuite.com"
-            relativeLink = reverse('email-verify')
-            absurl = f'https://{current_site}{relativeLink}?token={str(new_token.access_token)}'
-            email_body = f'Hi {user.username},\nUse the link below to verify your email:\n{absurl}'
+            relative_link = reverse('email-verify')
+            absolute_url = f'https://{current_site}{relative_link}?token={str(new_token.access_token)}'
+            email_body = f'Hi {user.username},\nUse the link below to verify your email:\n{absolute_url}'
             data = {'email_body': email_body, 'to_email': user.email, 'email_subject': 'Verify Your Email'}
 
             Util.send_email(data)
@@ -116,49 +116,66 @@ class ResendVerificationEmail(generics.GenericAPIView):
             return Response({'error': 'User with this email does not exist'}, status=status.HTTP_404_NOT_FOUND)
 
 
-class LoginView(APIView):
-    serializer_class = LoginSerializer
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = LoginSerializer(data=request.data)
-        if serializer.is_valid():
-            email = serializer.validated_data['email']
-            password = serializer.validated_data['password']
-        else:
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        # email = request.data.get('email')
-        # password = request.data.get('password')
-        full_host = request.get_host().split(':')[0]
-        schema_name = full_host.split('.')[0]
-
-        with set_tenant_schema('public'):
-            try:
-                tenant = Tenant.objects.get(schema_name=schema_name)
-            except Tenant.DoesNotExist:
-                raise TenantNotFoundException()
-
-        if not tenant.is_verified:
-            return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        user = authenticate(request, email=email, password=password, schema_name=schema_name)
-        if user is None:
-            raise InvalidCredentialsException()
-
-        refresh = RefreshToken.for_user(user)
-        refresh['tenant_id'] = tenant.id
-        refresh['schema_name'] = schema_name
-
-        return Response({
-            'refresh_token': str(refresh),
-            'access_token': str(refresh.access_token),
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-            }
-        }, status=status.HTTP_200_OK)
+# class LoginView(APIView):
+#     serializer_class = LoginSerializer
+#     permission_classes = [AllowAny]
+#
+#     def post(self, request):
+#         serializer = LoginSerializer(data=request.data)
+#         if serializer.is_valid():
+#             email = serializer.validated_data['email']
+#             password = serializer.validated_data['password']
+#         else:
+#             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+#
+#         # email = request.data.get('email')
+#         # password = request.data.get('password')
+#         # full_host = request.get_host().split(':')[0]
+#         # schema_name = full_host.split('.')[0]
+#         #
+#         # schema_name = slugify(company_name)
+#         #
+#         # with set_tenant_schema('public'):
+#         #     try:
+#         #         tenant_s = Tenant.objects.get(schema_name=schema_name)
+#         #     except Tenant.DoesNotExist:
+#         #         raise TenantNotFoundException()
+#         #
+#         # if not tenant.is_verified:
+#         #     return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+#
+#         user = authenticate(request, email=email, password=password)
+#         tenant_id = request.session.get('tenant_id')
+#         tenant_schema_name = request.session.get('tenant_schema_name')
+#         tenant_company_name = request.session.get('tenant_company_name')
+#         with set_tenant_schema('public'):
+#             try:
+#                 tenant = Tenant.objects.get(schema_name=tenant_schema_name)
+#             except Tenant.DoesNotExist:
+#                 raise TenantNotFoundException()
+#
+#         if not tenant.is_verified:
+#             return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+#
+#         if user is None:
+#             raise InvalidCredentialsException()
+#
+#         refresh = RefreshToken.for_user(user)
+#         refresh['tenant_id'] = tenant_id
+#         refresh['schema_name'] = tenant_schema_name
+#
+#         return Response({
+#             'refresh_token': str(refresh),
+#             'access_token': str(refresh.access_token),
+#             'user': {
+#                 'id': user.id,
+#                 'username': user.username,
+#                 'email': user.email,
+#             },
+#             "tenant_id": tenant_id,
+#             "tenant_schema_name": tenant_schema_name,
+#             "tenant_company_name": tenant_company_name
+#         }, status=status.HTTP_200_OK)
 
 
 

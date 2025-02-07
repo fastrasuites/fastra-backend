@@ -5,13 +5,6 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils.text import slugify
 
 
-
-# LOGIN
-class LoginSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True)
-    password = serializers.CharField(write_only=True, required=True)
-
-
 # RESET PASSWORD
 class RequestForgottenPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
