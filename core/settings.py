@@ -52,6 +52,7 @@ CORS_ALLOWED_ORIGINS = [
     # frontend
     'https://fastrasuite.com',
     'https://www.fastrasuite.com',
+    'https://app.fastrasuite.com'
 
     # backend
     # 'https://fastrasuiteapi.com.ng',
