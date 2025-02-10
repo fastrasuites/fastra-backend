@@ -337,6 +337,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND')
@@ -368,7 +369,6 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
-
 
 API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'https://fastrasuiteapi.com.ng')
 FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastrasuite.com')
