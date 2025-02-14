@@ -1,47 +1,46 @@
-from django.utils import timezone
+import jwt
+from urllib.parse import urlparse
+
+from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
-from rest_framework.authentication import TokenAuthentication
-from rest_framework.views import APIView
 from django.shortcuts import render, redirect
 from django.urls import reverse
+from django.core.mail import send_mail
+from django.contrib.auth.models import User
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth import login as auth_login
+from django.contrib.sites.shortcuts import get_current_site
+from django.utils import timezone
+from django.utils.http import urlsafe_base64_decode
+from django.utils.encoding import force_bytes
+from django.db import transaction, connection
+
+from django_tenants.utils import schema_context, tenant_context
+
+from rest_framework import viewsets, generics, status
 from rest_framework.response import Response
-from rest_framework import viewsets, generics
-from rest_framework import status
-from django.utils.text import slugify
-from django.contrib.auth import login, authenticate, get_user_model
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
 from registration.utils import check_otp_time_expired, compare_password, set_tenant_schema, generate_tokens
-from users.models import TenantUser
-from .models import CompanyProfile, OTP
 from registration.models import Tenant, Domain
-from .serializers import TenantSerializer, \
-    RequestForgottenPasswordSerializer, ForgottenPasswordSerializer, CompanyProfileSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
+from users.models import TenantUser
+
+from .models import CompanyProfile, OTP
+from .serializers import TenantSerializer, VerifyEmailSerializer, RequestForgottenPasswordSerializer, \
+    ForgottenPasswordSerializer, CompanyProfileSerializer, ResendVerificationEmailSerializer
 from .utils import Util
-from django.contrib.sites.shortcuts import get_current_site
-import jwt
-from django.conf import settings
-from urllib.parse import urlparse
-from django.contrib.auth.models import User
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode
-from django.utils.encoding import force_bytes
-from django.core.mail import send_mail
-from django.utils.http import urlsafe_base64_decode
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.exceptions import PermissionDenied
 from .permissions import IsAdminUser
-from django.db import transaction, connection
-from django_tenants.utils import schema_context, tenant_context
-from rest_framework.permissions import AllowAny
-from django.contrib.auth import login as auth_login
 
 
 class VerifyEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]
+    serializer_class = VerifyEmailSerializer
 
     @csrf_exempt
     def get(self, request):
@@ -85,35 +84,68 @@ class VerifyEmail(generics.GenericAPIView):
 class ResendVerificationEmail(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
-    def get(self, request):
-        token = request.GET.get('token')
+    def create(self, request):
+        token = request.data.get('token')
         if not token:
-            return Response({'error': 'Token is missing'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Token is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
             user = User.objects.get(email=payload['email'])
-
             if user.profile.is_verified:
-                return Response({'detail': 'Email already verified'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'detail': 'Email is already verified'}, status=status.HTTP_200_OK)
 
             new_token = RefreshToken.for_user(user)
             new_token['email'] = user.email
 
-            # current_site = get_current_site(request).domain
-            current_site = f"{payload['tenant']}.fastrasuite.com"
             relative_link = reverse('email-verify')
+            current_site = request.get_host()  # Get the current domain
             absolute_url = f'https://{current_site}{relative_link}?token={str(new_token.access_token)}'
-            email_body = f'Hi {user.username},\nUse the link below to verify your email:\n{absolute_url}'
+
+            email_body = f'Hi {user.username},\nUse the link below to verify your email:\n\n{absolute_url}'
             data = {'email_body': email_body, 'to_email': user.email, 'email_subject': 'Verify Your Email'}
 
             Util.send_email(data)
+            return Response({'detail': 'Verification email resent successfully'}, status=status.HTTP_200_OK)
+        except (jwt.DecodeError, User.DoesNotExist) as e:
+            error_message = 'Invalid token' if isinstance(e, jwt.DecodeError) else 'User with this email does not exist'
+            return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST if isinstance(e,
+                                                                                                       jwt.DecodeError) else status.HTTP_404_NOT_FOUND)
 
-            return Response({'detail': 'New verification email has been sent.'}, status=status.HTTP_200_OK)
-        except jwt.DecodeError:
-            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({'error': 'User with this email does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+# class ResendVerificationEmail(generics.GenericAPIView):
+#     permission_classes = [AllowAny]
+#     serializer_class = ResendVerificationEmailSerializer
+# 
+#     def get(self, request):
+#         token = request.GET.get('token')
+#         if not token:
+#             return Response({'error': 'Token is missing'}, status=status.HTTP_400_BAD_REQUEST)
+# 
+#         try:
+#             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+#             user = User.objects.get(email=payload['email'])
+# 
+#             if user.profile.is_verified:
+#                 return Response({'detail': 'Email already verified'}, status=status.HTTP_400_BAD_REQUEST)
+# 
+#             new_token = RefreshToken.for_user(user)
+#             new_token['email'] = user.email
+# 
+#             # current_site = get_current_site(request).domain
+#             current_site = f"{payload['tenant']}.fastrasuite.com"
+#             relative_link = reverse('email-verify')
+#             absolute_url = f'https://{current_site}{relative_link}?token={str(new_token.access_token)}'
+#             email_body = f'Hi {user.username},\nUse the link below to verify your email:\n{absolute_url}'
+#             data = {'email_body': email_body, 'to_email': user.email, 'email_subject': 'Verify Your Email'}
+# 
+#             Util.send_email(data)
+# 
+#             return Response({'detail': 'New verification email has been sent.'}, status=status.HTTP_200_OK)
+#         except (jwt.DecodeError, User.DoesNotExist) as e:
+#             error_message = 'Invalid token' if isinstance(e, jwt.DecodeError) else 'User with this email does not exist'
+#             return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST if isinstance(e,
+#                                                                                                        jwt.DecodeError) else status.HTTP_404_NOT_FOUND)
 
 
 # class LoginView(APIView):
@@ -176,7 +208,6 @@ class ResendVerificationEmail(generics.GenericAPIView):
 #             "tenant_schema_name": tenant_schema_name,
 #             "tenant_company_name": tenant_company_name
 #         }, status=status.HTTP_200_OK)
-
 
 
 #
@@ -271,7 +302,9 @@ class ForgottenPasswordView(APIView):
     def post(self, request):
         email = request.session.get('forgotten_password_email')
         if not email:
-            return Response({'error': 'No email found in session. Please initiate the forgotten password process again.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'No email found in session. Please initiate the forgotten password process again.'},
+                status=status.HTTP_400_BAD_REQUEST)
 
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
@@ -297,6 +330,7 @@ class ForgottenPasswordView(APIView):
 
 class ResendOTPView(APIView):
     permission_classes = [AllowAny]
+
     def post(self, request):
         email = request.session.get('forgotten_password_email')
         if not email:
@@ -357,7 +391,6 @@ class UpdateCompanyProfileView(generics.UpdateAPIView):
             return Response({"detail": "Only the admin user can update the company profile."},
                             status=status.HTTP_403_FORBIDDEN)
         return super().handle_exception(exc)
-
 
 
 class ProtectedView(APIView):
