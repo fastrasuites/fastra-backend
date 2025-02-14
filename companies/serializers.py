@@ -1,9 +1,18 @@
-from rest_framework import serializers
-from .models import Tenant, CompanyProfile
 # from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.utils.text import slugify
 
+from rest_framework import serializers
+
+from .models import Tenant, CompanyProfile
+
+# Verify Email
+class VerifyEmailSerializer(serializers.Serializer):
+    token = serializers.CharField(required=True)
+
+# Resend Verification Email
+class ResendVerificationEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
 
 # RESET PASSWORD
 class RequestForgottenPasswordSerializer(serializers.Serializer):

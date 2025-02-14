@@ -1,15 +1,27 @@
 import json
+import requests
+import os
 
-from django.core.mail import EmailMessage
-from django.conf import settings
+from openpyxl import load_workbook
+from urllib.parse import quote
+
+from django.http import HttpResponse
+from django.utils import timezone
 from django.utils.text import slugify
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import InMemoryUploadedFile
+
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import viewsets, status, generics, filters
-from rest_framework import permissions
+
+from rest_framework import viewsets, status, mixins, filters, permissions
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action, permission_classes
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 
+from companies.permissions import HasTenantAccess
 from core.utils import enforce_tenant_schema
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, Product, RequestForQuotation, \
     RequestForQuotationItem, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
@@ -20,43 +32,40 @@ from .serializers import PurchaseRequestSerializer, DepartmentSerializer, Vendor
     PurchaseRequestItemSerializer, RFQVendorQuoteSerializer, RFQVendorQuoteItemSerializer, \
     PurchaseOrderSerializer, PurchaseOrderItemSerializer, POVendorQuoteSerializer, \
     POVendorQuoteItemSerializer, ExcelUploadSerializer
-from django.core.files.uploadedfile import InMemoryUploadedFile
-from openpyxl import load_workbook
-import requests
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
-import os
-from django.utils import timezone
-from django.http import HttpResponse
-from urllib.parse import quote
-
 from .utils import generate_model_pdf
-from companies.permissions import HasTenantAccess
-from rest_framework.permissions import IsAuthenticated
 
-class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
+
+class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin, mixins.CreateModelMixin,
+                                 mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
     """
     A viewset that provides default `list()`, `create()`, `retrieve()`, `update()`, `partial_update()`,
     and a custom `destroy()` action to hide instances instead of deleting them, a custom action to list
     hidden instances, a custom action to revert the hidden field back to False.
     """
-    
 
     def get_queryset(self):
         # # Filter out hidden instances by default
         # return self.queryset.filter(is_hidden=False)
         return super().get_queryset()
 
-    @action(detail=True, methods=['get', 'post'])   
-    def toggle_hidden(self, request, pk=None, *args, **kwargs):
+    @action(detail=True, methods=['put', 'patch'])
+    def toggle_hidden_status(self, request, pk=None, *args, **kwargs):
         # Toggle the hidden status of an instance
         instance = self.get_object()
         instance.is_hidden = not instance.is_hidden
         instance.save()
         return Response({'status': f'Hidden status set to {instance.is_hidden}'}, status=status.HTTP_204_NO_CONTENT)
 
-    @action(detail=False)   
-    def hidden(self, request, *args, **kwargs):
+    @action(detail=True, methods=['delete'])
+    def soft_delete(self, request, pk=None, *args, **kwargs):
+        # Soft delete an instance
+        instance = self.get_object()
+        instance.is_hidden = True
+        instance.save()
+        return Response({'status': 'hidden'}, status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['get'])
+    def hidden_list(self, request, *args, **kwargs):
         # List all hidden instances
         hidden_instances = self.queryset.filter(is_hidden=True)
         page = self.paginate_queryset(hidden_instances)
@@ -64,10 +73,10 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(hidden_instances, many=True)
-        return Response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-    @action(detail=False)   
-    def active(self, request, *args, **kwargs):
+    @action(detail=False, methods=['get'])
+    def active_list(self, request, *args, **kwargs):
         # List all active instances
         active_instances = self.queryset.filter(is_hidden=False)
         page = self.paginate_queryset(active_instances)
@@ -75,7 +84,7 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(active_instances, many=True)
-        return Response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
@@ -87,7 +96,7 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = []
 
-    @action(detail=False)   
+    @action(detail=False, methods=['get'])
     def search(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset()).filter(is_hidden=False)
         page = self.paginate_queryset(queryset)
@@ -95,7 +104,7 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class PurchaseRequestViewSet(SearchDeleteViewSet):
@@ -107,29 +116,53 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
     def perform_create(self, serializer):
         serializer.save(requester=self.request.user)
 
-    @action(detail=True, methods=['post', 'get'])   
+    @action(detail=False, methods=['get'])
+    def draft_list(self, request):
+        queryset = PurchaseRequest.pr_draft.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def pending_list(self, request):
+        queryset = PurchaseRequest.pr_pending.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def approved_list(self, request):
+        queryset = PurchaseRequest.pr_approved.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def rejected_list(self, request):
+        queryset = PurchaseRequest.pr_rejected.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['put', 'patch'])
     def submit(self, request, pk=None):
         purchase_request = self.get_object()
         purchase_request.submit()
-        return Response({'status': 'submitted'})
+        return Response({'status': 'submitted'}, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['post', 'get'])   
+    @action(detail=True, methods=['put', 'patch'])
     def approve(self, request, pk=None):
         purchase_request = self.get_object()
         if request.user.has_perm('approve_purchase_request'):
             purchase_request.approve()
-            return Response({'status': 'approved'})
-        return Response({'status': 'permission denied'}, status=403)
+            return Response({'status': 'approved'}, status=status.HTTP_200_OK)
+        return Response({'status': 'permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
-    @action(detail=True, methods=['post', 'get'])   
+    @action(detail=True, methods=['put', 'patch'])
     def reject(self, request, pk=None):
         purchase_request = self.get_object()
         if request.user.has_perm('reject_purchase_request'):
             purchase_request.reject()
-            return Response({'status': 'rejected'})
-        return Response({'status': 'permission denied'}, status=403)
+            return Response({'status': 'rejected'}, status=status.HTTP_200_OK)
+        return Response({'status': 'permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
-    @action(detail=True, methods=['POST', 'GET'])   
+    @action(detail=True, methods=['post'])
     def convert_to_rfq(self, request, pk=None):
         try:
             # Get the approved purchase request
@@ -180,7 +213,6 @@ class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
 
-
 class DepartmentViewSet(SearchDeleteViewSet):
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated, HasTenantAccess]
@@ -188,6 +220,7 @@ class DepartmentViewSet(SearchDeleteViewSet):
 
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
 
 class UnitOfMeasureViewSet(SearchDeleteViewSet):
     queryset = UnitOfMeasure.objects.all()
@@ -203,13 +236,50 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
 #     search_fields = ['name',]
 
 
-class VendorViewSet(viewsets.ModelViewSet):
+class VendorViewSet(SearchDeleteViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
     search_fields = ['company_name', 'email']
 
-    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer) 
+    def create(self, request, *args, **kwargs):
+        serializer = VendorSerializer(data=request.data)
+        if serializer.is_valid():
+            vendor = serializer.save()
+            return Response({
+                "message": "Vendor created successfully",
+                "vendor": {
+                    "url": vendor.url,
+                    "company_name": vendor.company_name,
+                    "email": vendor.email,
+                    "address": vendor.address,
+                    "profile_picture": request.build_absolute_uri(
+                        vendor.profile_picture.url) if vendor.profile_picture else None,
+                }
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = VendorSerializer(instance, data=request.data, partial=partial)
+        if serializer.is_valid():
+            vendor = serializer.save()
+            return Response({
+                "message": "Vendor updated successfully",
+                "vendor": {
+                    "url": vendor.url,
+                    "company_name": vendor.company_name,
+                    "email": vendor.email,
+                    "address": vendor.address,
+                    "profile_picture": request.build_absolute_uri(
+                        vendor.profile_picture.url) if vendor.profile_picture else None,
+                }
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
     def upload_excel(self, request):
         serializer = ExcelUploadSerializer(data=request.data)
         if serializer.is_valid():
@@ -225,7 +295,7 @@ class VendorViewSet(viewsets.ModelViewSet):
                 errors = []
 
                 for row in sheet.iter_rows(min_row=2, values_only=True):
-                    company_name, email, address, phone_number, profile_picture_url = row[:5]
+                    company_name, email, address, phone_number = row[:4]
 
                     try:
                         vendor = Vendor(
@@ -235,23 +305,6 @@ class VendorViewSet(viewsets.ModelViewSet):
                             phone_number=phone_number,
                             # is_hidden=bool(is_hidden)
                         )
-
-                        if profile_picture_url:
-                            try:
-                                response = requests.get(profile_picture_url)
-                                if response.status_code == 200:
-                                    # Generate a unique filename
-                                    file_name = f"{company_name.replace(' ', '_')}_profile.jpg"
-                                    file_path = os.path.join('vendor_profiles', file_name)
-
-                                    # Save the image using default_storage
-                                    file_name = default_storage.save(file_path, ContentFile(response.content))
-
-                                    # Set the profile_picture field to the saved file path
-                                    vendor.profile_picture = file_name
-                            except Exception as e:
-                                errors.append(f"Error downloading profile picture for {company_name}: {str(e)}")
-
                         vendor.save()
                         vendors_created += 1
                     except Exception as e:
@@ -267,7 +320,7 @@ class VendorViewSet(viewsets.ModelViewSet):
         else:
             return Response(serializer.errors, status=400)
 
-    @action(detail=True, methods=['POST'])  
+    @action(detail=True, methods=['POST'])
     def upload_profile_picture(self, request, pk=None):
         vendor = self.get_object()
         if 'profile_picture' not in request.FILES:
@@ -284,7 +337,7 @@ class ProductViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['product_name', 'product_category', 'unit_of_measure__name', ]
 
-    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer) 
+    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
     def upload_excel(self, request):
         serializer = ExcelUploadSerializer(data=request.data)
         if serializer.is_valid():
@@ -366,7 +419,7 @@ class ProductViewSet(SearchDeleteViewSet):
             return Response(serializer.errors, status=400)
 
     @action(detail=False, methods=['DELETE', 'GET'], permission_classes=[IsAdminUser], url_path='delete-all',
-            url_name='delete_all_products') 
+            url_name='delete_all_products')
     def delete_all_products(self, request):
         deleted_count, _ = Product.objects.all().delete()
 
@@ -397,7 +450,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         return True, ''
 
     # for sending RFQs to vendor emails
-    @action(detail=True, methods=['post', 'get'])   
+    @action(detail=True, methods=['post', 'get'])
     def send_email(self, request, pk=None):
         rfq = self.get_object()
 
@@ -437,7 +490,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(detail=True, methods=['post', 'get'])   
+    @action(detail=True, methods=['post', 'get'])
     def submit(self, request, pk=None):
         rfq = self.get_object()
         editable, message = self.check_rfq_editable(rfq)
@@ -448,7 +501,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         rfq.submit()
         return Response({'status': 'pending'})
 
-    @action(detail=True, methods=['post', 'get'])   
+    @action(detail=True, methods=['post', 'get'])
     def approve(self, request, pk=None):
         rfq = self.get_object()
         if request.user.has_perm('approve_request_for_quotation'):
@@ -456,7 +509,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
             return Response({'status': 'approved'})
         return Response({'status': 'permission denied'}, status=403)
 
-    @action(detail=True, methods=['post', 'get'])   
+    @action(detail=True, methods=['post', 'get'])
     def reject(self, request, pk=None):
         rfq = self.get_object()
         if request.user.has_perm('reject_request_for_quotation'):
@@ -480,7 +533,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
 
         return queryset
 
-    @action(detail=True, methods=['post', 'get'])   
+    @action(detail=True, methods=['post', 'get'])
     def convert_to_po(self, request, pk=None):
         try:
             # Get the approved purchase request
@@ -567,7 +620,7 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
         return True, ''
 
     # for sending POs to vendor emails
-    @action(detail=True, methods=['post', 'get'])   
+    @action(detail=True, methods=['post', 'get'])
     def send_email(self, request, pk=None):
         po = self.get_object()
 
@@ -610,7 +663,6 @@ class PurchaseOrderItemViewSet(viewsets.ModelViewSet):
 
     @enforce_tenant_schema
     def get(self, request, *args, **kwargs):
-
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
@@ -624,7 +676,6 @@ class POVendorQuoteViewSet(SearchDeleteViewSet):
 
     @enforce_tenant_schema
     def get(self, request, *args, **kwargs):
-
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)

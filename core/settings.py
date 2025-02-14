@@ -38,6 +38,7 @@ ALLOWED_HOSTS = [
     # frontend
     'fastrasuite.com',
     'www.fastrasuite.com',
+    'app.fastrasuite.com',
     '*.fastrasuite.com',
 
     # backend
@@ -52,7 +53,7 @@ CORS_ALLOWED_ORIGINS = [
     # frontend
     'https://fastrasuite.com',
     'https://www.fastrasuite.com',
-    'https://app.fastrasuite.com'
+    'https://app.fastrasuite.com',
 
     # backend
     # 'https://fastrasuiteapi.com.ng',
@@ -337,6 +338,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND')
@@ -369,9 +371,12 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM': 'user_id',
 }
 
+# INCREASE DJANGO FILE UPLOAD SIZE
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
 API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'https://fastrasuiteapi.com.ng')
-FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastrasuite.com')
+FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://app.fastrasuite.com')
 
 LOGGING = {
     'version': 1,

@@ -52,7 +52,8 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
             # )
             email_body = (
                 f"Hi {tenant.company_name},\n\n"
-                f"Thank you for registering. To complete your registration, please verify your email by clicking the link below:\n\n"
+                f"Thank you for registering. To complete your registration, please verify your email by clicking the "
+                f"link below:\n\n"
                 f"{verification_url}\n\n"
                 f"If you did not register for an account, please ignore this email."
             )
