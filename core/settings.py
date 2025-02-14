@@ -371,6 +371,10 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM': 'user_id',
 }
 
+# INCREASE DJANGO FILE UPLOAD SIZE
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
 API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'https://fastrasuiteapi.com.ng')
 FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://app.fastrasuite.com')
 

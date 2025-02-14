@@ -14,8 +14,8 @@ from django.core.files.uploadedfile import InMemoryUploadedFile
 
 from django_filters.rest_framework import DjangoFilterBackend
 
-from rest_framework import viewsets, status, mixins, filters
-from rest_framework import permissions
+from rest_framework import viewsets, status, mixins, filters, permissions
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action, permission_classes
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
@@ -240,7 +240,44 @@ class VendorViewSet(SearchDeleteViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
     search_fields = ['company_name', 'email']
+
+    def create(self, request, *args, **kwargs):
+        serializer = VendorSerializer(data=request.data)
+        if serializer.is_valid():
+            vendor = serializer.save()
+            return Response({
+                "message": "Vendor created successfully",
+                "vendor": {
+                    "url": vendor.url,
+                    "company_name": vendor.company_name,
+                    "email": vendor.email,
+                    "address": vendor.address,
+                    "profile_picture": request.build_absolute_uri(
+                        vendor.profile_picture.url) if vendor.profile_picture else None,
+                }
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = VendorSerializer(instance, data=request.data, partial=partial)
+        if serializer.is_valid():
+            vendor = serializer.save()
+            return Response({
+                "message": "Vendor updated successfully",
+                "vendor": {
+                    "url": vendor.url,
+                    "company_name": vendor.company_name,
+                    "email": vendor.email,
+                    "address": vendor.address,
+                    "profile_picture": request.build_absolute_uri(
+                        vendor.profile_picture.url) if vendor.profile_picture else None,
+                }
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
     def upload_excel(self, request):
@@ -258,7 +295,7 @@ class VendorViewSet(SearchDeleteViewSet):
                 errors = []
 
                 for row in sheet.iter_rows(min_row=2, values_only=True):
-                    company_name, email, address, phone_number, profile_picture_url = row[:5]
+                    company_name, email, address, phone_number = row[:4]
 
                     try:
                         vendor = Vendor(
@@ -268,23 +305,6 @@ class VendorViewSet(SearchDeleteViewSet):
                             phone_number=phone_number,
                             # is_hidden=bool(is_hidden)
                         )
-
-                        if profile_picture_url:
-                            try:
-                                response = requests.get(profile_picture_url)
-                                if response.status_code == 200:
-                                    # Generate a unique filename
-                                    file_name = f"{company_name.replace(' ', '_')}_profile.jpg"
-                                    file_path = os.path.join('vendor_profiles', file_name)
-
-                                    # Save the image using default_storage
-                                    file_name = default_storage.save(file_path, ContentFile(response.content))
-
-                                    # Set the profile_picture field to the saved file path
-                                    vendor.profile_picture = file_name
-                            except Exception as e:
-                                errors.append(f"Error downloading profile picture for {company_name}: {str(e)}")
-
                         vendor.save()
                         vendors_created += 1
                     except Exception as e:
