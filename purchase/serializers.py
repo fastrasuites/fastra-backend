@@ -28,6 +28,14 @@ class DepartmentSerializer(serializers.HyperlinkedModelSerializer):
         fields = ['url', 'name', 'is_hidden']
 
 
+class CurrencySerializer(serializers.HyperlinkedModelSerializer):
+    url = serializers.HyperlinkedIdentityField(view_name="currency-detail")
+
+    class Meta:
+        model = Currency
+        fields = ["url", "currency_symbol", "currency_symbol", "is_hidden"]
+
+
 class PurchaseRequestItemSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-request-item-detail')
     purchase_request = serializers.HyperlinkedRelatedField(

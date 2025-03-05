@@ -25,13 +25,13 @@ from companies.permissions import HasTenantAccess
 from core.utils import enforce_tenant_schema
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, Product, RequestForQuotation, \
     RequestForQuotationItem, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
-    PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem, PRODUCT_CATEGORY
+    PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem, PRODUCT_CATEGORY, Currency
 from .serializers import PurchaseRequestSerializer, DepartmentSerializer, VendorSerializer, \
     ProductSerializer, RequestForQuotationSerializer, RequestForQuotationItemSerializer, \
     UnitOfMeasureSerializer, \
     PurchaseRequestItemSerializer, RFQVendorQuoteSerializer, RFQVendorQuoteItemSerializer, \
     PurchaseOrderSerializer, PurchaseOrderItemSerializer, POVendorQuoteSerializer, \
-    POVendorQuoteItemSerializer, ExcelUploadSerializer
+    POVendorQuoteItemSerializer, ExcelUploadSerializer, CurrencySerializer
 from .utils import generate_model_pdf
 
 
@@ -220,6 +220,12 @@ class DepartmentViewSet(SearchDeleteViewSet):
 
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+
+class CurrencyViewSet(SearchDeleteViewSet):
+    serializer_class = CurrencySerializer
+    permission_classes = [IsAuthenticated, HasTenantAccess]
+    queryset = Currency.objects.all()
 
 
 class UnitOfMeasureViewSet(SearchDeleteViewSet):
