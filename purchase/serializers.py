@@ -39,8 +39,8 @@ class CurrencySerializer(serializers.HyperlinkedModelSerializer):
 class PurchaseRequestItemSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-request-item-detail')
     purchase_request = serializers.HyperlinkedRelatedField(
-        queryset=PurchaseRequest.objects.filter(is_hidden=False),
-        view_name='purchase-request-detail')
+        # queryset=PurchaseRequest.objects.filter(is_hidden=False),
+        view_name='purchase-request-detail', read_only=True)
     product = serializers.HyperlinkedRelatedField(
         queryset=Product.objects.filter(is_hidden=False),
         view_name='product-detail')
@@ -63,7 +63,7 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                                                    view_name='currency-detail')
     vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
                                                  view_name='vendor-detail')
-    items = PurchaseRequestItemSerializer(many=True, read_only=True)
+    items = PurchaseRequestItemSerializer(many=True)
     total_price = serializers.ReadOnlyField()
     can_edit = serializers.ReadOnlyField()
     is_submitted = serializers.ReadOnlyField()
@@ -205,7 +205,7 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='request-for-quotation-detail')
     purchase_request = serializers.HyperlinkedRelatedField(queryset=PurchaseRequest.objects.filter(is_hidden=False),
                                                            view_name='purchase-request-detail')
-    currency = serializers.HyperlinkedRelatedField(queryset=PurchaseRequest.objects.filter(is_hidden=False),
+    currency = serializers.HyperlinkedRelatedField(queryset=Currency.objects.filter(is_hidden=False),
                                                    view_name='currency-detail')
     vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
                                                  view_name='vendor-detail')
