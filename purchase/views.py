@@ -232,7 +232,7 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
     queryset = UnitOfMeasure.objects.all()
     serializer_class = UnitOfMeasureSerializer
     permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['name', ]
+    search_fields = ['unit_name', 'unit_category']
 
 
 # class VendorCategoryViewSet(SearchDeleteViewSet):
