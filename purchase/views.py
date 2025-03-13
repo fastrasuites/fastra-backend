@@ -441,12 +441,14 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['vendor__company_name', 'status', 'purchase_request__id']
 
+    @action(detail=True, methods=['get'])
     def check_rfq_editable(self, rfq):
         """Check if the RFQ is editable (not submitted or rejected)."""
         if rfq.is_submitted:
             return False, 'This RFQ has already been submitted and cannot be edited.'
         return True, ''
 
+    @action(detail=True, methods=['get'])
     def check_rfq_mailable(self, rfq):
         """Check if the RFQ meets the criteria to be sent to vendors (not draft or rejected)."""
         if rfq.status in ['rejected', 'draft']:
@@ -456,7 +458,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         return True, ''
 
     # for sending RFQs to vendor emails
-    @action(detail=True, methods=['post', 'get'])
+    @action(detail=True, methods=['post'])
     def send_email(self, request, pk=None):
         rfq = self.get_object()
 
@@ -496,7 +498,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(detail=True, methods=['post', 'get'])
+    @action(detail=True, methods=['put', 'patch'])
     def submit(self, request, pk=None):
         rfq = self.get_object()
         editable, message = self.check_rfq_editable(rfq)
@@ -507,7 +509,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         rfq.submit()
         return Response({'status': 'pending'})
 
-    @action(detail=True, methods=['post', 'get'])
+    @action(detail=True, methods=['put', 'patch'])
     def approve(self, request, pk=None):
         rfq = self.get_object()
         if request.user.has_perm('approve_request_for_quotation'):
@@ -515,7 +517,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
             return Response({'status': 'approved'})
         return Response({'status': 'permission denied'}, status=403)
 
-    @action(detail=True, methods=['post', 'get'])
+    @action(detail=True, methods=['put', 'patch'])
     def reject(self, request, pk=None):
         rfq = self.get_object()
         if request.user.has_perm('reject_request_for_quotation'):
@@ -539,7 +541,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
 
         return queryset
 
-    @action(detail=True, methods=['post', 'get'])
+    @action(detail=True, methods=['post'])
     def convert_to_po(self, request, pk=None):
         try:
             # Get the approved purchase request
@@ -611,12 +613,14 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['status', 'vendor__company_name']
 
+    @action(detail=True, methods=['get'])
     def check_po_editable(self, po):
         """Check if the PO is editable (not submitted or rejected)."""
         if po.is_submitted:
             return False, 'This purchase order has already been submitted and cannot be edited.'
         return True, ''
 
+    @action(detail=True, methods=['get'])
     def check_po_mailable(self, po):
         """Check if the PO meets the criteria to be sent to vendors (not draft or rejected)."""
         if po.status in ['rejected', 'draft']:
@@ -626,7 +630,7 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
         return True, ''
 
     # for sending POs to vendor emails
-    @action(detail=True, methods=['post', 'get'])
+    @action(detail=True, methods=['post'])
     def send_email(self, request, pk=None):
         po = self.get_object()
 
