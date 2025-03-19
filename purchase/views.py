@@ -11,18 +11,19 @@ from django.utils.text import slugify
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.core.exceptions import ObjectDoesNotExist
 
 from django_filters.rest_framework import DjangoFilterBackend
-
-from rest_framework import viewsets, status, mixins, filters, permissions
+from django_tenants.utils import tenant_context
+from rest_framework import viewsets, status, mixins, filters, permissions, serializers
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action, permission_classes
-from rest_framework.permissions import IsAdminUser
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 
 from companies.permissions import HasTenantAccess
 from core.utils import enforce_tenant_schema
+from users.models import TenantUser
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, Product, RequestForQuotation, \
     RequestForQuotationItem, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
     PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem, PRODUCT_CATEGORY, Currency
@@ -114,7 +115,18 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
     search_fields = ['id', 'requester__username', 'suggested_vendor__name']
 
     def perform_create(self, serializer):
-        serializer.save(requester=self.request.user)
+        # # Ensure the user is a TenantUser
+        # user = self.request.user
+        # # Ensure we are operating within the correct tenant schema
+        # tenant = self.request.tenant  # Get the current tenant
+        #
+        # with tenant_context(tenant):  # Switch to the tenant's schema
+        #     try:
+        #         tenant_user = TenantUser.objects.get(user_id=user.id)
+        #     except ObjectDoesNotExist:
+        #         raise serializers.ValidationError("Requester must be a TenantUser within the tenant schema.")
+
+        serializer.save()
 
     @action(detail=False, methods=['get'])
     def draft_list(self, request):
@@ -210,7 +222,7 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
 class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
     queryset = PurchaseRequestItem.objects.all()
     serializer_class = PurchaseRequestItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
 
 class DepartmentViewSet(SearchDeleteViewSet):
@@ -224,14 +236,14 @@ class DepartmentViewSet(SearchDeleteViewSet):
 
 class CurrencyViewSet(SearchDeleteViewSet):
     serializer_class = CurrencySerializer
-    permission_classes = [IsAuthenticated, HasTenantAccess]
+    permission_classes = [permissions.AllowAny]
     queryset = Currency.objects.all()
 
 
 class UnitOfMeasureViewSet(SearchDeleteViewSet):
     queryset = UnitOfMeasure.objects.all()
     serializer_class = UnitOfMeasureSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
     search_fields = ['unit_name', 'unit_category']
 
 
@@ -245,7 +257,7 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
 class VendorViewSet(SearchDeleteViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
     parser_classes = (MultiPartParser, FormParser)
     search_fields = ['company_name', 'email']
 
@@ -340,7 +352,7 @@ class VendorViewSet(SearchDeleteViewSet):
 class ProductViewSet(SearchDeleteViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
     search_fields = ['product_name', 'product_category', 'unit_of_measure__name', ]
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
@@ -438,7 +450,7 @@ class ProductViewSet(SearchDeleteViewSet):
 class RequestForQuotationViewSet(SearchDeleteViewSet):
     queryset = RequestForQuotation.objects.all()
     serializer_class = RequestForQuotationSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
     search_fields = ['vendor__company_name', 'status', 'purchase_request__id']
 
     @action(detail=True, methods=['get'])
@@ -591,7 +603,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
 class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
     queryset = RequestForQuotationItem.objects.all()
     serializer_class = RequestForQuotationItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
 
 class RFQVendorQuoteViewSet(SearchDeleteViewSet):
