@@ -28,14 +28,6 @@ class DepartmentSerializer(serializers.HyperlinkedModelSerializer):
         fields = ['url', 'name', 'is_hidden']
 
 
-class CurrencySerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name="currency-detail")
-
-    class Meta:
-        model = Currency
-        fields = ["url", "currency_symbol", "currency_symbol", "is_hidden"]
-
-
 class PurchaseRequestItemSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-request-item-detail')
     purchase_request = serializers.HyperlinkedRelatedField(
@@ -58,19 +50,19 @@ class PurchaseRequestItemSerializer(serializers.HyperlinkedModelSerializer):
 
 class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-request-detail')
-    requester = serializers.HyperlinkedRelatedField(view_name='user-detail', read_only=True)
+    # requester = serializers.HyperlinkedRelatedField(view_name='user-detail', read_only=True)
     currency = serializers.HyperlinkedRelatedField(queryset=Currency.objects.filter(is_hidden=False),
                                                    view_name='currency-detail')
     vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
                                                  view_name='vendor-detail')
-    items = PurchaseRequestItemSerializer(many=True)
+    items = PurchaseRequestItemSerializer(many=True, allow_empty=False)
     total_price = serializers.ReadOnlyField()
     can_edit = serializers.ReadOnlyField()
     is_submitted = serializers.ReadOnlyField()
 
     class Meta:
         model = PurchaseRequest
-        fields = ['url', 'status', 'date_created', 'date_updated', 'requester', 'currency',
+        fields = ['url', 'status', 'date_created', 'date_updated', 'currency',
                   'purpose', 'vendor', 'items', 'total_price', 'can_edit', 'is_submitted', 'is_hidden']
 
     def create(self, validated_data):
@@ -85,7 +77,7 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', [])
         instance.date_updated = validated_data.get('date_updated', instance.date_updated)
-        instance.requester = validated_data.get('requester', instance.requester)
+        # instance.requester = validated_data.get('requester', instance.requester)
         instance.currency = validated_data.get('currency', instance.currency)
         instance.status = validated_data.get('status', instance.status)
         instance.purpose = validated_data.get('purpose', instance.purpose)

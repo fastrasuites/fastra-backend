@@ -10,6 +10,8 @@ from django_ckeditor_5.fields import CKEditor5Field
 
 import json
 
+from users.models import TenantUser
+
 PURCHASE_REQUEST_STATUS = (
     ('draft', 'Draft'),
     ('approved', 'Approved'),
@@ -303,7 +305,7 @@ class PurchaseRequest(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_pr_id, editable=False)
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
-    requester = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_requests')
+    # requester = models.ForeignKey(TenantUser, on_delete=models.CASCADE, related_name='purchase_requests')
     currency = models.ForeignKey("Currency", on_delete=models.SET_NULL, null=True, blank=True,
                                  related_name='purchase_requests')
     status = models.CharField(max_length=20, choices=PURCHASE_REQUEST_STATUS, default='draft')
