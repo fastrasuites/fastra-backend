@@ -350,10 +350,12 @@ class PurchaseRequest(models.Model):
 
     def approve(self):
         """Mark the purchase request as approved"""
+        self.is_submitted = True
         self.change_status('approved')
 
     def reject(self):
         """Mark the purchase request as rejected"""
+        self.is_submitted = True
         self.change_status('rejected')
 
 

@@ -222,7 +222,7 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
 class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
     queryset = PurchaseRequestItem.objects.all()
     serializer_class = PurchaseRequestItemSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class DepartmentViewSet(SearchDeleteViewSet):
@@ -236,14 +236,14 @@ class DepartmentViewSet(SearchDeleteViewSet):
 
 class CurrencyViewSet(SearchDeleteViewSet):
     serializer_class = CurrencySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     queryset = Currency.objects.all()
 
 
 class UnitOfMeasureViewSet(SearchDeleteViewSet):
     queryset = UnitOfMeasure.objects.all()
     serializer_class = UnitOfMeasureSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     search_fields = ['unit_name', 'unit_category']
 
 
@@ -257,7 +257,7 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
 class VendorViewSet(SearchDeleteViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)
     search_fields = ['company_name', 'email']
 
@@ -352,7 +352,7 @@ class VendorViewSet(SearchDeleteViewSet):
 class ProductViewSet(SearchDeleteViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     search_fields = ['product_name', 'product_category', 'unit_of_measure__name', ]
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
@@ -450,7 +450,7 @@ class ProductViewSet(SearchDeleteViewSet):
 class RequestForQuotationViewSet(SearchDeleteViewSet):
     queryset = RequestForQuotation.objects.all()
     serializer_class = RequestForQuotationSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     search_fields = ['vendor__company_name', 'status', 'purchase_request__id']
 
     @action(detail=True, methods=['get'])
@@ -603,7 +603,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
 class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
     queryset = RequestForQuotationItem.objects.all()
     serializer_class = RequestForQuotationItemSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class RFQVendorQuoteViewSet(SearchDeleteViewSet):
