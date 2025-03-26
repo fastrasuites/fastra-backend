@@ -356,6 +356,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         instance.purchase_policy = validated_data.get('purchase_policy', instance.purchase_policy)
         instance.delivery_terms = validated_data.get('delivery_terms', instance.delivery_terms)
         instance.created_by = validated_data.get('created_by', instance.created_by)
+
         instance.currency = validated_data.get('currency', instance.currency)
         instance.status = validated_data.get('status', instance.status)
         instance.save()
