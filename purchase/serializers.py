@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from django.utils.text import slugify
 from rest_framework import serializers
+
+from users.models import TenantUser
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, \
     Product, RequestForQuotation, RequestForQuotationItem, \
     UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
@@ -319,6 +321,9 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
 
 class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-order-detail')
+    created_by = serializers.HyperlinkedRelatedField(
+        queryset=User.objects.filter(username__icontains='admin'),
+        view_name='user-detail', read_only=True)
     items = PurchaseOrderItemSerializer(many=True)
     vendor = serializers.HyperlinkedRelatedField(
         queryset=Vendor.objects.filter(is_hidden=False),
@@ -331,8 +336,8 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = PurchaseOrder
-        fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'vendor', 'currency',
-                  'items', 'po_total_price', 'is_hidden']
+        fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'vendor', 'currency', 'payment_terms',
+                  'purchase_policy', 'delivery_terms', 'items', 'po_total_price', 'is_hidden']
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
@@ -347,6 +352,11 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         items_data = validated_data.pop('items', None)
         # instance.date_updated = validated_data.get('date_updated', instance.date_updated)
         instance.vendor = validated_data.get('vendor', instance.vendor)
+        instance.payment_terms = validated_data.get('payment_terms', instance.payment_terms)
+        instance.purchase_policy = validated_data.get('purchase_policy', instance.purchase_policy)
+        instance.delivery_terms = validated_data.get('delivery_terms', instance.delivery_terms)
+        instance.created_by = validated_data.get('created_by', instance.created_by)
+
         instance.currency = validated_data.get('currency', instance.currency)
         instance.status = validated_data.get('status', instance.status)
         instance.save()
