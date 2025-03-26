@@ -337,7 +337,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = PurchaseOrder
         fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'vendor', 'currency', 'payment_terms',
-                  'purchase_policy', 'delivery_terms', 'items', 'po_total_price', 'is_hidden']
+                  'purchase_policy', 'delivery_terms', 'created_by', 'items', 'po_total_price', 'is_hidden']
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
