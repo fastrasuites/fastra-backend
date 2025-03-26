@@ -323,7 +323,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-order-detail')
     created_by = serializers.HyperlinkedRelatedField(
         queryset=User.objects.filter(username__icontains='admin'),
-        view_name='user-detail', read_only=True)
+        view_name='user-detail')
     items = PurchaseOrderItemSerializer(many=True)
     vendor = serializers.HyperlinkedRelatedField(
         queryset=Vendor.objects.filter(is_hidden=False),
@@ -356,7 +356,6 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         instance.purchase_policy = validated_data.get('purchase_policy', instance.purchase_policy)
         instance.delivery_terms = validated_data.get('delivery_terms', instance.delivery_terms)
         instance.created_by = validated_data.get('created_by', instance.created_by)
-
         instance.currency = validated_data.get('currency', instance.currency)
         instance.status = validated_data.get('status', instance.status)
         instance.save()

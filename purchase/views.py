@@ -20,6 +20,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action, permission_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from companies.permissions import HasTenantAccess
 from core.utils import enforce_tenant_schema
@@ -107,7 +108,14 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-
+@extend_schema_view(
+    list=extend_schema(tags=['Purchase Requests']),
+    retrieve=extend_schema(tags=['Purchase Requests']),
+    create=extend_schema(tags=['Purchase Requests']),
+    update=extend_schema(tags=['Purchase Requests']),
+    partial_update=extend_schema(tags=['Purchase Requests']),
+    destroy=extend_schema(tags=['Purchase Requests']),
+)
 class PurchaseRequestViewSet(SearchDeleteViewSet):
     queryset = PurchaseRequest.objects.all()
     serializer_class = PurchaseRequestSerializer
@@ -218,13 +226,28 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-
+@extend_schema_view(
+    list=extend_schema(tags=['Purchase Request Items']),
+    retrieve=extend_schema(tags=['Purchase Request Items']),
+    create=extend_schema(tags=['Purchase Request Items']),
+    update=extend_schema(tags=['Purchase Request Items']),
+    partial_update=extend_schema(tags=['Purchase Request Items']),
+    destroy=extend_schema(tags=['Purchase Request Items']),
+)
 class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
     queryset = PurchaseRequestItem.objects.all()
     serializer_class = PurchaseRequestItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['Departments']),
+    retrieve=extend_schema(tags=['Departments']),
+    create=extend_schema(tags=['Departments']),
+    update=extend_schema(tags=['Departments']),
+    partial_update=extend_schema(tags=['Departments']),
+    destroy=extend_schema(tags=['Departments']),
+)
 class DepartmentViewSet(SearchDeleteViewSet):
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated, HasTenantAccess]
@@ -234,12 +257,27 @@ class DepartmentViewSet(SearchDeleteViewSet):
         return super().list(request, *args, **kwargs)
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['Currency']),
+    retrieve=extend_schema(tags=['Currency']),
+    create=extend_schema(tags=['Currency']),
+    update=extend_schema(tags=['Currency']),
+    partial_update=extend_schema(tags=['Currency']),
+    destroy=extend_schema(tags=['Currency']),
+)
 class CurrencyViewSet(SearchDeleteViewSet):
     serializer_class = CurrencySerializer
     permission_classes = [permissions.IsAuthenticated]
     queryset = Currency.objects.all()
 
-
+@extend_schema_view(
+    list=extend_schema(tags=['Unit Of Measure']),
+    retrieve=extend_schema(tags=['Unit Of Measure']),
+    create=extend_schema(tags=['Unit Of Measure']),
+    update=extend_schema(tags=['Unit Of Measure']),
+    partial_update=extend_schema(tags=['Unit Of Measure']),
+    destroy=extend_schema(tags=['Unit Of Measure']),
+)
 class UnitOfMeasureViewSet(SearchDeleteViewSet):
     queryset = UnitOfMeasure.objects.all()
     serializer_class = UnitOfMeasureSerializer
@@ -254,6 +292,14 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
 #     search_fields = ['name',]
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['Vendors']),
+    retrieve=extend_schema(tags=['Vendors']),
+    create=extend_schema(tags=['Vendors']),
+    update=extend_schema(tags=['Vendors']),
+    partial_update=extend_schema(tags=['Vendors']),
+    destroy=extend_schema(tags=['Vendors']),
+)
 class VendorViewSet(SearchDeleteViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
@@ -348,7 +394,14 @@ class VendorViewSet(SearchDeleteViewSet):
         vendor.save()
         return Response({"message": "Profile picture uploaded successfully"}, status=200)
 
-
+@extend_schema_view(
+    list=extend_schema(tags=['Products']),
+    retrieve=extend_schema(tags=['Products']),
+    create=extend_schema(tags=['Products']),
+    update=extend_schema(tags=['Products']),
+    partial_update=extend_schema(tags=['Products']),
+    destroy=extend_schema(tags=['Products']),
+)
 class ProductViewSet(SearchDeleteViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
@@ -436,7 +489,7 @@ class ProductViewSet(SearchDeleteViewSet):
         else:
             return Response(serializer.errors, status=400)
 
-    @action(detail=False, methods=['DELETE', 'GET'], permission_classes=[IsAdminUser], url_path='delete-all',
+    @action(detail=False, methods=['DELETE'], permission_classes=[IsAdminUser], url_path='delete-all',
             url_name='delete_all_products')
     def delete_all_products(self, request):
         deleted_count, _ = Product.objects.all().delete()
@@ -447,6 +500,14 @@ class ProductViewSet(SearchDeleteViewSet):
         )
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['Request For Quotation']),
+    retrieve=extend_schema(tags=['Request For Quotation']),
+    create=extend_schema(tags=['Request For Quotation']),
+    update=extend_schema(tags=['Request For Quotation']),
+    partial_update=extend_schema(tags=['Request For Quotation']),
+    destroy=extend_schema(tags=['Request For Quotation']),
+)
 class RequestForQuotationViewSet(SearchDeleteViewSet):
     queryset = RequestForQuotation.objects.all()
     serializer_class = RequestForQuotationSerializer
@@ -537,6 +598,30 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
             return Response({'status': 'rejected'})
         return Response({'status': 'permission denied'}, status=403)
 
+    @action(detail=False, methods=['get'])
+    def draft_list(self, request):
+        queryset = RequestForQuotation.rfq_draft.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def pending_list(self, request):
+        queryset = RequestForQuotation.rfq_pending.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def approved_list(self, request):
+        queryset = RequestForQuotation.rfq_approved.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def rejected_list(self, request):
+        queryset = RequestForQuotation.rfq_rejected.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
     def get_queryset(self):
         queryset = super().get_queryset()  # Use the superclass queryset
         rfq_status = self.request.query_params.get('status')
@@ -600,12 +685,28 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
             return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['Request For Quotation Items']),
+    retrieve=extend_schema(tags=['Request For Quotation Items']),
+    create=extend_schema(tags=['Request For Quotation Items']),
+    update=extend_schema(tags=['Request For Quotation Items']),
+    partial_update=extend_schema(tags=['Request For Quotation Items']),
+    destroy=extend_schema(tags=['Request For Quotation Items']),
+)
 class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
     queryset = RequestForQuotationItem.objects.all()
     serializer_class = RequestForQuotationItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['RFQ Vendor Quote']),
+    retrieve=extend_schema(tags=['RFQ Vendor Quote']),
+    create=extend_schema(tags=['RFQ Vendor Quote']),
+    update=extend_schema(tags=['RFQ Vendor Quote']),
+    partial_update=extend_schema(tags=['RFQ Vendor Quote']),
+    destroy=extend_schema(tags=['RFQ Vendor Quote']),
+)
 class RFQVendorQuoteViewSet(SearchDeleteViewSet):
     queryset = RFQVendorQuote.objects.all()
     serializer_class = RFQVendorQuoteSerializer
@@ -613,12 +714,28 @@ class RFQVendorQuoteViewSet(SearchDeleteViewSet):
     search_fields = ['vendor__company_name', ]
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['RFQ Vendor Quote Items']),
+    retrieve=extend_schema(tags=['RFQ Vendor Quote Items']),
+    create=extend_schema(tags=['RFQ Vendor Quote Items']),
+    update=extend_schema(tags=['RFQ Vendor Quote Items']),
+    partial_update=extend_schema(tags=['RFQ Vendor Quote Items']),
+    destroy=extend_schema(tags=['RFQ Vendor Quote Items']),
+)
 class RFQVendorQuoteItemViewSet(viewsets.ModelViewSet):
     queryset = RFQVendorQuoteItem.objects.all()
     serializer_class = RFQVendorQuoteItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['Purchase Orders']),
+    retrieve=extend_schema(tags=['Purchase Orders']),
+    create=extend_schema(tags=['Purchase Orders']),
+    update=extend_schema(tags=['Purchase Orders']),
+    partial_update=extend_schema(tags=['Purchase Orders']),
+    destroy=extend_schema(tags=['Purchase Orders']),
+)
 class PurchaseOrderViewSet(SearchDeleteViewSet):
     queryset = PurchaseOrder.objects.all()
     serializer_class = PurchaseOrderSerializer
@@ -677,7 +794,39 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['get'])
+    def draft_list(self, request):
+        queryset = PurchaseOrder.po_draft.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
+    @action(detail=False, methods=['get'])
+    def awaiting_list(self, request):
+        queryset = PurchaseOrder.po_awaiting.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def cancelled_list(self, request):
+        queryset = PurchaseOrder.po_cancelled.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def completed_list(self, request):
+        queryset = PurchaseOrder.po_completed.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=['Purchase Order Items']),
+    retrieve=extend_schema(tags=['Purchase Order Items']),
+    create=extend_schema(tags=['Purchase Order Items']),
+    update=extend_schema(tags=['Purchase Order Items']),
+    partial_update=extend_schema(tags=['Purchase Order Items']),
+    destroy=extend_schema(tags=['Purchase Order Items']),
+)
 class PurchaseOrderItemViewSet(viewsets.ModelViewSet):
     queryset = PurchaseOrderItem.objects.all()
     serializer_class = PurchaseOrderItemSerializer
@@ -690,6 +839,14 @@ class PurchaseOrderItemViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['PO Vendor Quote']),
+    retrieve=extend_schema(tags=['PO Vendor Quote']),
+    create=extend_schema(tags=['PO Vendor Quote']),
+    update=extend_schema(tags=['PO Vendor Quote']),
+    partial_update=extend_schema(tags=['PO Vendor Quote']),
+    destroy=extend_schema(tags=['PO Vendor Quote']),
+)
 class POVendorQuoteViewSet(SearchDeleteViewSet):
     queryset = POVendorQuote.objects.all()
     serializer_class = POVendorQuoteSerializer
@@ -703,6 +860,14 @@ class POVendorQuoteViewSet(SearchDeleteViewSet):
         return Response(serializer.data)
 
 
+@extend_schema_view(
+    list=extend_schema(tags=['PO Vendor Quote Items']),
+    retrieve=extend_schema(tags=['PO Vendor Quote Items']),
+    create=extend_schema(tags=['PO Vendor Quote Items']),
+    update=extend_schema(tags=['PO Vendor Quote Items']),
+    partial_update=extend_schema(tags=['PO Vendor Quote Items']),
+    destroy=extend_schema(tags=['PO Vendor Quote Items']),
+)
 class POVendorQuoteItemViewSet(viewsets.ModelViewSet):
     queryset = POVendorQuoteItem.objects.all()
     serializer_class = POVendorQuoteItemSerializer
