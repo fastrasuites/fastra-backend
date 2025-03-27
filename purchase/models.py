@@ -579,7 +579,7 @@ class RFQVendorQuoteItem(models.Model):
 class PurchaseOrder(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_po_id, editable=False)
     status = models.CharField(max_length=200, choices=PURCHASE_ORDER_STATUS, default="draft")
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_orders')
+    # created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_orders')
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     vendor = models.ForeignKey("Vendor", on_delete=models.CASCADE, related_name="purchase_orders")
