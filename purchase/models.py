@@ -615,15 +615,15 @@ class PurchaseOrder(models.Model):
     def submit(self):
         """Mark the purchase order as pending"""
         self.is_submitted = True
-        self.change_status('pending')
+        self.change_status('awaiting')
 
-    def approve(self):
+    def complete(self):
         """Mark the purchase order as approved"""
-        self.change_status('approved')
+        self.change_status('completed')
 
-    def reject(self):
+    def cancel(self):
         """Mark the purchase order as rejected"""
-        self.change_status('rejected')
+        self.change_status('cancelled')
 
     def __str__(self):
         return self.id

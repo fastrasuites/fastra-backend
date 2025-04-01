@@ -752,7 +752,7 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     @action(detail=True, methods=['get'])
     def check_po_mailable(self, po):
         """Check if the PO meets the criteria to be sent to vendors (not draft or rejected)."""
-        if po.status in ['rejected', 'draft']:
+        if po.status in ['cancelled', 'draft']:
             return False, 'This purchase order cannot be sent as it has been rejected or not submitted.'
         if po.is_expired:
             return False, 'This purchase order has expired and cannot be sent.'
@@ -793,6 +793,34 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
             # return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['put', 'patch'])
+    def submit(self, request, pk=None):
+        po = self.get_object()
+        editable, message = self.check_po_editable(po)
+
+        if not editable:
+            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
+
+        po.submit()
+        return Response({'status': 'awaiting'})
+
+    @action(detail=True, methods=['put', 'patch'])
+    def complete(self, request, pk=None):
+        po = self.get_object()
+        if request.user.has_perm('complete_purchase_order'):
+            po.complete()
+            return Response({'status': 'completed'})
+        return Response({'status': 'permission denied'}, status=403)
+
+    @action(detail=True, methods=['put', 'patch'])
+    def cancel(self, request, pk=None):
+        po = self.get_object()
+        if request.user.has_perm('cancel_purchase_order'):
+            po.cancel()
+            return Response({'status': 'cancelled'})
+        return Response({'status': 'permission denied'}, status=403)
+
 
     @action(detail=False, methods=['get'])
     def draft_list(self, request):
