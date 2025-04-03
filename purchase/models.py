@@ -10,6 +10,8 @@ from django_ckeditor_5.fields import CKEditor5Field
 
 import json
 
+from users.models import TenantUser
+
 PURCHASE_REQUEST_STATUS = (
     ('draft', 'Draft'),
     ('approved', 'Approved'),
@@ -303,7 +305,7 @@ class PurchaseRequest(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_pr_id, editable=False)
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
-    requester = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_requests')
+    # requester = models.ForeignKey(TenantUser, on_delete=models.CASCADE, related_name='purchase_requests')
     currency = models.ForeignKey("Currency", on_delete=models.SET_NULL, null=True, blank=True,
                                  related_name='purchase_requests')
     status = models.CharField(max_length=20, choices=PURCHASE_REQUEST_STATUS, default='draft')
@@ -348,10 +350,12 @@ class PurchaseRequest(models.Model):
 
     def approve(self):
         """Mark the purchase request as approved"""
+        self.is_submitted = True
         self.change_status('approved')
 
     def reject(self):
         """Mark the purchase request as rejected"""
+        self.is_submitted = True
         self.change_status('rejected')
 
 
@@ -575,7 +579,7 @@ class RFQVendorQuoteItem(models.Model):
 class PurchaseOrder(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_po_id, editable=False)
     status = models.CharField(max_length=200, choices=PURCHASE_ORDER_STATUS, default="draft")
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_orders')
+    # created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_orders')
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     vendor = models.ForeignKey("Vendor", on_delete=models.CASCADE, related_name="purchase_orders")
@@ -611,15 +615,15 @@ class PurchaseOrder(models.Model):
     def submit(self):
         """Mark the purchase order as pending"""
         self.is_submitted = True
-        self.change_status('pending')
+        self.change_status('awaiting')
 
-    def approve(self):
+    def complete(self):
         """Mark the purchase order as approved"""
-        self.change_status('approved')
+        self.change_status('completed')
 
-    def reject(self):
+    def cancel(self):
         """Mark the purchase order as rejected"""
-        self.change_status('rejected')
+        self.change_status('cancelled')
 
     def __str__(self):
         return self.id

@@ -6,23 +6,15 @@ from rest_framework import viewsets, generics
 from rest_framework import status
 from django.utils.text import slugify
 from django.contrib.auth import login, authenticate, get_user_model
+
+from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
 from .models import Tenant, Domain
-from .serializers import TenantRegistrationSerializer
+from .serializers import TenantRegistrationSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .utils import Util
+from .utils import Util, set_tenant_schema
 from django.contrib.sites.shortcuts import get_current_site
 import jwt
 from django.conf import settings
-from urllib.parse import urlparse
-from django.contrib.auth.models import User
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode
-from django.utils.encoding import force_bytes
-from django.core.mail import send_mail
-from django.utils.http import urlsafe_base64_decode
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.exceptions import PermissionDenied
 from django.db import transaction
 from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
@@ -60,7 +52,8 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
             # )
             email_body = (
                 f"Hi {tenant.company_name},\n\n"
-                f"Thank you for registering. To complete your registration, please verify your email by clicking the link below:\n\n"
+                f"Thank you for registering. To complete your registration, please verify your email by clicking the "
+                f"link below:\n\n"
                 f"{verification_url}\n\n"
                 f"If you did not register for an account, please ignore this email."
             )
@@ -80,3 +73,65 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
             transaction.set_rollback(True)
             return Response({'detail': f'An error occurred during registration. Please try again. {str(e)}'},
                             status=status.HTTP_400_BAD_REQUEST)
+
+
+class LoginView(APIView):
+    serializer_class = LoginSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            password = serializer.validated_data['password']
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # email = request.data.get('email')
+        # password = request.data.get('password')
+        # full_host = request.get_host().split(':')[0]
+        # schema_name = full_host.split('.')[0]
+        #
+        # schema_name = slugify(company_name)
+        #
+        # with set_tenant_schema('public'):
+        #     try:
+        #         tenant_s = Tenant.objects.get(schema_name=schema_name)
+        #     except Tenant.DoesNotExist:
+        #         raise TenantNotFoundException()
+        #
+        # if not tenant.is_verified:
+        #     return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = authenticate(request, email=email, password=password)
+        tenant_id = request.session.get('tenant_id')
+        tenant_schema_name = request.session.get('tenant_schema_name')
+        tenant_company_name = request.session.get('tenant_company_name')
+        with set_tenant_schema('public'):
+            try:
+                tenant = Tenant.objects.get(schema_name=tenant_schema_name)
+            except Tenant.DoesNotExist:
+                raise TenantNotFoundException()
+
+        if not tenant.is_verified:
+            return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user is None:
+            raise InvalidCredentialsException()
+
+        refresh = RefreshToken.for_user(user)
+        refresh['tenant_id'] = tenant_id
+        refresh['schema_name'] = tenant_schema_name
+
+        return Response({
+            'refresh_token': str(refresh),
+            'access_token': str(refresh.access_token),
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+            },
+            "tenant_id": tenant_id,
+            "tenant_schema_name": tenant_schema_name,
+            "tenant_company_name": tenant_company_name
+        }, status=status.HTTP_200_OK)

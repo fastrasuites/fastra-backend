@@ -135,3 +135,9 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
             tenant_user.set_tenant_password(password)
             tenant_user.save()
         return tenant, otp
+
+
+# LOGIN
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(write_only=True, required=True)

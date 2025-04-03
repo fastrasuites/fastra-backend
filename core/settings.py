@@ -31,21 +31,35 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'thisCan.beNot.a.secret.rightNow?')
 DEBUG = os.getenv('DEBUG') == 'True'
 
 ALLOWED_HOSTS = [
+    # general
     'localhost',
     '*',
+
+    # frontend
     'fastrasuite.com',
-    'www.fastrasuite.com'
-    '.fastrasuite.com',
+    'www.fastrasuite.com',
+    'app.fastrasuite.com',
     '*.fastrasuite.com',
-    '95.179.214.79',
-    "fastra-frontend.vercel.app"
+
+    # backend
+    'fastrasuiteapi.com.ng',
+    'www.fastrasuiteapi.com.ng',
+    '*.fastrasuiteapi.com.ng',
 ]
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
-CORS_ALLOWED_ORIGINS = [
-    "https://fastra-frontend.vercel.app",
-]
+# CORS_ALLOWED_ORIGINS = [
+#     # frontend
+#     'https://fastrasuite.com',
+#     'https://www.fastrasuite.com',
+#     'https://app.fastrasuite.com',
+#
+#     # backend
+#     # 'https://fastrasuiteapi.com.ng',
+#     # 'https://www.fastrasuiteapi.com.ng',
+#     # 'https://*.fastrasuiteapi.com.ng',
+# ]
 
 # Application definition
 
@@ -54,8 +68,6 @@ SHARED_APPS = [
     'django_tenants',
     'registration',
 
-    # 'tenant_users.permissions',
-    # 'tenant_users.tenants',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -90,7 +102,6 @@ TENANT_APPS = [
     'purchase',
     'sales',
     'users',
-    # 'tenant_users.permissions',
 
     'companies',
 ]
@@ -99,7 +110,6 @@ INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in S
 
 MIDDLEWARE = [
     # Middleware for accessing schemas and permissions
-
     'django_tenants.middleware.main.TenantMainMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -113,7 +123,8 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
 
     # Custom Middleware for tenant authentication
-    # 'companies.middlewares.TenantMiddleware',
+    'companies.middlewares.TenantMiddleware',
+    'companies.middlewares.DebugTenantMainMiddleware',
     # 'users.middlewares.TenantMiddleware',
 
 ]
@@ -320,27 +331,14 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 REST_FRAMEWORK = {
-    # 'DEFAULT_AUTHENTICATION_CLASSES': (
-    #     # I added the SessionAuthentication and BasicAuthentication classes before JWTAuthentication
-    #     # to accommodate for our default authentication
-    #     # 'rest_framework.authentication.SessionAuthentication',
-    #     # 'rest_framework.authentication.BasicAuthentication',
-    #     # 'rest_framework_simplejwt.authentication.JWTAuthentication',
-    # # 'rest_framework_simplejwt.authentication.JWTAuthentication',
-    # "rest_framework.authentication.SessionAuthentication",
-    # ),
-    'DEFAULT_AUTHENTICATION_CLASSES': (
+    'DEFAULT_AUTHENTICATION_CLASSES': [
         'companies.middlewares.TenantJWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.DjangoModelPermissions',
-        # 'rest_framework.permissions.IsAuthenticated',
-    ),
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
-    'PAGE_SIZE': 10,
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-
 }
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND')
@@ -371,18 +369,27 @@ SIMPLE_JWT = {
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
-
-    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
-    'TOKEN_TYPE_CLAIM': 'token_type',
-
-    'JTI_CLAIM': 'jti',
-
-    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
-    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
-    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+# INCREASE DJANGO FILE UPLOAD SIZE
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
-API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'fastrasuite.com')
-FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://fastra-frontend.vercel.app')
+API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'https://fastrasuiteapi.com.ng')
+FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://app.fastrasuite.com')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django_tenants': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+    },
+}

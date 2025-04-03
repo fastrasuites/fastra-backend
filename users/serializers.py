@@ -5,6 +5,8 @@ from django.utils.translation import gettext as _
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.contrib.auth.password_validation import validate_password
 
+from core.errors.exceptions import TenantNotFoundException
+from registration.models import Tenant
 from users.models import TenantUser
 
 
@@ -133,6 +135,7 @@ class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
 
     def validate(self, data):
         user_data = data.get('user', {})
+        tenant_details = data.get('tenant_details', {})
         if not user_data:
             raise serializers.ValidationError({"user": "User data is required."})
 
@@ -144,6 +147,14 @@ class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
         if email and User.objects.filter(email=email).exists():
             raise serializers.ValidationError({"email": "A user with this email already exists."})
 
+        tenant_schema_name = tenant_details.schema_name
+        if tenant_schema_name and Tenant.objects.filter(schema_name=tenant_schema_name).exists():
+            raise serializers.ValidationError({"Tenant schema name": "No Tenant schema or tenant doesnt exist"})
+        
+        tenant_id = tenant_details.tenant_id
+        if tenant_id:
+            raise serializers.ValidationError({"tenant id": "Tenant id is required"}) 
+        
         username = user_data.get('username')
         if username and not re.match(r'^[a-zA-Z\s]+$', username):
             raise serializers.ValidationError(
@@ -152,12 +163,17 @@ class TenantUserSerializer(serializers.HyperlinkedModelSerializer):
         return data
 
     def create(self, validated_data):
+        tenant_details = validated_data.pop('tenant_details')
+        tenant = Tenant.objects.get(schema_name=tenant_details.schema_name)
+        if not tenant:
+            raise TenantNotFoundException()
+         
         user_data = validated_data.pop('user')
         groups = validated_data.pop('groups', [])
         user_serializer = UserSerializer(data=user_data)
         user_serializer.is_valid(raise_exception=True)
         user = user_serializer.save()
-        tenant_user = TenantUser.objects.create(user=user, **validated_data)
+        tenant_user = TenantUser.objects.create(user=user.id, tenant=tenant, **validated_data)
         user.groups.add(*groups)
         return tenant_user
 
