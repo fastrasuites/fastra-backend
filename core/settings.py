@@ -211,6 +211,14 @@ MEDIA_URL = '/media/'
 # MEDIA_ROOT = os.path.join(BASE_DIR, '/media')
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+media_root = MEDIA_ROOT
+if not os.path.exists(media_root):
+    os.makedirs(media_root, exist_ok=True)
+
+vendor_profiles_dir = os.path.join(media_root, 'vendor_profiles')
+if not os.path.exists(vendor_profiles_dir):
+    os.makedirs(vendor_profiles_dir, exist_ok=True)
+
 customColorPalette = [
     {
         'color': 'hsl(4, 90%, 58%)',
@@ -323,6 +331,17 @@ CKEDITOR_5_CONFIGS = {
 TENANT_MODEL = 'registration.Tenant'
 
 TENANT_DOMAIN_MODEL = 'registration.Domain'
+
+SPECTACULAR_SETTINGS = {
+    'ENUM_NAME_OVERRIDES': {
+        'status': {
+            'StockAdjustment': 'StockAdjustmentStatusEnum',
+            'Scrap': 'ScrapStatusEnum',
+            'StockMove': 'StockMoveStatusEnum',
+        },
+        'TimezoneEnum': 'CustomTimezoneEnum',
+    },
+}
 
 AUTHENTICATION_BACKENDS = [
     # 'companies.authenticate.EmailBackend',

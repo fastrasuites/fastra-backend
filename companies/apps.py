@@ -1,4 +1,5 @@
 from django.apps import AppConfig
+# from .extensions import TenantJWTAuthenticationExtension
 
 
 class CompaniesConfig(AppConfig):
