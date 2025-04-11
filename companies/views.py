@@ -266,7 +266,7 @@ class ResendVerificationEmail(generics.GenericAPIView):
 #                                 status=status.HTTP_404_NOT_FOUND)
 
 
-class RequestForgottenPasswordView(APIView):
+class RequestForgottenPasswordView(generics.GenericAPIView):
     serializer_class = RequestForgottenPasswordSerializer
     permission_classes = [AllowAny]
 
@@ -295,7 +295,7 @@ class RequestForgottenPasswordView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class ForgottenPasswordView(APIView):
+class ForgottenPasswordView(generics.GenericAPIView):
     serializer_class = ForgottenPasswordSerializer
     permission_classes = [AllowAny]
 
@@ -328,7 +328,7 @@ class ForgottenPasswordView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class ResendOTPView(APIView):
+class ResendOTPView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -393,7 +393,7 @@ class UpdateCompanyProfileView(generics.UpdateAPIView):
         return super().handle_exception(exc)
 
 
-class ProtectedView(APIView):
+class ProtectedView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):

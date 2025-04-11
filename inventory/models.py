@@ -17,15 +17,46 @@ LOCATION_TYPES = (
     ('partner', 'Partner'),
 )
 
+class InternalLocationManager(models.Manager):
+    def get_queryset(self):
+        return super(InternalLocationManager, self).get_queryset().filter(location_type="internal")
+
+
+class PartnerLocationManager(models.Manager):
+    def get_queryset(self):
+        return super(PartnerLocationManager, self).get_queryset().filter(location_type="partner")
+
+
 STOCK_ADJ_STATUS = (
     ('draft', 'Draft'),
     ('done', 'Done')
 )
 
+class DraftStockAdjManager(models.Manager):
+    def get_queryset(self):
+        return super(DraftStockAdjManager, self).get_queryset().filter(status="draft")
+
+
+class DoneStockAdjManager(models.Manager):
+    def get_queryset(self):
+        return super(DoneStockAdjManager, self).get_queryset().filter(status="done")
+
+
 SCRAP_STATUS = (
     ('draft', 'Draft'),
     ('done', 'Done')
 )
+
+
+class DraftScrapManager(models.Manager):
+    def get_queryset(self):
+        return super(DraftScrapManager, self).get_queryset().filter(status="draft")
+
+
+class DoneScrapManager(models.Manager):
+    def get_queryset(self):
+        return super(DoneScrapManager, self).get_queryset().filter(status="done")
+
 
 STOCK_MOVE_STATUS = (
     ('draft', 'Draft'),
@@ -34,6 +65,28 @@ STOCK_MOVE_STATUS = (
     ('cancelled', 'Cancelled'),
 )
 
+
+class DraftStockMoveManager(models.Manager):
+    def get_queryset(self):
+        return super(DraftStockMoveManager, self).get_queryset().filter(status="draft")
+
+
+class PendingStockMoveManager(models.Manager):
+    def get_queryset(self):
+        return super(PendingStockMoveManager, self).get_queryset().filter(status="pending")
+
+
+class DoneStockMoveManager(models.Manager):
+    def get_queryset(self):
+        return super(DoneStockMoveManager, self).get_queryset().filter(status="done")
+
+
+class CancelledStockMoveManager(models.Manager):
+    def get_queryset(self):
+        return super(CancelledStockMoveManager, self).get_queryset().filter(status="cancelled")
+
+
+
 STOCK_MOVE_TYPES = [
     ('IN', 'Incoming'),
     ('OUT', 'Outgoing'),
@@ -41,6 +94,26 @@ STOCK_MOVE_TYPES = [
     ('INTERNAL', 'Internal Transfer'),
     ('ADJUSTMENT', 'Inventory Adjustment'),
 ]
+
+class IncomingStockMoveManager(models.Manager):
+    def get_queryset(self):
+        return super(IncomingStockMoveManager, self).get_queryset().filter(move_type="IN")
+
+class OutgoingStockMoveManager(models.Manager):
+    def get_queryset(self):
+        return super(OutgoingStockMoveManager, self).get_queryset().filter(move_type="OUT")
+
+class ReturningStockMoveManager(models.Manager):
+    def get_queryset(self):
+        return super(ReturningStockMoveManager, self).get_queryset().filter(move_type="RETURN")
+
+class InternalTransferStockMoveManager(models.Manager):
+    def get_queryset(self):
+        return super(InternalTransferStockMoveManager, self).get_queryset().filter(move_type="INTERNAL")
+
+class InventoryAdjStockMoveManager(models.Manager):
+    def get_queryset(self):
+        return super(InventoryAdjStockMoveManager, self).get_queryset().filter(move_type="ADJUSTMENT")
 
 
 # Create your models here.
@@ -71,6 +144,9 @@ class Location(models.Model):
     is_hidden = models.BooleanField(default=False)
 
     objects = models.Manager()
+
+    internal_locations = InternalLocationManager()
+    partner_locations = PartnerLocationManager()
 
     class Meta:
         ordering = ['is_hidden', '-date_created']
@@ -143,6 +219,9 @@ class StockAdjustment(models.Model):
     is_done = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=True)
     is_hidden = models.BooleanField(default=False)
+
+    objects = models.Manager()
+
 
     def __str__(self):
         return f"Stock Adjustment - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
@@ -227,6 +306,8 @@ class Scrap(models.Model):
     can_edit = models.BooleanField(default=True)
     is_hidden = models.BooleanField(default=False)
 
+    objects = models.Manager()
+
     def __str__(self):
         return f"Scrap - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
 
@@ -291,7 +372,7 @@ class StockMove(models.Model):
     id_number = models.PositiveIntegerField(auto_created=True)
     reference = models.CharField(max_length=20, unique=True)
     product = models.ForeignKey(
-        'Product',
+        Product,
         on_delete=models.PROTECT,
         related_name='stock_moves'
     )
@@ -338,17 +419,19 @@ class StockMove(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
-        'TenantUser',
+        TenantUser,
         on_delete=models.PROTECT,
         related_name='stock_moves_created'
     )
     moved_by = models.ForeignKey(
-        'TenantUser',
+        TenantUser,
         on_delete=models.PROTECT,
         related_name='stock_moves_moved',
         null=True,
         blank=True
     )
+
+    objects = models.Manager()
 
     class Meta:
         ordering = ['-date_created']
@@ -367,7 +450,7 @@ class StockMove(models.Model):
             ).order_by('reference').last()
 
             if last_move:
-                last_number = int(last_move.reference.split('/')[-1])
+                last_number = int(last_move.reference.split('/')[1])
                 new_number = last_number + 1
             else:
                 new_number = 1

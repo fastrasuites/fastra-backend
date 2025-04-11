@@ -1,6 +1,6 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from django.core.exceptions import ValidationError
-from rest_framework import viewsets, status, filters, permissions
+from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -9,7 +9,8 @@ from .serializers import LocationSerializer, MultiLocationSerializer, StockAdjus
     StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer
 
 
-class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
+class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin, mixins.CreateModelMixin,
+                                 mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
     """
     A viewset that provides default `list()`, `create()`, `retrieve()`, `update()`, `partial_update()`,
     and a custom `destroy()` action to hide instances instead of deleting them, a custom action to list
@@ -21,16 +22,24 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
         # return self.queryset.filter(is_hidden=False)
         return super().get_queryset()
 
-    @action(detail=True, methods=['get', 'post'])
-    def toggle_hidden(self, request, pk=None, *args, **kwargs):
+    @action(detail=True, methods=['put', 'patch'])
+    def toggle_hidden_status(self, request, pk=None, *args, **kwargs):
         # Toggle the hidden status of an instance
         instance = self.get_object()
         instance.is_hidden = not instance.is_hidden
         instance.save()
         return Response({'status': f'Hidden status set to {instance.is_hidden}'}, status=status.HTTP_204_NO_CONTENT)
 
-    @action(detail=False)
-    def hidden(self, request, *args, **kwargs):
+    @action(detail=True, methods=['delete'])
+    def soft_delete(self, request, pk=None, *args, **kwargs):
+        # Soft delete an instance
+        instance = self.get_object()
+        instance.is_hidden = True
+        instance.save()
+        return Response({'status': 'hidden'}, status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['get'])
+    def hidden_list(self, request, *args, **kwargs):
         # List all hidden instances
         hidden_instances = self.queryset.filter(is_hidden=True)
         page = self.paginate_queryset(hidden_instances)
@@ -38,10 +47,10 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(hidden_instances, many=True)
-        return Response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-    @action(detail=False)
-    def active(self, request, *args, **kwargs):
+    @action(detail=False, methods=['get'])
+    def active_list(self, request, *args, **kwargs):
         # List all active instances
         active_instances = self.queryset.filter(is_hidden=False)
         page = self.paginate_queryset(active_instances)
@@ -49,7 +58,7 @@ class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(active_instances, many=True)
-        return Response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
@@ -61,7 +70,7 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = []
 
-    @action(detail=False)
+    @action(detail=False, methods=['get'])
     def search(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset()).filter(is_hidden=False)
         page = self.paginate_queryset(queryset)
@@ -69,7 +78,7 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class LocationViewSet(SearchDeleteViewSet):
@@ -103,13 +112,25 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
         stock_adj = serializer.save()
         return Response(self.get_serializer(stock_adj).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['get'])
     def check_editable(self, stock_adj):
         """Check if the stock adjustment is editable (not validated)."""
         if stock_adj.is_validated:
             return False, 'This stock adjustment has already been submitted and cannot be edited.'
         return True, ''
 
-    @action(detail=True, methods=['post', 'get'])
+    @action(detail=True, methods=['post'])
+    def submit(self, request, pk=None):
+        stock_adj = self.get_object()
+
+        items_data = stock_adj.stock_adjustment_items
+        for item_data in items_data:
+            item_data.product.available_product_quantity = item_data.adjusted_quantity
+
+        stock_adj.submit()
+        return Response({'status': 'draft'})
+
+    @action(detail=True, methods=['put', 'patch'])
     def final_submit(self, request, pk=None):
         stock_adj = self.get_object()
         editable, message = self.check_editable(stock_adj)
@@ -148,13 +169,25 @@ class ScrapViewSet(SearchDeleteViewSet):
         scrap = serializer.save()
         return Response(self.get_serializer(scrap).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['get'])
     def check_editable(self, scrap):
         """Check if the scrap is editable (not validated)."""
         if scrap.is_validated:
             return False, 'This stock adjustment has already been submitted and cannot be edited.'
         return True, ''
 
-    @action(detail=True, methods=['post', 'get'])
+    @action(detail=True, methods=['post'])
+    def submit(self, request, pk=None):
+        scrap = self.get_object()
+
+        items_data = scrap.scrap_items
+        for item_data in items_data:
+            item_data.product.available_product_quantity = item_data.adjusted_quantity
+
+        scrap.submit()
+        return Response({'status': 'draft'})
+
+    @action(detail=True, methods=['put', 'patch'])
     def final_submit(self, request, pk=None):
         scrap = self.get_object()
         editable, message = self.check_editable(scrap)
@@ -184,7 +217,7 @@ class MultiLocationViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         raise ValidationError("This MultiLocation instance cannot be deleted")
 
-    @action(detail=True, methods=['GET', 'POST'])
+    @action(detail=True, methods=['put', 'patch'])
     def change_status(self, request, pk=None):
         try:
             instance = self.get_object()
