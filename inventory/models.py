@@ -165,8 +165,8 @@ class Location(models.Model):
 
     def save(self, *args, **kwargs):
         self.id = f"{self.location_code}{self.id_number:05d}"
-        if (MultiLocation.objects.first().filter(is_activated=False)
-                and self.objects.all().filter(is_hidden=False).count() >= 3):
+        if (MultiLocation.objects.filter(is_activated=False).first()
+                and self.objects.filter(is_hidden=False).count() >= 3):
             raise Exception("Maximum number of locations reached")
         super(Location, self).save(*args, **kwargs)
 
