@@ -303,28 +303,8 @@ paths:
         '204':
           description: No response body
   /inventory/configuration/multi-location/{id}/change_status/:
-    get:
-      operationId: inventory_configuration_multi_location_change_status_retrieve
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this multi location.
-        required: true
-      tags:
-      - inventory
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MultiLocation'
-          description: ''
-    post:
-      operationId: inventory_configuration_multi_location_change_status_create
+    put:
+      operationId: inventory_configuration_multi_location_change_status_update
       parameters:
       - in: path
         name: id
@@ -345,6 +325,37 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/MultiLocation'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MultiLocation'
+          description: ''
+    patch:
+      operationId: inventory_configuration_multi_location_change_status_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this multi location.
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedMultiLocation'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedMultiLocation'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedMultiLocation'
       security:
       - cookieAuth: []
       responses:
@@ -527,8 +538,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/Location'
           description: ''
+  /inventory/location/{id}/soft_delete/:
     delete:
-      operationId: inventory_location_destroy
+      operationId: inventory_location_soft_delete_destroy
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -547,33 +559,9 @@ paths:
       responses:
         '204':
           description: No response body
-  /inventory/location/{id}/toggle_hidden/:
-    get:
-      operationId: inventory_location_toggle_hidden_retrieve
-      description: |-
-        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
-        enable searching functionality.
-        The search functionality can be accessed via the DRF API interface.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this location.
-        required: true
-      tags:
-      - inventory
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Location'
-          description: ''
-    post:
-      operationId: inventory_location_toggle_hidden_create
+  /inventory/location/{id}/toggle_hidden_status/:
+    put:
+      operationId: inventory_location_toggle_hidden_status_update
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -608,9 +596,44 @@ paths:
               schema:
                 $ref: '#/components/schemas/Location'
           description: ''
-  /inventory/location/active/:
+    patch:
+      operationId: inventory_location_toggle_hidden_status_partial_update
+      description: |-
+        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
+        enable searching functionality.
+        The search functionality can be accessed via the DRF API interface.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        description: A unique value identifying this location.
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedLocation'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedLocation'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedLocation'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+          description: ''
+  /inventory/location/active_list/:
     get:
-      operationId: inventory_location_active_retrieve
+      operationId: inventory_location_active_list_retrieve
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -644,9 +667,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/Location'
           description: ''
-  /inventory/location/hidden/:
+  /inventory/location/hidden_list/:
     get:
-      operationId: inventory_location_hidden_retrieve
+      operationId: inventory_location_hidden_list_retrieve
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -832,8 +855,103 @@ paths:
               schema:
                 $ref: '#/components/schemas/Scrap'
           description: ''
+  /inventory/scrap/{id}/check_editable/:
+    get:
+      operationId: inventory_scrap_check_editable_retrieve
+      description: Check if the scrap is editable (not validated).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        description: A unique value identifying this scrap.
+        required: true
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+          description: ''
+  /inventory/scrap/{id}/final_submit/:
+    put:
+      operationId: inventory_scrap_final_submit_update
+      description: |-
+        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
+        enable searching functionality.
+        The search functionality can be accessed via the DRF API interface.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        description: A unique value identifying this scrap.
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Scrap'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Scrap'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Scrap'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+          description: ''
+    patch:
+      operationId: inventory_scrap_final_submit_partial_update
+      description: |-
+        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
+        enable searching functionality.
+        The search functionality can be accessed via the DRF API interface.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        description: A unique value identifying this scrap.
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedScrap'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedScrap'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedScrap'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+          description: ''
+  /inventory/scrap/{id}/soft_delete/:
     delete:
-      operationId: inventory_scrap_destroy
+      operationId: inventory_scrap_soft_delete_destroy
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -852,33 +970,9 @@ paths:
       responses:
         '204':
           description: No response body
-  /inventory/scrap/{id}/final_submit/:
-    get:
-      operationId: inventory_scrap_final_submit_retrieve
-      description: |-
-        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
-        enable searching functionality.
-        The search functionality can be accessed via the DRF API interface.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this scrap.
-        required: true
-      tags:
-      - inventory
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Scrap'
-          description: ''
+  /inventory/scrap/{id}/submit/:
     post:
-      operationId: inventory_scrap_final_submit_create
+      operationId: inventory_scrap_submit_create
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -913,33 +1007,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/Scrap'
           description: ''
-  /inventory/scrap/{id}/toggle_hidden/:
-    get:
-      operationId: inventory_scrap_toggle_hidden_retrieve
-      description: |-
-        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
-        enable searching functionality.
-        The search functionality can be accessed via the DRF API interface.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this scrap.
-        required: true
-      tags:
-      - inventory
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Scrap'
-          description: ''
-    post:
-      operationId: inventory_scrap_toggle_hidden_create
+  /inventory/scrap/{id}/toggle_hidden_status/:
+    put:
+      operationId: inventory_scrap_toggle_hidden_status_update
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -974,9 +1044,44 @@ paths:
               schema:
                 $ref: '#/components/schemas/Scrap'
           description: ''
-  /inventory/scrap/active/:
+    patch:
+      operationId: inventory_scrap_toggle_hidden_status_partial_update
+      description: |-
+        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
+        enable searching functionality.
+        The search functionality can be accessed via the DRF API interface.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        description: A unique value identifying this scrap.
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedScrap'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedScrap'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedScrap'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+          description: ''
+  /inventory/scrap/active_list/:
     get:
-      operationId: inventory_scrap_active_retrieve
+      operationId: inventory_scrap_active_list_retrieve
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -992,9 +1097,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/Scrap'
           description: ''
-  /inventory/scrap/hidden/:
+  /inventory/scrap/hidden_list/:
     get:
-      operationId: inventory_scrap_hidden_retrieve
+      operationId: inventory_scrap_hidden_list_retrieve
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -1321,8 +1426,103 @@ paths:
               schema:
                 $ref: '#/components/schemas/StockAdjustment'
           description: ''
+  /inventory/stock-adjustment/{id}/check_editable/:
+    get:
+      operationId: inventory_stock_adjustment_check_editable_retrieve
+      description: Check if the stock adjustment is editable (not validated).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        description: A unique value identifying this Stock Adjustment.
+        required: true
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockAdjustment'
+          description: ''
+  /inventory/stock-adjustment/{id}/final_submit/:
+    put:
+      operationId: inventory_stock_adjustment_final_submit_update
+      description: |-
+        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
+        enable searching functionality.
+        The search functionality can be accessed via the DRF API interface.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        description: A unique value identifying this Stock Adjustment.
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockAdjustment'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StockAdjustment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StockAdjustment'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockAdjustment'
+          description: ''
+    patch:
+      operationId: inventory_stock_adjustment_final_submit_partial_update
+      description: |-
+        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
+        enable searching functionality.
+        The search functionality can be accessed via the DRF API interface.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        description: A unique value identifying this Stock Adjustment.
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStockAdjustment'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStockAdjustment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStockAdjustment'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockAdjustment'
+          description: ''
+  /inventory/stock-adjustment/{id}/soft_delete/:
     delete:
-      operationId: inventory_stock_adjustment_destroy
+      operationId: inventory_stock_adjustment_soft_delete_destroy
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -1341,33 +1541,9 @@ paths:
       responses:
         '204':
           description: No response body
-  /inventory/stock-adjustment/{id}/final_submit/:
-    get:
-      operationId: inventory_stock_adjustment_final_submit_retrieve
-      description: |-
-        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
-        enable searching functionality.
-        The search functionality can be accessed via the DRF API interface.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Stock Adjustment.
-        required: true
-      tags:
-      - inventory
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StockAdjustment'
-          description: ''
+  /inventory/stock-adjustment/{id}/submit/:
     post:
-      operationId: inventory_stock_adjustment_final_submit_create
+      operationId: inventory_stock_adjustment_submit_create
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -1402,33 +1578,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/StockAdjustment'
           description: ''
-  /inventory/stock-adjustment/{id}/toggle_hidden/:
-    get:
-      operationId: inventory_stock_adjustment_toggle_hidden_retrieve
-      description: |-
-        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
-        enable searching functionality.
-        The search functionality can be accessed via the DRF API interface.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-        description: A unique value identifying this Stock Adjustment.
-        required: true
-      tags:
-      - inventory
-      security:
-      - cookieAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StockAdjustment'
-          description: ''
-    post:
-      operationId: inventory_stock_adjustment_toggle_hidden_create
+  /inventory/stock-adjustment/{id}/toggle_hidden_status/:
+    put:
+      operationId: inventory_stock_adjustment_toggle_hidden_status_update
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -1463,9 +1615,44 @@ paths:
               schema:
                 $ref: '#/components/schemas/StockAdjustment'
           description: ''
-  /inventory/stock-adjustment/active/:
+    patch:
+      operationId: inventory_stock_adjustment_toggle_hidden_status_partial_update
+      description: |-
+        A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
+        enable searching functionality.
+        The search functionality can be accessed via the DRF API interface.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        description: A unique value identifying this Stock Adjustment.
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStockAdjustment'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStockAdjustment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStockAdjustment'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockAdjustment'
+          description: ''
+  /inventory/stock-adjustment/active_list/:
     get:
-      operationId: inventory_stock_adjustment_active_retrieve
+      operationId: inventory_stock_adjustment_active_list_retrieve
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -1481,9 +1668,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/StockAdjustment'
           description: ''
-  /inventory/stock-adjustment/hidden/:
+  /inventory/stock-adjustment/hidden_list/:
     get:
-      operationId: inventory_stock_adjustment_hidden_retrieve
+      operationId: inventory_stock_adjustment_hidden_list_retrieve
       description: |-
         A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
         enable searching functionality.
@@ -7714,7 +7901,7 @@ components:
           readOnly: true
         id:
           type: string
-          maxLength: 8
+          maxLength: 10
         location_code:
           type: string
           maxLength: 4
@@ -7980,7 +8167,7 @@ components:
           readOnly: true
         id:
           type: string
-          maxLength: 8
+          maxLength: 10
         location_code:
           type: string
           maxLength: 4

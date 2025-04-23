@@ -6,7 +6,7 @@ from rest_framework import viewsets, generics
 from rest_framework import status
 from django.utils.text import slugify
 from django.contrib.auth import login, authenticate, get_user_model
-
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
 from .models import Tenant, Domain
 from .serializers import TenantRegistrationSerializer, LoginSerializer
@@ -19,7 +19,16 @@ from django.db import transaction
 from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
 
-
+@extend_schema_view(
+    create=extend_schema(
+        summary="Register a new tenant",
+        description="Registers a new tenant and sends an email verification link.",
+        responses={
+            201: "Tenant created successfully.",
+            400: "Validation error or registration failed."
+        }
+    )
+)
 class TenantRegistrationViewSet(viewsets.ViewSet):
     serializer_class = TenantRegistrationSerializer
     permission_classes = [AllowAny]
@@ -74,7 +83,14 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
             return Response({'detail': f'An error occurred during registration. Please try again. {str(e)}'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-
+@extend_schema(
+    summary="Login endpoint",
+    description="Authenticates a user and returns access and refresh tokens.",
+    responses={
+        200: "Login successful.",
+        400: "Invalid credentials or validation error."
+    }
+)
 class LoginView(APIView):
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
