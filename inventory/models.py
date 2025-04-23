@@ -119,9 +119,10 @@ class InventoryAdjStockMoveManager(models.Manager):
 # Create your models here.
 
 class Location(models.Model):
-    id = models.CharField(max_length=8, primary_key=True)
+    id = models.CharField(max_length=10, primary_key=True)
     id_number = models.PositiveIntegerField(auto_created=True)
-    date_created = models.DateTimeField(auto_created=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
     location_code = models.CharField(max_length=4, unique=True)
     location_name = models.CharField(max_length=50, unique=True)
     location_type = models.CharField(choices=LOCATION_TYPES, default="internal", max_length=10)
@@ -166,9 +167,9 @@ class Location(models.Model):
     def save(self, *args, **kwargs):
         self.id = f"{self.location_code}{self.id_number:05d}"
         if (MultiLocation.objects.filter(is_activated=False).first()
-                and self.objects.filter(is_hidden=False).count() >= 3):
+                and Location.objects.filter(is_hidden=False).count() >= 3):
             raise Exception("Maximum number of locations reached")
-        super(Location, self).save(*args, **kwargs)
+        super().save(*args, **kwargs)
 
 
 # The multi-location option

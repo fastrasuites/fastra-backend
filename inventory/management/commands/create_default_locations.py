@@ -3,7 +3,7 @@ from inventory.models import Location, MultiLocation
 from django_tenants.utils import schema_context, get_tenant_model
 
 class Command(BaseCommand):
-    help = 'Creates default Location instances and a MultiLocation instance for all schemas except public'
+    help = 'Creates default Location instances and ensures a MultiLocation instance exists for all schemas except public'
 
     def handle(self, *args, **options):
         tenant_model = get_tenant_model()
@@ -12,10 +12,14 @@ class Command(BaseCommand):
         for schema_name in schemas:
             self.stdout.write(self.style.NOTICE(f'Processing schema: {schema_name}'))
             with schema_context(schema_name):
-                settings = MultiLocation.objects.create(
-                    is_activated=False
+                # Use get_or_create for MultiLocation
+                multi_location, created = MultiLocation.objects.get_or_create(
+                    defaults={'is_activated': False}
                 )
-                self.stdout.write(self.style.SUCCESS(f'Created MultiLocation option in schema {schema_name}: {settings}'))
+                if created:
+                    self.stdout.write(self.style.SUCCESS(f'Created MultiLocation option in schema {schema_name}: {multi_location}'))
+                else:
+                    self.stdout.write(self.style.SUCCESS(f'MultiLocation already exists in schema {schema_name}: {multi_location}'))
 
                 # Create the first Location instance
                 location1 = Location.objects.create(
