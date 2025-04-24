@@ -207,7 +207,7 @@ class ScrapItemViewSet(viewsets.ModelViewSet):
 
 
 
-class MultiLocationViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
+class MultiLocationViewSet(viewsets.GenericViewSet):
     queryset = MultiLocation.objects.all()
     serializer_class = MultiLocationSerializer
     # permission_classes = [permissions.IsAuthenticated]
