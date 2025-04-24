@@ -158,16 +158,36 @@ class Location(models.Model):
     def __repr__(self):
         return self.id
 
-    def get_active_locations(self):
-        multi_location_option = MultiLocation.objects.first().filter(is_activated=True)
-        if not multi_location_option and self.objects.all().filter(is_hidden=False).count() >= 3:
-            return Location.objects.last()
-        return self.objects.all().exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
+    @classmethod
+    def get_active_locations(cls):
+        return cls.objects.all().exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
+
+    # def save(self, *args, **kwargs):
+    #     self.id = f"{self.location_code}{self.id_number:05d}"
+    #     if (MultiLocation.objects.filter(is_activated=False).first()
+    #             and Location.objects.filter(is_hidden=False).count() >= 3):
+    #         raise Exception("Maximum number of locations reached")
+    #     super().save(*args, **kwargs)
 
     def save(self, *args, **kwargs):
-        self.id = f"{self.location_code}{self.id_number:05d}"
-        if (MultiLocation.objects.filter(is_activated=False).first()
-                and Location.objects.filter(is_hidden=False).count() >= 3):
+        # Ensure the location code and location name are unique
+        if Location.objects.filter(location_code=self.location_code).exists() or Location.objects.filter(location_name=self.location_name).exists():
+            raise ValidationError(f"Location code '{self.location_code}' or Location name '{self.location_name}' "
+                                  f"already exists.")
+        # Ensure the location type is valid
+        if self.location_type not in dict(LOCATION_TYPES).keys():
+            raise ValidationError(f"Invalid location type '{self.location_type}'.")
+        # Ensure the id is unique
+        if self.id and Location.objects.filter(id=self.id).exists():
+            raise ValidationError(f"ID '{self.id}' already exists.")
+        # Ensure the id_number is auto-incremented based on location_code
+        if not self.id_number:
+            last_location = Location.objects.filter(location_code=self.location_code).order_by('-id_number').first()
+            self.id_number = (last_location.id_number + 1) if last_location else 1
+        # Generate the id based on location_code and id_number
+        self.id = f"{self.location_code}-{self.id_number:05d}"
+        # Check the maximum number of locations if MultiLocation is not activated
+        if not MultiLocation.objects.first().is_activated and Location.objects.filter(is_hidden=False).count() >= 3:
             raise Exception("Maximum number of locations reached")
         super().save(*args, **kwargs)
 

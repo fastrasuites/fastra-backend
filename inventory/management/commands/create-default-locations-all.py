@@ -23,8 +23,6 @@ class Command(BaseCommand):
 
                 # Create the first Location instance
                 location1 = Location.objects.create(
-                    id="SUPP00001",
-                    id_number=1,
                     location_code="SUPP",
                     location_name="Supplier Location",
                     location_type="partner",
@@ -37,8 +35,6 @@ class Command(BaseCommand):
 
                 # Create the second Location instance
                 location2 = Location.objects.create(
-                    id="CUST00002",
-                    id_number=2,
                     location_code="CUST",
                     location_name="Customer Location",
                     location_type="partner",
