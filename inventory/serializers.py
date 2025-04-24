@@ -8,17 +8,21 @@ from .models import (Location, MultiLocation, StockAdjustment, StockAdjustmentIt
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='location-detail')
+    url = serializers.HyperlinkedIdentityField(view_name='location-detail', lookup_field='id')
     location_manager = serializers.HyperlinkedRelatedField(queryset=TenantUser.objects.filter(is_hidden=False),
-                                                           view_name='tenant-user-detail')
+                                                           view_name='tenant-user-detail', allow_null=True)
     store_keeper = serializers.HyperlinkedRelatedField(queryset=TenantUser.objects.filter(is_hidden=False),
-                                                       view_name='tenant-user-detail')
+                                                       view_name='tenant-user-detail', allow_null=True)
+    id = serializers.CharField(required=False)  # Make the id field read-only
 
     class Meta:
         model = Location
         fields = ['url', 'id', 'location_code', 'location_name', 'location_type', 'address', 'location_manager',
                   'store_keeper', 'contact_information', 'is_hidden']
-        read_only_fields = ['date_created']
+        read_only_fields = ['date_created', 'date_updated', ]
+        extra_kwargs = {
+            'url': {'view_name': 'location-detail', 'lookup_field': 'id'}  # Ensure this matches the `lookup_field`
+        }
 
 class MultiLocationSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='multi-location-detail')

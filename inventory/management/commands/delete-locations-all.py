@@ -13,8 +13,11 @@ class Command(BaseCommand):
         for schema_name in schemas:
             self.stdout.write(self.style.NOTICE(f'Processing schema: {schema_name}'))
             with schema_context(schema_name):
-                deleted_multilocation_count, _ = MultiLocation.objects.all().delete()
+                multilocation = MultiLocation.objects.all().exists()
                 deleted_location_count, _ = Location.objects.all().delete()
-                self.stdout.write(self.style.SUCCESS(
-                    f'Deleted {deleted_multilocation_count} MultiLocation records and {deleted_location_count}'
-                    f'Location records in schema {schema_name}'))
+                if multilocation and deleted_location_count > 0:
+                    self.stdout.write(self.style.SUCCESS(
+                        f'Deleted {deleted_location_count} Location records in schema {schema_name}'))
+                else:
+                    self.stdout.write(self.style.NOTICE(
+                        f'No Location records found in schema {schema_name}'))

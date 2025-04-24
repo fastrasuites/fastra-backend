@@ -84,15 +84,13 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
 class LocationViewSet(SearchDeleteViewSet):
     queryset = Location.objects.all()
     serializer_class = LocationSerializer
+    lookup_field = 'id'
     search_fields = ['id', 'location_name', 'location_type', 'location_manager__username']
 
     @action(detail=False, methods=['GET'])
-    def get_active_locations(self):
-        multi_location_option = MultiLocation.objects.first().filter(is_activated=True)
-        if not multi_location_option and super().get_queryset().count() >= 3:
-            return Location.objects.last()
-        return super().get_queryset().exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
-
+    def get_active_locations(self, request):
+        queryset = Location.get_active_locations()
+        return Response(queryset.values())
 
 class StockAdjustmentViewSet(SearchDeleteViewSet):
     queryset = StockAdjustment.objects.all()
@@ -209,7 +207,7 @@ class ScrapItemViewSet(viewsets.ModelViewSet):
 
 
 
-class MultiLocationViewSet(viewsets.ModelViewSet):
+class MultiLocationViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
     queryset = MultiLocation.objects.all()
     serializer_class = MultiLocationSerializer
     # permission_classes = [permissions.IsAuthenticated]
@@ -217,10 +215,10 @@ class MultiLocationViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         raise ValidationError("This MultiLocation instance cannot be deleted")
 
-    @action(detail=True, methods=['put', 'patch'])
-    def change_status(self, request, pk=None):
+    @action(detail=False, methods=['put', 'patch'])
+    def change_status(self, request):
         try:
-            instance = self.get_object()
+            instance = self.get_queryset().first()
             instance.is_activated = not instance.is_activated
             instance.save()
 
@@ -236,10 +234,10 @@ class MultiLocationViewSet(viewsets.ModelViewSet):
                 'message': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=['GET'])
-    def check_status(self, request, pk=None):
+    @action(detail=False, methods=['GET'])
+    def check_status(self, request):
         try:
-            instance = self.get_object()
+            instance = self.get_queryset().first()
             return Response({
                 'status': 'success',
                 'message': 'MultiLocation is ' + ('activated' if instance.is_activated else 'deactivated'),

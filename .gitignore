@@ -9,5 +9,3 @@ properties.html
 properties.xlsx
 scr*.py
 .DS_Store
-
-inventory/management/commands/delete_multilocation_records.py
