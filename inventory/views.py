@@ -212,9 +212,6 @@ class MultiLocationViewSet(viewsets.GenericViewSet):
     serializer_class = MultiLocationSerializer
     # permission_classes = [permissions.IsAuthenticated]
 
-    def destroy(self, request, *args, **kwargs):
-        raise ValidationError("This MultiLocation instance cannot be deleted")
-
     @action(detail=False, methods=['put', 'patch'])
     def change_status(self, request):
         try:
