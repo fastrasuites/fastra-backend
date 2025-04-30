@@ -234,7 +234,11 @@ class StockAdjustment(models.Model):
     adjustment_type = models.CharField(max_length=20, default="Stock Level Update")
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
-    warehouse_location = models.ForeignKey(Location, on_delete=models.PROTECT)
+    warehouse_location = models.ForeignKey(
+        Location,
+        on_delete=models.PROTECT,
+        limit_choices_to=models.Q(location_code="SUPP") | models.Q(location_code="CUST"),
+    )
     notes = models.TextField(blank=True, null=True)
     status = models.CharField(choices=STOCK_ADJ_STATUS, max_length=10, default='draft')
     is_done = models.BooleanField(default=False)
@@ -243,13 +247,23 @@ class StockAdjustment(models.Model):
 
     objects = models.Manager()
 
+    draft_stock_adjustments = DraftStockAdjManager()
+    done_stock_adjustments = DoneStockAdjManager()
+
 
     def __str__(self):
         return f"Stock Adjustment - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
 
     def save(self, *args, **kwargs):
-        self.id = f"{self.warehouse_location.location_code}IN{self.id_number:05d}"
-        self.warehouse_location = Location.objects.last()
+        if not self.warehouse_location:
+            # Auto-fill with a default location excluding "SUPP" and "CUST"
+            self.warehouse_location = Location.objects.exclude(
+                location_code__in=["SUPP", "CUST"]
+            ).first()
+        else:
+            # Ensure the selected location is valid if MultiLocation is not activated
+            if not MultiLocation.objects.first().is_activated and self.warehouse_location.location_code in ["SUPP", "CUST"]:
+                raise ValidationError("Invalid warehouse location selected.")
         if self.is_done:
             self.can_edit = False
         super(StockAdjustment, self).save(*args, **kwargs)
@@ -296,6 +310,8 @@ class StockAdjustmentItem(models.Model):
         verbose_name='Adjusted Quantity'
     )
 
+    objects = models.Manager()
+
     def __str__(self):
         return f"{self.product.product_name} - {self.adjusted_quantity}"
 
@@ -305,6 +321,13 @@ class StockAdjustmentItem(models.Model):
                 self.unit_of_measure = self.product.unit_of_measure
             if not self.current_quantity:
                 self.current_quantity = self.product.available_product_quantity
+            if not self.adjusted_quantity:
+                self.adjusted_quantity = self.product.available_product_quantity
+            if self.adjusted_quantity < 0:
+                raise ValidationError("Adjusted quantity cannot be negative")
+            if self.stock_adjustment.is_done:
+                self.product.available_product_quantity = self.adjusted_quantity
+                self.product.save()
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)

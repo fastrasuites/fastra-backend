@@ -1,5 +1,4 @@
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import viewsets, status, filters, mixins
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -46,13 +45,14 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
             return False, 'This stock adjustment has already been submitted and cannot be edited.'
         return True, ''
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['put', 'patch'])
     def submit(self, request, pk=None):
         stock_adj = self.get_object()
 
-        items_data = stock_adj.stock_adjustment_items
-        for item_data in items_data:
-            item_data.product.available_product_quantity = item_data.adjusted_quantity
+        editable, message = self.check_editable(stock_adj)
+
+        if not editable:
+            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
 
         stock_adj.submit()
         return Response({'status': 'draft'})
@@ -60,9 +60,6 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
     @action(detail=True, methods=['put', 'patch'])
     def final_submit(self, request, pk=None):
         stock_adj = self.get_object()
-        editable, message = self.check_editable(stock_adj)
-        if not editable:
-            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
 
         items_data = stock_adj.stock_adjustment_items
         for item_data in items_data:
@@ -70,6 +67,18 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
 
         stock_adj.final_submit()
         return Response({'status': 'done'})
+
+    @action(detail=False, methods=['get'])
+    def draft_list(self, request):
+        queryset = StockAdjustment.draft_stock_adjustments.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def done_list(self, request):
+        queryset = StockAdjustment.done_stock_adjustments.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 
 class StockAdjustmentItemViewSet(viewsets.ModelViewSet):

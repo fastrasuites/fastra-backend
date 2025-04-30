@@ -34,8 +34,7 @@ class MultiLocationSerializer(serializers.HyperlinkedModelSerializer):
 
 class StockAdjustmentItemSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='stock-adjustment-item-detail')
-    stock_adjustment = serializers.HyperlinkedRelatedField(queryset=StockAdjustment.objects.filter(is_hidden=False),
-                                                           view_name='stock-adjustment-detail')
+    stock_adjustment = serializers.HyperlinkedRelatedField(view_name='stock-adjustment-detail', read_only=True)
     product = serializers.HyperlinkedRelatedField(queryset=Product.objects.filter(is_hidden=False),
                                                   view_name='product-detail')
 
@@ -49,8 +48,7 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='stock-adjustment-detail')
     warehouse_location = serializers.HyperlinkedRelatedField(queryset=Location.objects.filter(is_hidden=False),
                                                              view_name='location-detail')
-
-    items = StockAdjustmentItemSerializer(many=True, read_only=True)
+    items = StockAdjustmentItemSerializer(many=True)
 
     class Meta:
         model = StockAdjustment
@@ -72,6 +70,28 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
             product.available_product_quantity = item_data.get('adjusted_quantity')
             product.save()
         return stock_adjustment
+
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('items', None)
+        # Update the stock adjustment instance
+        instance.adjustment_type = validated_data.get('adjustment_type', instance.adjustment_type)
+        instance.warehouse_location = validated_data.get('warehouse_location', instance.warehouse_location)
+        instance.notes = validated_data.get('notes', instance.notes)
+        instance.status = validated_data.get('status', instance.status)
+        instance.save()
+
+        if items_data is not None:
+            # Clear existing items and create new ones
+            instance.items.all().delete()
+            for item_data in items_data:
+                StockAdjustmentItem.objects.update_or_create(id=item_data.get('id'),
+                                                             stock_adjustment=instance,
+                                                             defaults=item_data)
+                # Update the product's quantity'
+                product = item_data.get('product')
+                product.available_product_quantity = item_data.get('adjusted_quantity')
+                product.save()
+        return instance
 
 
 class ScrapItemSerializer(serializers.HyperlinkedModelSerializer):
