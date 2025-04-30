@@ -247,6 +247,9 @@ class StockAdjustment(models.Model):
 
     objects = models.Manager()
 
+    draft_stock_adjustments = DraftStockAdjManager()
+    done_stock_adjustments = DoneStockAdjManager()
+
 
     def __str__(self):
         return f"Stock Adjustment - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
