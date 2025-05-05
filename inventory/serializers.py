@@ -32,34 +32,50 @@ class MultiLocationSerializer(serializers.HyperlinkedModelSerializer):
         fields = ['url', 'is_activated']
 
 
-class StockAdjustmentItemSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='stock-adjustment-item-detail')
-    stock_adjustment = serializers.HyperlinkedRelatedField(view_name='stock-adjustment-detail', read_only=True)
+class StockAdjustmentItemSerializer(serializers.ModelSerializer):
+    # url = serializers.HyperlinkedIdentityField(view_name='stock-adjustment-item-detail')
+    stock_adjustment = serializers.HyperlinkedRelatedField(
+                                                           view_name='stock-adjustment-detail',
+                                                           read_only=True,
+                                                           lookup_field='id',               # ✅ use 'id' as lookup field
+                                                           lookup_url_kwarg='id',
+    )
     product = serializers.HyperlinkedRelatedField(queryset=Product.objects.filter(is_hidden=False),
                                                   view_name='product-detail')
+    id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
 
     class Meta:
         model = StockAdjustmentItem
-        fields = ['url', 'id', 'product', 'unit_of_measure', 'current_quantity', 'adjusted_quantity',
+        fields = ['id', 'product', 'unit_of_measure', 'current_quantity', 'adjusted_quantity',
                   'stock_adjustment']
 
 
 class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='stock-adjustment-detail')
+    url = serializers.HyperlinkedIdentityField(view_name='stock-adjustment-detail',
+                                               lookup_field='id',
+                                               lookup_url_kwarg='id')
     warehouse_location = serializers.HyperlinkedRelatedField(queryset=Location.objects.filter(is_hidden=False),
-                                                             view_name='location-detail')
-    items = StockAdjustmentItemSerializer(many=True)
+                                                             view_name='location-detail',
+                                                             lookup_url_kwarg='id',
+                                                             lookup_field='id')
+
+    stock_adjustment_items = StockAdjustmentItemSerializer(many=True)
+    id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
 
     class Meta:
         model = StockAdjustment
-        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'status', 'is_hidden', 'items']
+        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'status', 'is_hidden', 'stock_adjustment_items']
         read_only_fields = ['date_created', 'date_updated', 'adjustment_type']
+        extra_kwargs = {
+            'url': {'view_name': 'stock-adjustment-detail', 'lookup_field': 'id'}
+            # Ensure this matches the `lookup_field`
+        }
 
     def create(self, validated_data):
         """
         Create a new Stock Adjustment with its associated items.
         """
-        items_data = validated_data.pop('items')
+        items_data = validated_data.pop('stock_adjustment_items')
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a Stock Adjustment.")
         stock_adjustment = StockAdjustment.objects.create(**validated_data)
@@ -72,7 +88,7 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         return stock_adjustment
 
     def update(self, instance, validated_data):
-        items_data = validated_data.pop('items', None)
+        items_data = validated_data.pop('stock_adjustment_items', None)
         # Update the stock adjustment instance
         instance.adjustment_type = validated_data.get('adjustment_type', instance.adjustment_type)
         instance.warehouse_location = validated_data.get('warehouse_location', instance.warehouse_location)

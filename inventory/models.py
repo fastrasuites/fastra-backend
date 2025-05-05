@@ -264,6 +264,14 @@ class StockAdjustment(models.Model):
             # Ensure the selected location is valid if MultiLocation is not activated
             if not MultiLocation.objects.first().is_activated and self.warehouse_location.location_code in ["SUPP", "CUST"]:
                 raise ValidationError("Invalid warehouse location selected.")
+        if self.id and StockAdjustment.objects.filter(id=self.id).exists():
+            raise ValidationError(f"ID '{self.id}' already exists.")
+        # Ensure the id_number is auto-incremented based on location_code
+        if not self.id_number:
+            last_stock_adj = StockAdjustment.objects.filter(warehouse_location__location_code=self.warehouse_location.location_code).order_by('-id_number').first()
+            self.id_number = (last_stock_adj.id_number + 1) if last_stock_adj else 1
+    # Generate the id based on location_code and id_number
+        self.id = f"{self.warehouse_location.location_code}IN{self.id_number:05d}"
         if self.is_done:
             self.can_edit = False
         super(StockAdjustment, self).save(*args, **kwargs)
