@@ -20,9 +20,25 @@ class LocationViewSet(SearchDeleteViewSet):
         queryset = Location.get_active_locations()
         return Response(queryset.values())
 
+    def create(self, request, *args, **kwargs):
+        try:
+            if MultiLocation.objects.first().is_activated and Location.get_active_locations() >= 1:
+                return Response(
+                    {'error': 'Max number of Locations reached.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            return super().create(request, *args, **kwargs)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 class StockAdjustmentViewSet(SearchDeleteViewSet):
     queryset = StockAdjustment.objects.all()
     serializer_class = StockAdjustmentSerializer
+    lookup_field = 'id'
+    lookup_url_kwarg = 'id'
     search_fields = ['date_created', 'status', 'warehouse_location']
 
     def get_queryset(self):
@@ -41,32 +57,41 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
     @action(detail=True, methods=['get'])
     def check_editable(self, stock_adj):
         """Check if the stock adjustment is editable (not validated)."""
-        if stock_adj.is_validated:
+        if not stock_adj.can_edit:
             return False, 'This stock adjustment has already been submitted and cannot be edited.'
         return True, ''
 
-    @action(detail=True, methods=['put', 'patch'])
-    def submit(self, request, pk=None):
-        stock_adj = self.get_object()
-
-        editable, message = self.check_editable(stock_adj)
-
-        if not editable:
-            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
-
-        stock_adj.submit()
-        return Response({'status': 'draft'})
-
-    @action(detail=True, methods=['put', 'patch'])
-    def final_submit(self, request, pk=None):
-        stock_adj = self.get_object()
-
-        items_data = stock_adj.stock_adjustment_items
-        for item_data in items_data:
-            item_data.product.available_product_quantity = item_data.adjusted_quantity
-
-        stock_adj.final_submit()
-        return Response({'status': 'done'})
+    # @action(detail=True, methods=['put', 'patch'])
+    # def submit(self, request, *args, **kwargs):
+    #     pk = self.kwargs.get(self.lookup_url_kwarg, None)
+    #     if not pk:
+    #         return Response({'error': 'Stock Adjustment ID not provided.'}, status=status.HTTP_400_BAD_REQUEST)
+    #
+    #     stock_adj = self.get_object()
+    #
+    #     items_data = stock_adj.stock_adjustment_items
+    #     for item_data in items_data:
+    #         item_data.product.available_product_quantity = item_data.adjusted_quantity
+    #
+    #     stock_adj.submit()
+    #     return Response({'status': 'draft'})
+    #
+    # @action(detail=True, methods=['put', 'patch'])
+    # def final_submit(self, request, *args, **kwargs):
+    #     pk = self.kwargs.get(self.lookup_url_kwarg, None)
+    #     if not pk:
+    #         return Response({'error': 'Stock Adjustment ID not provided.'}, status=status.HTTP_400_BAD_REQUEST)
+    #     stock_adj = self.get_object()
+    #     editable, message = self.check_editable(stock_adj)
+    #     if not editable:
+    #         return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
+    #
+    #     items_data = stock_adj.stock_adjustment_items
+    #     for item_data in items_data:
+    #         item_data.product.available_product_quantity = item_data.adjusted_quantity
+    #
+    #     stock_adj.final_submit()
+    #     return Response({'status': 'done'})
 
     @action(detail=False, methods=['get'])
     def draft_list(self, request):
