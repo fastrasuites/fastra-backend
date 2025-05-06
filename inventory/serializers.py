@@ -82,9 +82,9 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         for item_data in items_data:
             StockAdjustmentItem.objects.create(stock_adjustment=stock_adjustment, **item_data)
             # Update the product's quantity'
-            product = item_data.get('product')
-            product.available_product_quantity = item_data.get('adjusted_quantity')
-            product.save()
+            # product = item_data.get('product')
+            # product.available_product_quantity = item_data.get('adjusted_quantity')
+            # product.save()
         return stock_adjustment
 
     def update(self, instance, validated_data):
@@ -104,9 +104,9 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
                                                              stock_adjustment=instance,
                                                              defaults=item_data)
                 # Update the product's quantity'
-                product = item_data.get('product')
-                product.available_product_quantity = item_data.get('adjusted_quantity')
-                product.save()
+                # product = item_data.get('product')
+                # product.available_product_quantity = item_data.get('adjusted_quantity')
+                # product.save()
         return instance
 
 
