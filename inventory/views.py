@@ -63,28 +63,28 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
             return Response({'error': 'This stock adjustment has already been submitted and cannot be edited.'}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'editable'}, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['put', 'patch'])
-    def submit(self, request, *args, **kwargs):
-        pk = self.kwargs.get(self.lookup_url_kwarg, None)
-        if not pk:
-            return Response({'error': 'Stock Adjustment ID not provided.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        stock_adj = self.get_object()
-        stock_adj.save()
-        return Response({'status': 'draft'})
-
-    @action(detail=True, methods=['put', 'patch'])
-    def final_submit(self, request, *args, **kwargs):
-        stock_adj = self.get_object()
-        if not stock_adj.can_edit:
-            return Response({'error': "It is no longer editable"}, status=status.HTTP_400_BAD_REQUEST)
-
-        stock_adj.stock_adjustment_items.update(
-            product__available_product_quantity=models.F('adjusted_quantity')
-        )
-
-        stock_adj.save()
-        return Response({'status': 'done'})
+    # @action(detail=True, methods=['put', 'patch'])
+    # def submit(self, request, *args, **kwargs):
+    #     pk = self.kwargs.get(self.lookup_url_kwarg, None)
+    #     if not pk:
+    #         return Response({'error': 'Stock Adjustment ID not provided.'}, status=status.HTTP_400_BAD_REQUEST)
+    #
+    #     stock_adj = self.get_object()
+    #     stock_adj.save()
+    #     return Response({'status': 'draft'})
+    #
+    # @action(detail=True, methods=['put', 'patch'])
+    # def final_submit(self, request, *args, **kwargs):
+    #     stock_adj = self.get_object()
+    #     if not stock_adj.can_edit:
+    #         return Response({'error': "It is no longer editable"}, status=status.HTTP_400_BAD_REQUEST)
+    #
+    #     items_data = stock_adj.stock_adjustment_items
+    #     for item_data in items_data:
+    #         item_data.product.available_product_quantity = item_data.adjusted_quantity
+    #
+    #     stock_adj.save()
+    #     return Response({'status': 'done'})
 
     @action(detail=False, methods=['get'])
     def draft_list(self, request):
