@@ -12,6 +12,7 @@ import json
 
 from users.models import TenantUser
 
+
 PURCHASE_REQUEST_STATUS = (
     ('draft', 'Draft'),
     ('approved', 'Approved'),
@@ -308,6 +309,7 @@ class PurchaseRequest(models.Model):
     # requester = models.ForeignKey(TenantUser, on_delete=models.CASCADE, related_name='purchase_requests')
     currency = models.ForeignKey("Currency", on_delete=models.SET_NULL, null=True, blank=True,
                                  related_name='purchase_requests')
+    requesting_location = models.ForeignKey('inventory.Location', on_delete=models.SET_NULL, null=True, blank=True)
     status = models.CharField(max_length=20, choices=PURCHASE_REQUEST_STATUS, default='draft')
     purpose = CKEditor5Field(blank=True, null=True)
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
@@ -586,6 +588,8 @@ class PurchaseOrder(models.Model):
     currency = models.ForeignKey("Currency", on_delete=models.SET_NULL, null=True, related_name='purchase_orders')
     payment_terms = models.CharField(null=True, blank=True)
     purchase_policy = models.CharField(null=True, blank=True)
+    invoice_policy = models.CharField(null=True, blank=True)
+    destination_location = models.ForeignKey('inventory.Location', on_delete=models.SET_NULL, null=True, blank=True)
     delivery_terms = models.CharField(null=True, blank=True)
     is_hidden = models.BooleanField(default=False)
 

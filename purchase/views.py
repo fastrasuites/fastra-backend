@@ -657,8 +657,6 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
                 status='draft',
                 created_by=request.user,
                 currency=rfq.currency,
-                date_created=timezone.now(),
-                date_updated=timezone.now(),
                 is_hidden=False,
             )
 
