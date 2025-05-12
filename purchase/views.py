@@ -739,6 +739,8 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     serializer_class = PurchaseOrderSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['status', 'vendor__company_name']
+    lookup_field = 'id'
+    lookup_url_kwarg = 'id'
 
     @action(detail=True, methods=['get'])
     def check_po_editable(self, po):
