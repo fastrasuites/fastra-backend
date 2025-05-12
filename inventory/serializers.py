@@ -85,28 +85,22 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
             StockAdjustmentItem.objects.create(stock_adjustment=stock_adjustment, **item_data)
         return stock_adjustment
 
-    # def update(self, instance, validated_data):
-    #         items_data = validated_data.pop('stock_adjustment_items', None)
-    #         # Update the stock adjustment instance
-    #         instance.adjustment_type = validated_data.get('adjustment_type', instance.adjustment_type)
-    #         instance.warehouse_location = validated_data.get('warehouse_location', instance.warehouse_location)
-    #         instance.notes = validated_data.get('notes', instance.notes)
-    #         instance.status = validated_data.get('status', instance.status)
-    #         instance.save()
-    #
-    #         if items_data is not None:
-    #             # Update or create items without clearing all existing items
-    #             existing_items = {item.id: item for item in instance.items.all()}
-    #             for item_data in items_data:
-    #                 item_id = item_data.get('id')
-    #                 if item_id and item_id in existing_items:
-    #                     # Update existing item
-    #                     StockAdjustmentItem.objects.filter(id=item_id).update(**item_data)
-    #                 else:
-    #                     # Create new item
-    #                     StockAdjustmentItem.objects.create(stock_adjustment=instance, **item_data)
-    #
-    #         return instance
+    def update(self, instance, validated_data):
+        """
+        Update an existing instance with validated data.
+        """
+        items_data = validated_data.pop('stock_adjustment_items', None)
+        if items_data:
+            # Clear existing items and add new ones
+            instance.stock_adjustment_items.all().delete()
+            for item_data in items_data:
+                StockAdjustmentItem.objects.create(stock_adjustment=instance, **item_data)
+
+        # Update the instance fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
 
 
 class ScrapItemSerializer(serializers.HyperlinkedModelSerializer):
@@ -159,3 +153,20 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
         for item_data in items_data:
             ScrapItem.objects.create(scrap=scrap, **item_data)
         return scrap
+
+    def update(self, instance, validated_data):
+        """
+        Update an existing instance with validated data.
+        """
+        items_data = validated_data.pop('scrap_items', None)
+        if items_data:
+            # Clear existing items and add new ones
+            instance.scrap_items.all().delete()
+            for item_data in items_data:
+                ScrapItem.objects.create(scrap=instance, **item_data)
+
+        # Update the instance fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
