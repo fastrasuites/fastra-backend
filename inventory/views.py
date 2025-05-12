@@ -1,3 +1,4 @@
+from django.db import models
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -55,11 +56,12 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
         return Response(self.get_serializer(stock_adj).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'])
-    def check_editable(self, stock_adj):
+    def check_editable(self, request, *args, **kwargs):
         """Check if the stock adjustment is editable (not validated)."""
+        stock_adj = self.get_object()
         if not stock_adj.can_edit:
-            return False, 'This stock adjustment has already been submitted and cannot be edited.'
-        return True, ''
+            return Response({'error': 'This stock adjustment has already been submitted and cannot be edited.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': 'editable'}, status=status.HTTP_200_OK)
 
     # @action(detail=True, methods=['put', 'patch'])
     # def submit(self, request, *args, **kwargs):
@@ -68,29 +70,20 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
     #         return Response({'error': 'Stock Adjustment ID not provided.'}, status=status.HTTP_400_BAD_REQUEST)
     #
     #     stock_adj = self.get_object()
-    #
-    #     items_data = stock_adj.stock_adjustment_items
-    #     for item_data in items_data:
-    #         item_data.product.available_product_quantity = item_data.adjusted_quantity
-    #
-    #     stock_adj.submit()
+    #     stock_adj.save()
     #     return Response({'status': 'draft'})
     #
     # @action(detail=True, methods=['put', 'patch'])
     # def final_submit(self, request, *args, **kwargs):
-    #     pk = self.kwargs.get(self.lookup_url_kwarg, None)
-    #     if not pk:
-    #         return Response({'error': 'Stock Adjustment ID not provided.'}, status=status.HTTP_400_BAD_REQUEST)
     #     stock_adj = self.get_object()
-    #     editable, message = self.check_editable(stock_adj)
-    #     if not editable:
-    #         return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
+    #     if not stock_adj.can_edit:
+    #         return Response({'error': "It is no longer editable"}, status=status.HTTP_400_BAD_REQUEST)
     #
     #     items_data = stock_adj.stock_adjustment_items
     #     for item_data in items_data:
     #         item_data.product.available_product_quantity = item_data.adjusted_quantity
     #
-    #     stock_adj.final_submit()
+    #     stock_adj.save()
     #     return Response({'status': 'done'})
 
     @action(detail=False, methods=['get'])

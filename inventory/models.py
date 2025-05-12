@@ -236,8 +236,7 @@ class StockAdjustment(models.Model):
     date_updated = models.DateTimeField(auto_now=True)
     warehouse_location = models.ForeignKey(
         Location,
-        on_delete=models.PROTECT,
-        limit_choices_to=models.Q(location_code="SUPP") | models.Q(location_code="CUST"),
+        on_delete=models.PROTECT
     )
     notes = models.TextField(blank=True, null=True)
     status = models.CharField(choices=STOCK_ADJ_STATUS, max_length=10, default='draft')
@@ -255,23 +254,15 @@ class StockAdjustment(models.Model):
         return f"Stock Adjustment - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
 
     def save(self, *args, **kwargs):
-        if not self.warehouse_location:
-            # Auto-fill with a default location excluding "SUPP" and "CUST"
-            self.warehouse_location = Location.objects.exclude(
-                location_code__in=["SUPP", "CUST"]
-            ).first()
-        else:
-            # Ensure the selected location is valid if MultiLocation is not activated
-            if not MultiLocation.objects.first().is_activated and self.warehouse_location.location_code in ["SUPP", "CUST"]:
-                raise ValidationError("Invalid warehouse location selected.")
-        if self.id and StockAdjustment.objects.filter(id=self.id).exists():
-            raise ValidationError(f"ID '{self.id}' already exists.")
-        # Ensure the id_number is auto-incremented based on location_code
-        if not self.id_number:
-            last_stock_adj = StockAdjustment.objects.filter(warehouse_location__location_code=self.warehouse_location.location_code).order_by('-id_number').first()
-            self.id_number = (last_stock_adj.id_number + 1) if last_stock_adj else 1
-    # Generate the id based on location_code and id_number
-        self.id = f"{self.warehouse_location.location_code}IN{self.id_number:05d}"
+        if not self.pk:  # Only perform these checks for new instances
+            if self.id and StockAdjustment.objects.filter(id=self.id).exists():
+                raise ValidationError(f"ID '{self.id}' already exists.")
+            # Ensure the id_number is auto-incremented based on location_code
+            if not self.id_number:
+                last_stock_adj = StockAdjustment.objects.filter(warehouse_location__location_code=self.warehouse_location.location_code).order_by('-id_number').first()
+                self.id_number = (last_stock_adj.id_number + 1) if last_stock_adj else 1
+            # Generate the id based on location_code and id_number
+            self.id = f"{self.warehouse_location.location_code}IN{self.id_number:05d}"
         if self.is_done:
             self.can_edit = False
         super(StockAdjustment, self).save(*args, **kwargs)
