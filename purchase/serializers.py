@@ -3,6 +3,7 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from users.models import TenantUser
+from inventory.models import Location
 from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, \
     Product, RequestForQuotation, RequestForQuotationItem, \
     UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
@@ -57,6 +58,9 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                                                    view_name='currency-detail')
     vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
                                                  view_name='vendor-detail')
+    requesting_location = serializers.HyperlinkedRelatedField(
+        queryset=Location.objects.filter(is_hidden=False),
+        view_name='location-detail', lookup_field='id')
     items = PurchaseRequestItemSerializer(many=True, allow_empty=False)
     total_price = serializers.ReadOnlyField()
     can_edit = serializers.ReadOnlyField()
@@ -64,7 +68,7 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = PurchaseRequest
-        fields = ['url', 'id', 'status', 'date_created', 'date_updated', 'currency',
+        fields = ['url', 'id', 'status', 'date_created', 'date_updated', 'currency', 'requesting_location',
                   'purpose', 'vendor', 'items', 'total_price', 'can_edit', 'is_submitted', 'is_hidden']
 
     def create(self, validated_data):
@@ -306,7 +310,7 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
         queryset=Product.objects.filter(is_hidden=False),
         view_name='product-detail')
     purchase_order = serializers.HyperlinkedRelatedField(
-        view_name='purchase-order-detail', read_only=True)
+        view_name='purchase-order-detail', read_only=True, lookup_field='id')
     unit_of_measure = serializers.HyperlinkedRelatedField(
         queryset=UnitOfMeasure.objects.filter(is_hidden=False),
         view_name='unit-of-measure-detail')
@@ -320,11 +324,14 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
 
 
 class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='purchase-order-detail')
+    url = serializers.HyperlinkedIdentityField(view_name='purchase-order-detail', lookup_field='id', lookup_url_kwarg='id')
     # created_by = serializers.HyperlinkedRelatedField(
     #     queryset=User.objects.filter(username__icontains='admin'),
     #     view_name='user-detail')
     items = PurchaseOrderItemSerializer(many=True)
+    destination_location = serializers.HyperlinkedRelatedField(
+        queryset=Location.objects.filter(is_hidden=False),
+        view_name='location-detail', lookup_field='id')
     vendor = serializers.HyperlinkedRelatedField(
         queryset=Vendor.objects.filter(is_hidden=False),
         view_name='vendor-detail')
@@ -337,7 +344,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = PurchaseOrder
         fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'vendor', 'currency', 'payment_terms',
-                  'purchase_policy', 'delivery_terms', 'items', 'po_total_price', 'is_hidden']
+                  'destination_location', 'purchase_policy', 'delivery_terms', 'items', 'po_total_price', 'is_hidden']
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
@@ -353,6 +360,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         # instance.date_updated = validated_data.get('date_updated', instance.date_updated)
         # instance.created_by = validated_data.get('created_by', instance.created_by)
         instance.vendor = validated_data.get('vendor', instance.vendor)
+        instance.destination_location = validated_data.get('destination_location', instance.destination_location)
         instance.payment_terms = validated_data.get('payment_terms', instance.payment_terms)
         instance.purchase_policy = validated_data.get('purchase_policy', instance.purchase_policy)
         instance.delivery_terms = validated_data.get('delivery_terms', instance.delivery_terms)

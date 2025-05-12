@@ -657,8 +657,6 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
                 status='draft',
                 created_by=request.user,
                 currency=rfq.currency,
-                date_created=timezone.now(),
-                date_updated=timezone.now(),
                 is_hidden=False,
             )
 
@@ -741,6 +739,8 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     serializer_class = PurchaseOrderSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['status', 'vendor__company_name']
+    lookup_field = 'id'
+    lookup_url_kwarg = 'id'
 
     @action(detail=True, methods=['get'])
     def check_po_editable(self, po):
