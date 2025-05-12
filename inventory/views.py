@@ -109,6 +109,8 @@ class ScrapViewSet(SearchDeleteViewSet):
     queryset = Scrap.objects.all()
     serializer_class = ScrapSerializer
     search_fields = ['date_created', 'status', 'warehouse_location']
+    lookup_field = 'id'
+    lookup_url_kwarg = 'id'
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -124,36 +126,37 @@ class ScrapViewSet(SearchDeleteViewSet):
         return Response(self.get_serializer(scrap).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'])
-    def check_editable(self, scrap):
+    def check_editable(self, request, *args, **kwargs):
         """Check if the scrap is editable (not validated)."""
-        if scrap.is_validated:
-            return False, 'This stock adjustment has already been submitted and cannot be edited.'
-        return True, ''
-
-    @action(detail=True, methods=['post'])
-    def submit(self, request, pk=None):
         scrap = self.get_object()
+        if not scrap.can_edit:
+            return Response({'error': 'This scrap has already been submitted and cannot be edited.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': 'editable'}, status=status.HTTP_200_OK)
 
-        items_data = scrap.scrap_items
-        for item_data in items_data:
-            item_data.product.available_product_quantity = item_data.adjusted_quantity
-
-        scrap.submit()
-        return Response({'status': 'draft'})
-
-    @action(detail=True, methods=['put', 'patch'])
-    def final_submit(self, request, pk=None):
-        scrap = self.get_object()
-        editable, message = self.check_editable(scrap)
-        if not editable:
-            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
-
-        items_data = scrap.scrap_items
-        for item_data in items_data:
-            item_data.product.available_product_quantity = item_data.adjusted_quantity
-
-        scrap.final_submit()
-        return Response({'status': 'done'})
+    # @action(detail=True, methods=['post'])
+    # def submit(self, request, pk=None):
+    #     scrap = self.get_object()
+    #
+    #     items_data = scrap.scrap_items
+    #     for item_data in items_data:
+    #         item_data.product.available_product_quantity = item_data.adjusted_quantity
+    #
+    #     scrap.submit()
+    #     return Response({'status': 'draft'})
+    #
+    # @action(detail=True, methods=['put', 'patch'])
+    # def final_submit(self, request, pk=None):
+    #     scrap = self.get_object()
+    #     editable, message = self.check_editable(scrap)
+    #     if not editable:
+    #         return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
+    #
+    #     items_data = scrap.scrap_items
+    #     for item_data in items_data:
+    #         item_data.product.available_product_quantity = item_data.adjusted_quantity
+    #
+    #     scrap.final_submit()
+    #     return Response({'status': 'done'})
 
 
 class ScrapItemViewSet(viewsets.ModelViewSet):

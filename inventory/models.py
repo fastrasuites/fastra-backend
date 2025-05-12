@@ -42,10 +42,24 @@ class DoneStockAdjManager(models.Manager):
         return super(DoneStockAdjManager, self).get_queryset().filter(status="done")
 
 
+SCRAP_TYPES = (
+    ('damage', 'Damage'),
+    ('loss', 'Loss')
+)
+
 SCRAP_STATUS = (
     ('draft', 'Draft'),
     ('done', 'Done')
 )
+
+class DamageScrapManager(models.Manager):
+    def get_queryset(self):
+        return super(DamageScrapManager, self).get_queryset().filter(adjustment_type="damage")
+
+
+class LossScrapManager(models.Manager):
+    def get_queryset(self):
+        return super(LossScrapManager, self).get_queryset().filter(adjustment_type="loss")
 
 
 class DraftScrapManager(models.Manager):
@@ -262,7 +276,7 @@ class StockAdjustment(models.Model):
                 last_stock_adj = StockAdjustment.objects.filter(warehouse_location__location_code=self.warehouse_location.location_code).order_by('-id_number').first()
                 self.id_number = (last_stock_adj.id_number + 1) if last_stock_adj else 1
             # Generate the id based on location_code and id_number
-            self.id = f"{self.warehouse_location.location_code}IN{self.id_number:05d}"
+            self.id = f"{self.warehouse_location.location_code}ADJ{self.id_number:05d}"
         if self.is_done:
             self.can_edit = False
         super(StockAdjustment, self).save(*args, **kwargs)
@@ -320,8 +334,6 @@ class StockAdjustmentItem(models.Model):
                 self.unit_of_measure = self.product.unit_of_measure
             if not self.current_quantity:
                 self.current_quantity = self.product.available_product_quantity
-            if not self.adjusted_quantity:
-                self.adjusted_quantity = self.product.available_product_quantity
             if self.adjusted_quantity < 0:
                 raise ValidationError("Adjusted quantity cannot be negative")
             if self.stock_adjustment.is_done:
@@ -339,7 +351,7 @@ class StockAdjustmentItem(models.Model):
 class Scrap(models.Model):
     id = models.CharField(max_length=15, primary_key=True)
     id_number = models.PositiveIntegerField(auto_created=True)
-    adjustment_type = models.CharField(max_length=20, default="Stock Level Update")
+    adjustment_type = models.CharField(max_length=20, choices=SCRAP_TYPES, default="damage")
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     warehouse_location = models.ForeignKey(Location, on_delete=models.PROTECT)
@@ -351,12 +363,27 @@ class Scrap(models.Model):
 
     objects = models.Manager()
 
+    draft_scraps = DraftScrapManager()
+    done_scraps = DoneScrapManager()
+
+    damage_scraps = DamageScrapManager()
+    loss_scraps = LossScrapManager()
+
     def __str__(self):
         return f"Scrap - {self.date_created.strftime('%Y-%m-%d %H:%M')}"
 
     def save(self, *args, **kwargs):
-        self.id = f"{self.warehouse_location.location_code}-IN-{self.id_number:05d}"
-        self.warehouse_location = Location.objects.last()
+        if not self.pk:  # Only perform these checks for new instances
+            if self.id and Scrap.objects.filter(id=self.id).exists():
+                raise ValidationError(f"ID '{self.id}' already exists.")
+            # Ensure the id_number is auto-incremented based on location_code
+            if not self.id_number:
+                last_scrap = Scrap.objects.filter(
+                    warehouse_location__location_code=self.warehouse_location.location_code
+                ).order_by('-id_number').first()
+                self.id_number = (last_scrap.id_number + 1) if last_scrap else 1
+            # Generate the id based on location_code and id_number
+            self.id = f"{self.warehouse_location.location_code}ADJ{self.id_number:05d}"
         if self.is_done:
             self.can_edit = False
         super(Scrap, self).save(*args, **kwargs)
@@ -397,6 +424,8 @@ class ScrapItem(models.Model):
         verbose_name='Adjusted Quantity'
     )
 
+    objects = models.Manager()
+
     def __str__(self):
         return f"{self.product.product_name} - {self.adjusted_quantity}"
 
@@ -404,6 +433,11 @@ class ScrapItem(models.Model):
         if self.product:
             if not self.scrap_quantity:
                 self.scrap_quantity = self.product.available_product_quantity
+            if self.adjusted_quantity < 0:
+                raise ValidationError("Adjusted quantity cannot be negative")
+            if self.scrap.is_done:
+                self.product.available_product_quantity = self.adjusted_quantity
+                self.product.save()
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
