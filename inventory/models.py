@@ -587,3 +587,45 @@ def create_outgoing_stock_move(sender, instance, created, **kwargs):
             state='draft',
             created_by=instance.delivery.created_by  # replace with the appropriate inventory record creator
         )
+
+
+
+
+
+
+# DELIVERY ORDERS
+class DeliveryOrder(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('waiting', 'Waiting'),
+        ('ready', 'Ready'),
+        ('done', 'Done'),
+    ]
+    
+    order_unique_id = models.CharField(max_length=50, unique=True, editable=False, null=False)
+    customer_name = models.CharField(max_length=255, null=False)
+    source_location = models.ForeignKey(Location, related_name='source_orders', on_delete=models.PROTECT)
+    destination_location = models.CharField(max_length=255)  # This is the Delivery Address
+    date_created = models.DateTimeField(auto_now_add=True)
+    delivery_date = models.DateField()
+    shipping_policy = models.TextField(blank=True, null=True)
+    return_policy = models.TextField(blank=True, null=True)
+    assigned_to = models.CharField(max_length=255)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
+    is_hidden = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.order_unique_id} - {self.customer_name}"
+
+    
+class ProductLine(models.Model):
+    delivery_order = models.ForeignKey(DeliveryOrder, on_delete=models.CASCADE, related_name='products')
+    product_name = models.CharField(max_length=255)
+    quantity_to_deliver = models.PositiveIntegerField()
+    unit_of_measure = models.CharField(max_length=50)
+    is_available = models.BooleanField(default=False)
+    is_hidden = models.BooleanField(default=False)
+    date_created = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.product_name} ({self.quantity} {self.unit_of_measure})"

@@ -17,7 +17,7 @@ Including another URLconf
 from django.urls import path, include
 from rest_framework import routers
 
-from .views import (LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
+from .views import (DeliveryOrderViewSet, LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
                     ScrapViewSet, ScrapItemViewSet)
 
 router = routers.DefaultRouter()
@@ -29,7 +29,13 @@ router.register(r'stock-adjustment/stock-adjustment-item', StockAdjustmentItemVi
                 basename='stock-adjustment-item')
 router.register(r'scrap', ScrapViewSet, basename='scrap')
 router.register(r'scrap/scrap-item', ScrapItemViewSet, basename='scrap-item')
+# FOR THE DELIVERY ORDERS
+router.register(r'delivery-orders', DeliveryOrderViewSet, basename='delivery-orders')
 
 urlpatterns = [
     path('', include(router.urls)),
+    # FOR THE DELIVERY ORDERS
+    path('delivery-order/list/', DeliveryOrderViewSet.as_view({'get': 'list_without_products'})),
+    path('delivery-order/check-availability/', DeliveryOrderViewSet.as_view({'post': 'check_availability'})),
+    path('delivery-order/confirm-delivery/', DeliveryOrderViewSet.as_view({'post': 'confirm_delivery'})),
 ]

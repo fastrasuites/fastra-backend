@@ -1,9 +1,10 @@
 from rest_framework import serializers
+from django.db import IntegrityError, transaction
 
 from purchase.models import Product
 from users.models import TenantUser
 
-from .models import (Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
+from .models import (DeliveryOrder, Location, MultiLocation, ProductLine, StockAdjustment, StockAdjustmentItem,
                      Scrap, ScrapItem)
 
 
@@ -170,3 +171,78 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         return instance
+
+
+
+# FOR THE DELIVERY ORDERS
+class ProductLineSerializer(serializers.ModelSerializer):
+    delivery_order = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = ProductLine
+        exclude = ('is_hidden',)
+
+
+class DeliveryOrderSerializer(serializers.ModelSerializer):
+    products = ProductLineSerializer(many=True)
+    order_unique_id = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = DeliveryOrder
+        fields = ['order_unique_id', 'customer_name', 'source_location', 
+                  'destination_location', 'delivery_date', 'shipping_policy', 
+                  'return_policy', 'assigned_to', 'products', 'status']
+
+    @transaction.atomic
+    def create(self, validated_data):
+        products_data = validated_data.pop('products')
+        try:
+            delivery_order = DeliveryOrder.objects.create(**validated_data)
+            for product_data in products_data:
+                ProductLine.objects.create(delivery_order=delivery_order, **product_data)
+            return delivery_order
+        except IntegrityError as e:
+            raise serializers.ValidationError({"detail": "Error creating delivery order: " + str(e)})
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        products_data = validated_data.pop('products')
+        # Update parent fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        existing_products = {prod.id: prod for prod in instance.products.all()}
+        sent_product_ids = []
+        try:
+            for prod_data in products_data:
+                prod_id = prod_data.get('id', None)
+                if prod_id and prod_id in existing_products:
+                    # Update existing product
+                    product = existing_products[prod_id]
+                    for attr, value in prod_data.items():
+                        setattr(product, attr, value)
+                    product.save()
+                    sent_product_ids.append(prod_id)
+                else:
+                    # Create new product related to this delivery order
+                    ProductLine.objects.create(delivery_order=instance, **prod_data)
+
+            # Delete products not in the update list
+            for prod_id, product in existing_products.items():
+                if prod_id not in sent_product_ids:
+                    product.delete()
+            return instance
+        except IntegrityError as e:
+            raise serializers.ValidationError({"detail": "Error updating delivery order: " + str(e)})
+        except Exception as e:
+            raise serializers.ValidationError({"detail": "An unexpected error occurred: " + str(e)})
+
+
+class DeliveryOrderWithoutProductsSerializer(serializers.ModelSerializer):
+    order_unique_id = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = DeliveryOrder
+        fields = ['order_unique_id', 'customer_name', 'source_location', 
+                  'destination_location', 'status', 'date_created']
