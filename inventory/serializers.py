@@ -4,7 +4,7 @@ from purchase.models import Product
 from users.models import TenantUser
 
 from .models import (Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
-                     Scrap, ScrapItem)
+                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct)
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
@@ -66,7 +66,7 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = StockAdjustment
         fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'status', 'is_hidden',
-                  'stock_adjustment_items']
+                  'stock_adjustment_items', 'is_done', 'can_edit']
         read_only_fields = ['date_created', 'date_updated', 'adjustment_type']
         extra_kwargs = {
             'url': {'view_name': 'stock-adjustment-detail', 'lookup_field': 'id'}
@@ -135,8 +135,9 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Scrap
-        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'status', 'is_hidden', 'scrap_items']
-        # read_only_fields = ['date_created', 'date_updated', 'adjustment_type']
+        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'status',
+                  'is_hidden', 'is_done', 'can_edit', 'scrap_items']
+        read_only_fields = ['date_created', 'date_updated']
         extra_kwargs = {
             'url': {'view_name': 'scrap-detail', 'lookup_field': 'id'}
             # Ensure this matches the `lookup_field`
@@ -164,6 +165,56 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
             instance.scrap_items.all().delete()
             for item_data in items_data:
                 ScrapItem.objects.create(scrap=instance, **item_data)
+
+        # Update the instance fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
+
+
+class IPItemSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(required=False, read_only=True)
+
+    class Meta:
+        model = IncomingProductItem
+        fields = ['id', 'incoming_product', 'product', 'unit_of_measure',
+                  'expected_quantity', 'quantity_received']
+
+
+class IncomingProductSerializer(serializers.ModelSerializer):
+    incoming_product_items = IPItemSerializer(many=True)
+
+    id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
+
+    class Meta:
+        model = IncomingProduct
+        fields = ['id', 'receipt_type', 'related_po', 'supplier', 'source_location', 'incoming_product_items',
+                  'destination_location', 'is_validated', 'can_edit', 'is_hidden']
+        read_only_fields = ['date_created', 'date_updated']
+
+    def create(self, validated_data):
+        """
+        Create a new Scrap with its associated items.
+        """
+        items_data = validated_data.pop('incoming_product_items')
+        if not items_data:
+            raise serializers.ValidationError("At least one item is required to create an Incoming Product.")
+        incoming_product = IncomingProduct.objects.create(**validated_data)
+        for item_data in items_data:
+            IncomingProductItem.objects.create(incoming_product=incoming_product, **item_data)
+        return incoming_product
+
+    def update(self, instance, validated_data):
+        """
+        Update an existing instance with validated data.
+        """
+        items_data = validated_data.pop('incoming_product_items', None)
+        if items_data:
+            # Clear existing items and add new ones
+            instance.incoming_product_items.all().delete()
+            for item_data in items_data:
+                IncomingProductItem.objects.create(incoming_product=instance, **item_data)
 
         # Update the instance fields
         for attr, value in validated_data.items():
