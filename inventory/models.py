@@ -299,7 +299,7 @@ class StockAdjustment(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     warehouse_location = models.ForeignKey(
-        Location,
+        'Location',
         on_delete=models.PROTECT
     )
     notes = models.TextField(blank=True, null=True)
@@ -358,7 +358,7 @@ class StockAdjustmentItem(models.Model):
         on_delete=models.CASCADE,
         related_name='stock_adjustment_items'
     )
-    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    product = models.ForeignKey('purchase.Product', on_delete=models.PROTECT)
     unit_of_measure = models.CharField(
         max_length=50,
         editable=False,
@@ -406,7 +406,7 @@ class Scrap(models.Model):
     adjustment_type = models.CharField(max_length=20, choices=SCRAP_TYPES, default="damage")
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
-    warehouse_location = models.ForeignKey(Location, on_delete=models.PROTECT)
+    warehouse_location = models.ForeignKey('Location', on_delete=models.PROTECT)
     notes = models.TextField(blank=True, null=True)
     status = models.CharField(choices=SCRAP_STATUS, max_length=10, default='draft')
     is_done = models.BooleanField(default=False)
@@ -463,7 +463,7 @@ class ScrapItem(models.Model):
         on_delete=models.CASCADE,
         related_name='scrap_items'
     )
-    product = models.ForeignKey('Product', on_delete=models.PROTECT)
+    product = models.ForeignKey('purchase.Product', on_delete=models.PROTECT)
     scrap_quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -515,13 +515,13 @@ class IncomingProduct(models.Model):
     source_location = models.ForeignKey(
         'Location',
         on_delete=models.PROTECT,
-        related_name='incoming_products',
+        related_name='incoming_products_from_source',
         default="SUPP00001"
     )
     destination_location = models.ForeignKey(
         'Location',
         on_delete=models.PROTECT,
-        related_name='incoming_products',
+        related_name='incoming_products_from_destination',
     )
     is_validated = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=True)
@@ -557,7 +557,7 @@ class IncomingProductItem(models.Model):
         related_name='incoming_product_items'
     )
     product = models.ForeignKey(
-        'Product',
+        'purchase.Product',
         on_delete=models.PROTECT,
         related_name='incoming_product_items'
     )

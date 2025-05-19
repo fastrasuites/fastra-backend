@@ -18,7 +18,7 @@ from django.urls import path, include
 from rest_framework import routers
 
 from .views import (LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
-                    ScrapViewSet, ScrapItemViewSet)
+                    ScrapViewSet, ScrapItemViewSet, IncomingProductViewSet, IncomingProductItemViewSet)
 
 router = routers.DefaultRouter()
 
@@ -29,6 +29,8 @@ router.register(r'stock-adjustment/stock-adjustment-item', StockAdjustmentItemVi
                 basename='stock-adjustment-item')
 router.register(r'scrap', ScrapViewSet, basename='scrap')
 router.register(r'scrap/scrap-item', ScrapItemViewSet, basename='scrap-item')
+router.register(r'incoming-product', IncomingProductViewSet, basename='incoming-product')
+router.register(r'incoming-product/incoming-product-item', IncomingProductItemViewSet, basename='incoming-product-item')
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -1,10 +1,13 @@
 from rest_framework import serializers
 
 from purchase.models import Product
+from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOrderSerializer
+
 from users.models import TenantUser
 
 from .models import (Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
                      Scrap, ScrapItem, IncomingProductItem, IncomingProduct)
+
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
@@ -175,6 +178,7 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
 
 class IPItemSerializer(serializers.ModelSerializer):
     id = serializers.CharField(required=False, read_only=True)
+    incoming_product = serializers.ReadOnlyField(source="incoming_product.id")
 
     class Meta:
         model = IncomingProductItem
