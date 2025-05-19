@@ -2,7 +2,7 @@ from django.db.models import Max, F, Value
 from django.db.models.functions import Substr, Cast
 from django.db import models
 
-from inventory.models import DeliveryOrder
+from inventory.models import DeliveryOrder, ReturnRecord
 
 
 def generate_delivery_order_unique_id(source_location):
@@ -20,5 +20,12 @@ def generate_delivery_order_unique_id(source_location):
         return id
     id = f"{source_location[:3]}OUT0001"
     return id
+
+
+def generate_returned_record_unique_id(delivery_order_id):
+    if delivery_order_id is not None:
+        id = f"RETD-{delivery_order_id}"
+        return id
+    return "Expects an ID but none was given"
 
                 

@@ -4,7 +4,7 @@ from django.db import IntegrityError, transaction
 from purchase.models import Product
 from users.models import TenantUser
 
-from .models import (DeliveryOrder, Location, MultiLocation, ProductLine, StockAdjustment, StockAdjustmentItem,
+from .models import (DeliveryOrder, Location, MultiLocation, ProductLine, ReturnProductLine, ReturnRecord, StockAdjustment, StockAdjustmentItem,
                      Scrap, ScrapItem)
 
 
@@ -174,7 +174,7 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
 
 
 
-# FOR THE DELIVERY ORDERS
+# START THE DELIVERY ORDERS
 class ProductLineSerializer(serializers.ModelSerializer):
     delivery_order = serializers.PrimaryKeyRelatedField(read_only=True)
 
@@ -246,3 +246,50 @@ class DeliveryOrderWithoutProductsSerializer(serializers.ModelSerializer):
         model = DeliveryOrder
         fields = ['order_unique_id', 'customer_name', 'source_location', 
                   'destination_location', 'status', 'date_created']
+# END THE DELIVERY O
+
+
+# START THE RETURN RECORD
+class ReturnProductLineSerializer(serializers.ModelSerializer):
+    
+    class Meta:
+        model = ReturnProductLine
+        fields = ['product_name', 'initial_quantity', 'unit_of_measure', 'returned_quantity']
+
+
+class ReturnRecordSerializer(serializers.ModelSerializer):
+    return_products = ReturnProductLineSerializer(many=True)
+    unique_record_id = serializers.CharField()
+    source_document = serializers.CharField()
+
+    class Meta:
+        model = ReturnRecord
+        fields = [
+            'delivery_order',
+            'unique_record_id',
+            'source_document',
+            'date_of_return',
+            'source_location',
+            'return_warehouse_location',
+            'reason_for_return',
+            'status',
+            'return_products',
+        ]
+        
+    @transaction.atomic
+    def create(self, validated_data):
+        return_products_data = validated_data.pop('return_products')
+        try:
+            return_record = ReturnRecord.objects.create(**validated_data)
+            return_product_list = []
+            for product_data in return_products_data:
+                one_product = ReturnProductLine(return_record=return_record, **product_data)
+                return_product_list.append(one_product)
+            ReturnProductLine.objects.bulk_create(return_product_list)
+            return return_record
+        except IntegrityError as e:
+            raise serializers.ValidationError(f"Database error occurred: {str(e)}")
+        except Exception as e:
+            raise serializers.ValidationError(f"An error occurred: {str(e)}")
+
+# END THE RETURN REDORD

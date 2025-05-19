@@ -1,3 +1,4 @@
+from datetime import timezone
 from django.db import models
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -6,11 +7,11 @@ from rest_framework.response import Response
 from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet
 
-from .models import DeliveryOrder, Location, MultiLocation, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap
-from .serializers import DeliveryOrderSerializer, DeliveryOrderWithoutProductsSerializer, LocationSerializer, MultiLocationSerializer, StockAdjustmentSerializer, \
+from .models import DeliveryOrder, Location, MultiLocation, ReturnProductLine, ReturnRecord, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap
+from .serializers import DeliveryOrderSerializer, DeliveryOrderWithoutProductsSerializer, LocationSerializer, MultiLocationSerializer, ReturnProductLineSerializer, ReturnRecordSerializer, StockAdjustmentSerializer, \
     StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer
 
-from .utilities.utils import generate_delivery_order_unique_id
+from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id
 
 class LocationViewSet(SearchDeleteViewSet):
     queryset = Location.objects.all()
@@ -211,7 +212,7 @@ class MultiLocationViewSet(viewsets.GenericViewSet):
 
 
 
-# FOR THE DELIVERY ORDER
+# START FOR THE DELIVERY ORDER
 class DeliveryOrderViewSet(viewsets.ModelViewSet):
     queryset = DeliveryOrder.objects.filter(is_hidden=False)
     serializer_class = DeliveryOrderSerializer
@@ -306,3 +307,61 @@ class DeliveryOrderViewSet(viewsets.ModelViewSet):
 
     def confirm_delivery(self, request, *args, **kwargs):
         serializer = self.get_serializer
+# END FOR THE DELIVERY ORDER
+
+
+
+# START FOR THE RETURN RECORD
+class ReturnRecordViewSet(viewsets.ModelViewSet):
+    queryset = ReturnRecord.objects.filter(is_hidden=False)
+    serializer_class = ReturnRecordSerializer
+
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        delivery_order_id = data.get('delivery_order')
+        if not delivery_order_id:
+            return Response({"detail": "Delivery order ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            delivery_order = DeliveryOrder.objects.get(id=delivery_order_id)
+        except DeliveryOrder.DoesNotExist:
+            return Response({"detail": "Delivery order not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        if delivery_order.status != 'done':
+            return Response({"detail": "Return can only be processed for orders with status 'Done'."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if delivery_order.return_policy and "no returns" in delivery_order.return_policy.lower():
+            return Response({"detail": "This order is not eligible for returns."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate product lines:
+        return_products = data.get('return_products', [])
+        if not return_products or len(return_products) <= 0:
+            return Response({"detail": "At least one product line must be provided."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        for product in return_products:
+            if int(product.get('returned_quantity', 0)) <= 0:
+                return Response({"detail": "Returned quantity must be greater than zero for all products."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if product['returned_quantity'] > product['initial_quantity']:
+                return Response({"detail": f"Returned quantity cannot be greater than initial quantity for {product['product_name']}."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Auto set unique_record_id, source_document, source_location, return_warehouse_location
+        data['unique_record_id'] = generate_returned_record_unique_id(delivery_order.order_unique_id)
+        data['source_document'] = delivery_order.order_unique_id
+        data['source_location'] = delivery_order.source_location.id
+        data['return_warehouse_location'] = delivery_order.source_location.id
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        if ReturnRecord.objects.filter(is_hidden=False, unique_record_id=data['unique_record_id']).exists():
+            return Response({"detail": "This record exists."}, status=status.HTTP_400_BAD_REQUEST)        
+        self.perform_create(serializer)
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class ReturnProductLineViewSet(viewsets.ModelViewSet):
+    queryset = ReturnProductLine.objects.filter(is_hidden=False)
+    serializer_class = ReturnProductLineSerializer
+# END FOR THE RETURN RECORD

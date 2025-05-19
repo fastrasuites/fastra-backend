@@ -593,7 +593,7 @@ def create_outgoing_stock_move(sender, instance, created, **kwargs):
 
 
 
-# DELIVERY ORDERS
+# START DELIVERY ORDERS
 class DeliveryOrder(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -616,6 +616,14 @@ class DeliveryOrder(models.Model):
 
     def __str__(self):
         return f"{self.order_unique_id} - {self.customer_name}"
+    
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        super().save(*args, **kwargs)
+        
 
     
 class ProductLine(models.Model):
@@ -629,3 +637,57 @@ class ProductLine(models.Model):
 
     def __str__(self):
         return f"{self.product_name} ({self.quantity} {self.unit_of_measure})"
+    
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        super().save(*args, **kwargs)
+# END DELIVERY ORDERS
+
+
+
+# START RETURNED PRODUCTS
+class ReturnRecord(models.Model):
+    delivery_order = models.ForeignKey(DeliveryOrder, on_delete=models.CASCADE, related_name='returns')
+    unique_record_id = models.CharField(max_length=50, unique=True, editable=False, null=False, blank=False)
+    source_document = models.CharField(max_length=50, editable=False)
+    date_of_return = models.DateField(default=timezone.now)
+    source_location = models.CharField(max_length=255) # In this case, this is the location of the Customer
+    return_warehouse_location = models.ForeignKey('Location', related_name='return_warehouse', on_delete=models.PROTECT)
+    reason_for_return = models.TextField()
+    status = models.CharField(max_length=10, default='waiting')
+    date_created = models.DateTimeField(auto_now_add=True)
+    is_hidden = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Return {self.unique_record_id} for Order {self.delivery_order.order_unique_id}"
+    
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        super().save(*args, **kwargs)
+    
+
+class ReturnProductLine(models.Model):
+    return_record = models.ForeignKey(ReturnRecord, on_delete=models.CASCADE, related_name='return_products')
+    product_name = models.CharField(max_length=255)
+    initial_quantity = models.PositiveIntegerField()
+    unit_of_measure = models.CharField(max_length=50)
+    returned_quantity = models.PositiveIntegerField(default=0)
+    date_created = models.DateTimeField(auto_now_add=True)
+    is_hidden = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.product_name} ({self.returned_quantity} {self.unit_of_measure})"
+    
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        super().save(*args, **kwargs)
+# END RETURNED PRODUCTS
