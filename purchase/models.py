@@ -709,49 +709,49 @@ class PurchaseOrderItem(models.Model):
         return f"{self.product.product_name} || {self.total_price}"
 
 
-class POVendorQuote(models.Model):
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_updated = models.DateTimeField(auto_now=True)
-    purchase_order = models.ForeignKey("PurchaseOrder", on_delete=models.CASCADE, related_name='quotes')
-    vendor = models.ForeignKey("Vendor", on_delete=models.CASCADE, related_name='po_quotes')
-    is_hidden = models.BooleanField(default=False)
-
-    objects = models.Manager()
-
-    class Meta:
-        ordering = ['is_hidden', '-date_updated']
-
-    def __str__(self):
-        return f"{self.vendor} - {self.purchase_order}"
-
-    @property
-    def quote_total_price(self):
-        quote_total_price = sum(item.total_price for item in self.items.all())
-        return quote_total_price
-
-
-class POVendorQuoteItem(models.Model):
-    po_vendor_quote = models.ForeignKey("POVendorQuote", on_delete=models.CASCADE, related_name='items')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    description = CKEditor5Field(null=True, blank=True)
-    qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
-    estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-
-    objects = models.Manager()
-
-    def __init__(self, *args, **kwargs):
-        self._total_price = None
-        super(POVendorQuoteItem, self).__init__(*args, **kwargs)
-
-    def get_total_price(self, *args, **kwargs):
-        if self._total_price is None:
-            self.set_total_price()
-        return self._total_price
-
-    def set_total_price(self, *args, **kwargs):
-        self._total_price = self.estimated_unit_price * self.qty
-
-    total_price = property(get_total_price, set_total_price, doc="total price property")
-
-    def __str__(self):
-        return self.product.product_name
+# class POVendorQuote(models.Model):
+#     date_created = models.DateTimeField(auto_now_add=True)
+#     date_updated = models.DateTimeField(auto_now=True)
+#     purchase_order = models.ForeignKey("PurchaseOrder", on_delete=models.CASCADE, related_name='quotes')
+#     vendor = models.ForeignKey("Vendor", on_delete=models.CASCADE, related_name='po_quotes')
+#     is_hidden = models.BooleanField(default=False)
+#
+#     objects = models.Manager()
+#
+#     class Meta:
+#         ordering = ['is_hidden', '-date_updated']
+#
+#     def __str__(self):
+#         return f"{self.vendor} - {self.purchase_order}"
+#
+#     @property
+#     def quote_total_price(self):
+#         quote_total_price = sum(item.total_price for item in self.items.all())
+#         return quote_total_price
+#
+#
+# class POVendorQuoteItem(models.Model):
+#     po_vendor_quote = models.ForeignKey("POVendorQuote", on_delete=models.CASCADE, related_name='items')
+#     product = models.ForeignKey(Product, on_delete=models.CASCADE)
+#     description = CKEditor5Field(null=True, blank=True)
+#     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
+#     estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+#
+#     objects = models.Manager()
+#
+#     def __init__(self, *args, **kwargs):
+#         self._total_price = None
+#         super(POVendorQuoteItem, self).__init__(*args, **kwargs)
+#
+#     def get_total_price(self, *args, **kwargs):
+#         if self._total_price is None:
+#             self.set_total_price()
+#         return self._total_price
+#
+#     def set_total_price(self, *args, **kwargs):
+#         self._total_price = self.estimated_unit_price * self.qty
+#
+#     total_price = property(get_total_price, set_total_price, doc="total price property")
+#
+#     def __str__(self):
+#         return self.product.product_name

@@ -25,15 +25,14 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 from companies.permissions import HasTenantAccess
 from core.utils import enforce_tenant_schema
 from users.models import TenantUser
-from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, Product, RequestForQuotation, \
-    RequestForQuotationItem, UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
-    PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem, PRODUCT_CATEGORY, Currency
-from .serializers import PurchaseRequestSerializer, DepartmentSerializer, VendorSerializer, \
-    ProductSerializer, RequestForQuotationSerializer, RequestForQuotationItemSerializer, \
-    UnitOfMeasureSerializer, \
-    PurchaseRequestItemSerializer, RFQVendorQuoteSerializer, RFQVendorQuoteItemSerializer, \
-    PurchaseOrderSerializer, PurchaseOrderItemSerializer, POVendorQuoteSerializer, \
-    POVendorQuoteItemSerializer, ExcelUploadSerializer, CurrencySerializer
+from .models import (PurchaseRequest, PurchaseRequestItem, Department, Vendor,
+                     Product, RequestForQuotation, RequestForQuotationItem, UnitOfMeasure, PurchaseOrder, PurchaseOrderItem, PRODUCT_CATEGORY, Currency)
+from .serializers import (PurchaseRequestSerializer, DepartmentSerializer,
+                          VendorSerializer, ProductSerializer,
+                          RequestForQuotationSerializer, RequestForQuotationItemSerializer,
+                          UnitOfMeasureSerializer, PurchaseRequestItemSerializer,
+                          PurchaseOrderSerializer, PurchaseOrderItemSerializer,
+                          ExcelUploadSerializer, CurrencySerializer)
 from .utils import generate_model_pdf
 
 
@@ -696,35 +695,35 @@ class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
     serializer_class = RequestForQuotationItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-
-@extend_schema_view(
-    list=extend_schema(tags=['RFQ Vendor Quote']),
-    retrieve=extend_schema(tags=['RFQ Vendor Quote']),
-    create=extend_schema(tags=['RFQ Vendor Quote']),
-    update=extend_schema(tags=['RFQ Vendor Quote']),
-    partial_update=extend_schema(tags=['RFQ Vendor Quote']),
-    destroy=extend_schema(tags=['RFQ Vendor Quote']),
-)
-class RFQVendorQuoteViewSet(SearchDeleteViewSet):
-    queryset = RFQVendorQuote.objects.all()
-    serializer_class = RFQVendorQuoteSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['vendor__company_name', ]
-
-
-@extend_schema_view(
-    list=extend_schema(tags=['RFQ Vendor Quote Items']),
-    retrieve=extend_schema(tags=['RFQ Vendor Quote Items']),
-    create=extend_schema(tags=['RFQ Vendor Quote Items']),
-    update=extend_schema(tags=['RFQ Vendor Quote Items']),
-    partial_update=extend_schema(tags=['RFQ Vendor Quote Items']),
-    destroy=extend_schema(tags=['RFQ Vendor Quote Items']),
-)
-class RFQVendorQuoteItemViewSet(viewsets.ModelViewSet):
-    queryset = RFQVendorQuoteItem.objects.all()
-    serializer_class = RFQVendorQuoteItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
+#
+# @extend_schema_view(
+#     list=extend_schema(tags=['RFQ Vendor Quote']),
+#     retrieve=extend_schema(tags=['RFQ Vendor Quote']),
+#     create=extend_schema(tags=['RFQ Vendor Quote']),
+#     update=extend_schema(tags=['RFQ Vendor Quote']),
+#     partial_update=extend_schema(tags=['RFQ Vendor Quote']),
+#     destroy=extend_schema(tags=['RFQ Vendor Quote']),
+# )
+# class RFQVendorQuoteViewSet(SearchDeleteViewSet):
+#     queryset = RFQVendorQuote.objects.all()
+#     serializer_class = RFQVendorQuoteSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     search_fields = ['vendor__company_name', ]
+#
+#
+# @extend_schema_view(
+#     list=extend_schema(tags=['RFQ Vendor Quote Items']),
+#     retrieve=extend_schema(tags=['RFQ Vendor Quote Items']),
+#     create=extend_schema(tags=['RFQ Vendor Quote Items']),
+#     update=extend_schema(tags=['RFQ Vendor Quote Items']),
+#     partial_update=extend_schema(tags=['RFQ Vendor Quote Items']),
+#     destroy=extend_schema(tags=['RFQ Vendor Quote Items']),
+# )
+# class RFQVendorQuoteItemViewSet(viewsets.ModelViewSet):
+#     queryset = RFQVendorQuoteItem.objects.all()
+#     serializer_class = RFQVendorQuoteItemSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#
 
 @extend_schema_view(
     list=extend_schema(tags=['Purchase Orders']),
@@ -866,44 +865,44 @@ class PurchaseOrderItemViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-
-@extend_schema_view(
-    list=extend_schema(tags=['PO Vendor Quote']),
-    retrieve=extend_schema(tags=['PO Vendor Quote']),
-    create=extend_schema(tags=['PO Vendor Quote']),
-    update=extend_schema(tags=['PO Vendor Quote']),
-    partial_update=extend_schema(tags=['PO Vendor Quote']),
-    destroy=extend_schema(tags=['PO Vendor Quote']),
-)
-class POVendorQuoteViewSet(SearchDeleteViewSet):
-    queryset = POVendorQuote.objects.all()
-    serializer_class = POVendorQuoteSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['vendor__company_name', ]
-
-    @enforce_tenant_schema
-    def get(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-
-
-@extend_schema_view(
-    list=extend_schema(tags=['PO Vendor Quote Items']),
-    retrieve=extend_schema(tags=['PO Vendor Quote Items']),
-    create=extend_schema(tags=['PO Vendor Quote Items']),
-    update=extend_schema(tags=['PO Vendor Quote Items']),
-    partial_update=extend_schema(tags=['PO Vendor Quote Items']),
-    destroy=extend_schema(tags=['PO Vendor Quote Items']),
-)
-class POVendorQuoteItemViewSet(viewsets.ModelViewSet):
-    queryset = POVendorQuoteItem.objects.all()
-    serializer_class = POVendorQuoteItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    @enforce_tenant_schema
-    def get(self, request, *args, **kwargs):
-        # Custom logic can be added here
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+#
+# @extend_schema_view(
+#     list=extend_schema(tags=['PO Vendor Quote']),
+#     retrieve=extend_schema(tags=['PO Vendor Quote']),
+#     create=extend_schema(tags=['PO Vendor Quote']),
+#     update=extend_schema(tags=['PO Vendor Quote']),
+#     partial_update=extend_schema(tags=['PO Vendor Quote']),
+#     destroy=extend_schema(tags=['PO Vendor Quote']),
+# )
+# class POVendorQuoteViewSet(SearchDeleteViewSet):
+#     queryset = POVendorQuote.objects.all()
+#     serializer_class = POVendorQuoteSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     search_fields = ['vendor__company_name', ]
+#
+#     @enforce_tenant_schema
+#     def get(self, request, *args, **kwargs):
+#         queryset = self.get_queryset()
+#         serializer = self.get_serializer(queryset, many=True)
+#         return Response(serializer.data)
+#
+#
+# @extend_schema_view(
+#     list=extend_schema(tags=['PO Vendor Quote Items']),
+#     retrieve=extend_schema(tags=['PO Vendor Quote Items']),
+#     create=extend_schema(tags=['PO Vendor Quote Items']),
+#     update=extend_schema(tags=['PO Vendor Quote Items']),
+#     partial_update=extend_schema(tags=['PO Vendor Quote Items']),
+#     destroy=extend_schema(tags=['PO Vendor Quote Items']),
+# )
+# class POVendorQuoteItemViewSet(viewsets.ModelViewSet):
+#     queryset = POVendorQuoteItem.objects.all()
+#     serializer_class = POVendorQuoteItemSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#
+#     @enforce_tenant_schema
+#     def get(self, request, *args, **kwargs):
+#         # Custom logic can be added here
+#         queryset = self.get_queryset()
+#         serializer = self.get_serializer(queryset, many=True)
+#         return Response(serializer.data)
