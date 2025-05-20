@@ -1,18 +1,20 @@
 from django.db import models
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet
 
-from .models import Location, MultiLocation, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap
+from .models import Location, MultiLocation, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
+    IncomingProductItem
 from .serializers import LocationSerializer, MultiLocationSerializer, StockAdjustmentSerializer, \
-    StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer
+    StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer, IncomingProductSerializer, IPItemSerializer
 
 
 class LocationViewSet(SearchDeleteViewSet):
     queryset = Location.objects.all()
     serializer_class = LocationSerializer
+    permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
     search_fields = ['id', 'location_name', 'location_type', 'location_manager__username']
 
@@ -38,6 +40,7 @@ class LocationViewSet(SearchDeleteViewSet):
 class StockAdjustmentViewSet(SearchDeleteViewSet):
     queryset = StockAdjustment.objects.all()
     serializer_class = StockAdjustmentSerializer
+    permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
     search_fields = ['date_created', 'status', 'warehouse_location']
@@ -102,12 +105,13 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
 class StockAdjustmentItemViewSet(viewsets.ModelViewSet):
     queryset = StockAdjustmentItem.objects.all()
     serializer_class = StockAdjustmentItemSerializer
-    # permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class ScrapViewSet(SearchDeleteViewSet):
     queryset = Scrap.objects.all()
     serializer_class = ScrapSerializer
+    permission_classes = [permissions.IsAuthenticated]
     search_fields = ['date_created', 'status', 'warehouse_location']
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
@@ -162,14 +166,52 @@ class ScrapViewSet(SearchDeleteViewSet):
 class ScrapItemViewSet(viewsets.ModelViewSet):
     queryset = ScrapItem.objects.all()
     serializer_class = ScrapItemSerializer
-    # permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
+
+class IncomingProductViewSet(SearchDeleteViewSet):
+    queryset = IncomingProduct.objects.all()
+    serializer_class = IncomingProductSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    search_fields = ['date_created', 'status', 'destination_location']
+    lookup_field = 'id'
+    lookup_url_kwarg = 'id'
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        incoming_product_status = self.request.query_params.get('status')
+        if incoming_product_status:
+            queryset = queryset.filter(status=incoming_product_status)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        incoming_product = serializer.save()
+        return Response(self.get_serializer(incoming_product).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'])
+    def check_editable(self, request, *args, **kwargs):
+        """Check if the incoming product is editable (not validated)."""
+        incoming_product = self.get_object()
+        if not incoming_product.can_edit:
+            return Response(
+                {'error': 'This incoming product has already been submitted and cannot be edited.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response({'status': 'editable'}, status=status.HTTP_200_OK)
+
+
+class IncomingProductItemViewSet(viewsets.ModelViewSet):
+    queryset = IncomingProductItem.objects.all()
+    serializer_class = IPItemSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class MultiLocationViewSet(viewsets.GenericViewSet):
     queryset = MultiLocation.objects.all()
     serializer_class = MultiLocationSerializer
-    # permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     @action(detail=False, methods=['put', 'patch'])
     def change_status(self, request):
