@@ -10,7 +10,7 @@ from django.utils import timezone
 from decimal import Decimal
 
 from users.models import TenantUser
-from purchase.models import Product
+from purchase.models import Product, Vendor, PurchaseOrder, UnitOfMeasure
 
 LOCATION_TYPES = (
     ('internal', 'Internal'),
@@ -70,6 +70,56 @@ class DraftScrapManager(models.Manager):
 class DoneScrapManager(models.Manager):
     def get_queryset(self):
         return super(DoneScrapManager, self).get_queryset().filter(status="done")
+
+
+INCOMING_PRODUCT_RECEIPT_TYPES = (
+    ('vendor_receipt', 'Vendor Receipt'),
+    ('manufacturing', 'Manufacturing'),
+    ('internal_transfer', 'Internal Transfer'),
+    ('returns', 'Returns'),
+)
+
+
+class VendorReceiptIPManager(models.Manager):
+    def get_queryset(self):
+        return super(VendorReceiptIPManager, self).get_queryset().filter(receipt_type="vendor_receipt")
+
+
+class ManufacturingIPManager(models.Manager):
+    def get_queryset(self):
+        return super(ManufacturingIPManager, self).get_queryset().filter(receipt_type="manufacturing")
+
+
+class InternalTransferIPManager(models.Manager):
+    def get_queryset(self):
+        return super(InternalTransferIPManager, self).get_queryset().filter(receipt_type="internal_transfer")
+
+
+class ReturnsIPManager(models.Manager):
+    def get_queryset(self):
+        return super(ReturnsIPManager, self).get_queryset().filter(receipt_type="returns")
+
+
+INCOMING_PRODUCT_STATUS = (
+    ('draft', 'Draft'),
+    ('validated', 'Validated'),
+    ('canceled', 'Canceled'),
+)
+
+
+class DraftIncomingProductManager(models.Manager):
+    def get_queryset(self):
+        return super(DraftIncomingProductManager, self).get_queryset().filter(status="draft")
+
+
+class ValidatedIncomingProductManager(models.Manager):
+    def get_queryset(self):
+        return super(ValidatedIncomingProductManager, self).get_queryset().filter(status="validated")
+
+
+class CanceledIncomingProductManager(models.Manager):
+    def get_queryset(self):
+        return super(CanceledIncomingProductManager, self).get_queryset().filter(status="canceled")
 
 
 STOCK_MOVE_STATUS = (
@@ -199,7 +249,7 @@ class Location(models.Model):
             last_location = Location.objects.filter(location_code=self.location_code).order_by('-id_number').first()
             self.id_number = (last_location.id_number + 1) if last_location else 1
         # Generate the id based on location_code and id_number
-        self.id = f"{self.location_code}-{self.id_number:05d}"
+        self.id = f"{self.location_code}{self.id_number:05d}"
         # Check the maximum number of locations if MultiLocation is not activated
         if not MultiLocation.objects.first().is_activated and Location.objects.filter(is_hidden=False).count() >= 3:
             raise Exception("Maximum number of locations reached")
@@ -249,7 +299,7 @@ class StockAdjustment(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     warehouse_location = models.ForeignKey(
-        Location,
+        'Location',
         on_delete=models.PROTECT
     )
     notes = models.TextField(blank=True, null=True)
@@ -273,7 +323,9 @@ class StockAdjustment(models.Model):
                 raise ValidationError(f"ID '{self.id}' already exists.")
             # Ensure the id_number is auto-incremented based on location_code
             if not self.id_number:
-                last_stock_adj = StockAdjustment.objects.filter(warehouse_location__location_code=self.warehouse_location.location_code).order_by('-id_number').first()
+                last_stock_adj = StockAdjustment.objects.filter(
+                    warehouse_location__location_code=self.warehouse_location.location_code
+                ).order_by('-id_number').first()
                 self.id_number = (last_stock_adj.id_number + 1) if last_stock_adj else 1
             # Generate the id based on location_code and id_number
             self.id = f"{self.warehouse_location.location_code}ADJ{self.id_number:05d}"
@@ -306,7 +358,7 @@ class StockAdjustmentItem(models.Model):
         on_delete=models.CASCADE,
         related_name='stock_adjustment_items'
     )
-    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    product = models.ForeignKey('purchase.Product', on_delete=models.PROTECT)
     unit_of_measure = models.CharField(
         max_length=50,
         editable=False,
@@ -354,7 +406,7 @@ class Scrap(models.Model):
     adjustment_type = models.CharField(max_length=20, choices=SCRAP_TYPES, default="damage")
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
-    warehouse_location = models.ForeignKey(Location, on_delete=models.PROTECT)
+    warehouse_location = models.ForeignKey('Location', on_delete=models.PROTECT)
     notes = models.TextField(blank=True, null=True)
     status = models.CharField(choices=SCRAP_STATUS, max_length=10, default='draft')
     is_done = models.BooleanField(default=False)
@@ -411,7 +463,7 @@ class ScrapItem(models.Model):
         on_delete=models.CASCADE,
         related_name='scrap_items'
     )
-    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    product = models.ForeignKey('purchase.Product', on_delete=models.PROTECT)
     scrap_quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -438,6 +490,110 @@ class ScrapItem(models.Model):
             if self.scrap.is_done:
                 self.product.available_product_quantity = self.adjusted_quantity
                 self.product.save()
+        else:
+            raise ValidationError("Invalid Product")
+        super().save(*args, **kwargs)
+
+
+class IncomingProduct(models.Model):
+    """Records incoming products from suppliers"""
+    receipt_type = models.CharField(choices=INCOMING_PRODUCT_RECEIPT_TYPES, default="vendor_receipt")
+    related_po = models.OneToOneField(
+        'purchase.PurchaseOrder',
+        related_name='incoming_product',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
+    supplier = models.ForeignKey(
+        'purchase.Vendor',
+        on_delete=models.PROTECT,
+        related_name='incoming_products'
+    )
+    source_location = models.ForeignKey(
+        'Location',
+        on_delete=models.PROTECT,
+        related_name='incoming_products_from_source',
+        default="SUPP00001"
+    )
+    destination_location = models.ForeignKey(
+        'Location',
+        on_delete=models.PROTECT,
+        related_name='incoming_products_from_destination',
+    )
+    is_validated = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=True)
+    is_hidden = models.BooleanField(default=False)
+
+    objects = models.Manager()
+
+    draft_incoming_products = DraftIncomingProductManager()
+    validated_incoming_products = ValidatedIncomingProductManager()
+    canceled_incoming_products = CanceledIncomingProductManager()
+
+    vendor_receipt_incoming_products = VendorReceiptIPManager()
+    manufacturing_incoming_products = ManufacturingIPManager()
+    internal_transfer_incoming_products = InternalTransferIPManager()
+    returns_incoming_products = ReturnsIPManager()
+
+    class Meta:
+        ordering = ['-date_updated', '-date_created']
+
+    def __str__(self):
+        return f"IP_ID: {self.pk:05d}"
+
+    def save(self, *args, **kwargs):
+        if self.is_validated:
+            self.can_edit = False
+        super(IncomingProduct, self).save(*args, **kwargs)
+
+
+class IncomingProductItem(models.Model):
+    incoming_product = models.ForeignKey(
+        'IncomingProduct',
+        on_delete=models.CASCADE,
+        related_name='incoming_product_items'
+    )
+    product = models.ForeignKey(
+        'purchase.Product',
+        on_delete=models.PROTECT,
+        related_name='incoming_product_items'
+    )
+    unit_of_measure = models.ForeignKey(
+        'purchase.UnitOfMeasure',
+        on_delete=models.PROTECT,
+        related_name='incoming_product_items'
+
+    )
+    expected_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='Expected Quantity'
+    )
+    quantity_received = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='Quantity Received'
+    )
+
+    objects = models.Manager()
+
+    def save(self, *args, **kwargs):
+        if self.product:
+            certain_product = self.incoming_product.related_po.items.filter(
+                product_id=self.product_id
+            ).first()
+            if not self.unit_of_measure:
+                self.unit_of_measure = self.product.unit_of_measure
+            if not self.expected_quantity:
+                self.expected_quantity = certain_product.qty
+            if self.expected_quantity < 0 or self.quantity_received < 0:
+                raise ValidationError("Quantity cannot be negative")
+            if self.incoming_product.is_validated:
+                self.product.available_product_quantity += self.expected_quantity
+
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)

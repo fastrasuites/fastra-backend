@@ -19,6 +19,8 @@ from rest_framework import routers
 
 from .views import (DeliveryOrderViewSet, LocationViewSet, MultiLocationViewSet, ReturnRecordViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
                     ScrapViewSet, ScrapItemViewSet)
+from .views import (LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
+                    ScrapViewSet, ScrapItemViewSet, IncomingProductViewSet, IncomingProductItemViewSet)
 
 router = routers.DefaultRouter()
 
@@ -34,6 +36,8 @@ router.register(r'delivery-orders', DeliveryOrderViewSet, basename='delivery-ord
 
 router.register(r'return-records', ReturnRecordViewSet)
 
+router.register(r'incoming-product', IncomingProductViewSet, basename='incoming-product')
+router.register(r'incoming-product/incoming-product-item', IncomingProductItemViewSet, basename='incoming-product-item')
 
 urlpatterns = [
     path('', include(router.urls)),
