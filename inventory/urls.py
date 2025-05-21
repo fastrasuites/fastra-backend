@@ -18,7 +18,7 @@ from django.urls import path, include
 from rest_framework import routers
 
 from .views import (LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
-                    ScrapViewSet, ScrapItemViewSet, IncomingProductViewSet, IncomingProductItemViewSet)
+                    ScrapViewSet, ScrapItemViewSet, IncomingProductViewSet)
 
 router = routers.DefaultRouter()
 
