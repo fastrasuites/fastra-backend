@@ -217,12 +217,6 @@ class DeliveryOrderViewSet(viewsets.ModelViewSet):
     queryset = DeliveryOrder.objects.filter(is_hidden=False)
     serializer_class = DeliveryOrderSerializer
 
-    def list_without_products(self, request, *args, **kwargs):
-        # Retrieve all delivery orders without products
-        delivery_orders = self.queryset
-        serializer = DeliveryOrderWithoutProductsSerializer(delivery_orders, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
     def create(self, request, *args, **kwargs):
         # Logic to create a new delivery order
         serializer = self.get_serializer(data=request.data)

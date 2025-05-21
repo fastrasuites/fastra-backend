@@ -38,7 +38,6 @@ router.register(r'return-records', ReturnRecordViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     # START FOR THE DELIVERY ORDERS
-    path('delivery-order/list/', DeliveryOrderViewSet.as_view({'get': 'list_without_products'})),
     path('delivery-order/check-availability/', DeliveryOrderViewSet.as_view({'post': 'check_availability'})),
     path('delivery-order/confirm-delivery/', DeliveryOrderViewSet.as_view({'post': 'confirm_delivery'})),
     # END FOR THE DELIVERY ORDERS
