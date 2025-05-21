@@ -2,7 +2,7 @@ from django.db.models import Max, F, Value
 from django.db.models.functions import Substr, Cast
 from django.db import models
 
-from inventory.models import DeliveryOrder, ReturnRecord
+from inventory.models import DeliveryOrder
 
 
 def generate_delivery_order_unique_id(source_location):

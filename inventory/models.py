@@ -761,7 +761,7 @@ class DeliveryOrder(models.Model):
     order_unique_id = models.CharField(max_length=50, unique=True, editable=False, null=False)
     customer_name = models.CharField(max_length=255, null=False)
     source_location = models.ForeignKey(Location, related_name='source_orders', on_delete=models.PROTECT)
-    destination_location = models.CharField(max_length=255)  # This is the Delivery Address
+    delivery_address = models.CharField(max_length=255)  # This is the Delivery Address
     date_created = models.DateTimeField(auto_now_add=True)
     delivery_date = models.DateField()
     shipping_policy = models.TextField(blank=True, null=True)
@@ -782,17 +782,16 @@ class DeliveryOrder(models.Model):
         
 
     
-class ProductLine(models.Model):
-    delivery_order = models.ForeignKey(DeliveryOrder, on_delete=models.CASCADE, related_name='products')
-    product_name = models.CharField(max_length=255)
+class DeliveryOrderItem(models.Model):
+    delivery_order = models.ForeignKey(DeliveryOrder, on_delete=models.CASCADE, related_name='delivery_order_items')
+    product_item = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='product_items')
     quantity_to_deliver = models.PositiveIntegerField()
-    unit_of_measure = models.CharField(max_length=50)
     is_available = models.BooleanField(default=False)
     is_hidden = models.BooleanField(default=False)
     date_created = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.product_name} ({self.quantity} {self.unit_of_measure})"
+        return f"{self.product_item.product_name} ({self.quantity_to_deliver} {self.product_item.unit_of_measure})"
     
     def save(self, *args, **kwargs):
         for field in self._meta.fields:
@@ -805,10 +804,9 @@ class ProductLine(models.Model):
 
 
 # START RETURNED PRODUCTS
-class ReturnRecord(models.Model):
-    delivery_order = models.ForeignKey(DeliveryOrder, on_delete=models.CASCADE, related_name='returns')
+class DeliveryOrderReturn(models.Model):
+    source_document = models.OneToOneField(DeliveryOrder, on_delete=models.CASCADE, related_name='source_document') #This is referencing the delivery order
     unique_record_id = models.CharField(max_length=50, unique=True, editable=False, null=False, blank=False)
-    source_document = models.CharField(max_length=50, editable=False)
     date_of_return = models.DateField(default=timezone.now)
     source_location = models.CharField(max_length=255) # In this case, this is the location of the Customer
     return_warehouse_location = models.ForeignKey('Location', related_name='return_warehouse', on_delete=models.PROTECT)
@@ -818,7 +816,7 @@ class ReturnRecord(models.Model):
     is_hidden = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"Return {self.unique_record_id} for Order {self.delivery_order.order_unique_id}"
+        return f"Return {self.unique_record_id} for Order {self.source_document.order_unique_id}"
     
     def save(self, *args, **kwargs):
         for field in self._meta.fields:
@@ -828,17 +826,15 @@ class ReturnRecord(models.Model):
         super().save(*args, **kwargs)
     
 
-class ReturnProductLine(models.Model):
-    return_record = models.ForeignKey(ReturnRecord, on_delete=models.CASCADE, related_name='return_products')
-    product_name = models.CharField(max_length=255)
+class DeliveryOrderReturnItem(models.Model):
+    return_record = models.ForeignKey(DeliveryOrderReturn, on_delete=models.CASCADE, related_name='return_products')
+    return_product_item = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='return_product_items')
     initial_quantity = models.PositiveIntegerField()
-    unit_of_measure = models.CharField(max_length=50)
     returned_quantity = models.PositiveIntegerField(default=0)
     date_created = models.DateTimeField(auto_now_add=True)
-    is_hidden = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"{self.product_name} ({self.returned_quantity} {self.unit_of_measure})"
+        return f"{self.return_product_item.product_name} ({self.returned_quantity} {self.return_product_item.unit_of_measure})"
     
     def save(self, *args, **kwargs):
         for field in self._meta.fields:

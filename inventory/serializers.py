@@ -6,7 +6,7 @@ from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOr
 
 from users.models import TenantUser
 
-from .models import (DeliveryOrder, DeliveryOrderItem, Location, MultiLocation, ProductLine, ReturnProductLine, ReturnRecord, StockAdjustment, StockAdjustmentItem,
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
                      Scrap, ScrapItem, IncomingProductItem, IncomingProduct)
 
 
@@ -300,7 +300,7 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
 class ReturnProductLineSerializer(serializers.ModelSerializer):
     
     class Meta:
-        model = ReturnProductLine
+        model = DeliveryOrderReturnItem
         fields = ['product_name', 'initial_quantity', 'unit_of_measure', 'returned_quantity']
 
 
@@ -310,7 +310,7 @@ class ReturnRecordSerializer(serializers.ModelSerializer):
     source_document = serializers.CharField()
 
     class Meta:
-        model = ReturnRecord
+        model = DeliveryOrderReturn
         fields = [
             'delivery_order',
             'unique_record_id',
@@ -327,12 +327,12 @@ class ReturnRecordSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         return_products_data = validated_data.pop('return_products')
         try:
-            return_record = ReturnRecord.objects.create(**validated_data)
+            return_record = DeliveryOrderReturn.objects.create(**validated_data)
             return_product_list = []
             for product_data in return_products_data:
-                one_product = ReturnProductLine(return_record=return_record, **product_data)
+                one_product = DeliveryOrderReturnItem(return_record=return_record, **product_data)
                 return_product_list.append(one_product)
-            ReturnProductLine.objects.bulk_create(return_product_list)
+            DeliveryOrderReturnItem.objects.bulk_create(return_product_list)
             return return_record
         except IntegrityError as e:
             raise serializers.ValidationError(f"Database error occurred: {str(e)}")
