@@ -30,7 +30,8 @@ router.register(r'stock-adjustment/stock-adjustment-item', StockAdjustmentItemVi
 router.register(r'scrap', ScrapViewSet, basename='scrap')
 router.register(r'scrap/scrap-item', ScrapItemViewSet, basename='scrap-item')
 router.register(r'incoming-product', IncomingProductViewSet, basename='incoming-product')
-router.register(r'incoming-product/incoming-product-item', IncomingProductItemViewSet, basename='incoming-product-item')
+# router.register(r'incoming-product/incoming-product-item', IncomingProductItemViewSet,
+# basename='incoming-product-item')
 
 urlpatterns = [
     path('', include(router.urls)),

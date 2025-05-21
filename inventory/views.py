@@ -202,10 +202,10 @@ class IncomingProductViewSet(SearchDeleteViewSet):
         return Response({'status': 'editable'}, status=status.HTTP_200_OK)
 
 
-class IncomingProductItemViewSet(viewsets.ModelViewSet):
-    queryset = IncomingProductItem.objects.all()
-    serializer_class = IPItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
+# class IncomingProductItemViewSet(viewsets.ModelViewSet):
+#     queryset = IncomingProductItem.objects.all()
+#     serializer_class = IPItemSerializer
+#     permission_classes = [permissions.IsAuthenticated]
 
 
 class MultiLocationViewSet(viewsets.GenericViewSet):

@@ -523,6 +523,7 @@ class IncomingProduct(models.Model):
         on_delete=models.PROTECT,
         related_name='incoming_products_from_destination',
     )
+    status = models.CharField(choices=INCOMING_PRODUCT_STATUS, max_length=15, default='draft')
     is_validated = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=True)
     is_hidden = models.BooleanField(default=False)

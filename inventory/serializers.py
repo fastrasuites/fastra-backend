@@ -194,7 +194,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = IncomingProduct
         fields = ['id', 'receipt_type', 'related_po', 'supplier', 'source_location', 'incoming_product_items',
-                  'destination_location', 'is_validated', 'can_edit', 'is_hidden']
+                  'destination_location', 'status', 'is_validated', 'can_edit', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated']
 
     def create(self, validated_data):
