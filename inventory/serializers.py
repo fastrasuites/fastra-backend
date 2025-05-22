@@ -207,6 +207,8 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create an Incoming Product.")
         related_po = validated_data.get('related_po', None)
+        if related_po and IncomingProduct.objects.filter(related_po=related_po).exists():
+            raise serializers.ValidationError("This purchase order is already linked to another incoming product.")
         incoming_product = IncomingProduct.objects.create(**validated_data)
         for item_data in items_data:
             product = item_data.get('product')
