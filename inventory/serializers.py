@@ -1,12 +1,12 @@
 from rest_framework import serializers
 
-from purchase.models import Product
+from purchase.models import Product, PurchaseOrder
 from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOrderSerializer
 
 from users.models import TenantUser
 
 from .models import (Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
-                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct)
+                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES)
 
 
 
@@ -182,12 +182,14 @@ class IPItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = IncomingProductItem
-        fields = ['id', 'incoming_product', 'product', 'unit_of_measure',
+        fields = ['id', 'incoming_product', 'product',
                   'expected_quantity', 'quantity_received']
 
 
 class IncomingProductSerializer(serializers.ModelSerializer):
     incoming_product_items = IPItemSerializer(many=True)
+    related_po = serializers.PrimaryKeyRelatedField(many=False, queryset=PurchaseOrder.objects.all(), allow_null=True, allow_empty=True)
+    receipt_type = serializers.ChoiceField(choices=INCOMING_PRODUCT_RECEIPT_TYPES)
 
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
 
@@ -199,13 +201,21 @@ class IncomingProductSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """
-        Create a new Scrap with its associated items.
+        Create a new Incoming Product with its associated items.
         """
         items_data = validated_data.pop('incoming_product_items')
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create an Incoming Product.")
         incoming_product = IncomingProduct.objects.create(**validated_data)
         for item_data in items_data:
+            # Ensure the item data contains the product and expected quantity
+            if 'product' not in item_data or 'expected_quantity' not in item_data:
+                raise serializers.ValidationError("Each item must contain a product and expected quantity.")
+            # Make the expected quantity such that it comes from the related_po
+            if ('related_po' in validated_data and item_data['product'] in validated_data['related_po']
+                    .items.values_list('product', flat=True)):
+                item_data['expected_quantity'] = validated_data['related_po'].items.get(
+                    product_id=item_data['product']).qty
             IncomingProductItem.objects.create(incoming_product=incoming_product, **item_data)
         return incoming_product
 
