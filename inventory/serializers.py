@@ -239,7 +239,7 @@ class DeliveryOrderItemSerializer(serializers.ModelSerializer):
 
 
 class DeliveryOrderSerializer(serializers.ModelSerializer):
-    products = DeliveryOrderItemSerializer(many=True)
+    delivery_order_items = DeliveryOrderItemSerializer(many=True)
     order_unique_id = serializers.CharField(read_only=True)
 
     class Meta:
@@ -253,8 +253,11 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
         products_data = validated_data.pop('delivery_order_items')
         try:
             delivery_order = DeliveryOrder.objects.create(**validated_data)
+            delivery_order_items = []
             for product_data in products_data:
-                DeliveryOrderItem.objects.create(delivery_order=delivery_order, **product_data)
+                one_item = DeliveryOrderItem(delivery_order=delivery_order, **product_data)
+                delivery_order_items.append(one_item)
+            DeliveryOrderItem.objects.bulk_create(delivery_order_items)
             return delivery_order
         except IntegrityError as e:
             raise serializers.ValidationError({"detail": "Error creating delivery order: " + str(e)})
@@ -297,22 +300,21 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
 
 
 # START THE RETURN RECORD
-class ReturnProductLineSerializer(serializers.ModelSerializer):
+class DeliveryOrderReturnItemSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = DeliveryOrderReturnItem
-        fields = ['product_name', 'initial_quantity', 'unit_of_measure', 'returned_quantity']
+        fields = ['return_product_item', 'initial_quantity', 'returned_quantity']
 
 
-class ReturnRecordSerializer(serializers.ModelSerializer):
-    return_products = ReturnProductLineSerializer(many=True)
+class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
+    return_products = DeliveryOrderReturnItemSerializer(many=True)
     unique_record_id = serializers.CharField()
     source_document = serializers.CharField()
 
     class Meta:
         model = DeliveryOrderReturn
         fields = [
-            'delivery_order',
             'unique_record_id',
             'source_document',
             'date_of_return',

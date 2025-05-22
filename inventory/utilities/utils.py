@@ -16,9 +16,9 @@ def generate_delivery_order_unique_id(source_location):
         max_unique_order_id = str(max_unique_order_id).zfill(4)
         
         source_location = source_location.id[:3].upper()
-        id = f"{source_location}OUT{max_unique_order_id}"
+        id = f"{source_location}-OUT-{max_unique_order_id}"
         return id
-    id = f"{source_location[:3]}OUT0001"
+    id = f"{source_location[:3]}-OUT-0001"
     return id
 
 

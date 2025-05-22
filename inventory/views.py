@@ -6,10 +6,11 @@ from rest_framework.response import Response
 
 from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet
+from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
 
-from .models import DeliveryOrder, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
+from .models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
     IncomingProductItem
-from .serializers import DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, ReturnProductLineSerializer, ReturnRecordSerializer, StockAdjustmentSerializer, \
+from .serializers import DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer, DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, StockAdjustmentSerializer, \
     StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer, IncomingProductSerializer, IPItemSerializer
 
 from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id
@@ -255,11 +256,13 @@ class MultiLocationViewSet(viewsets.GenericViewSet):
 
 
 # START FOR THE DELIVERY ORDER
-class DeliveryOrderViewSet(viewsets.ModelViewSet):
+class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrder.objects.filter(is_hidden=False)
+    permission_classes = [permissions.IsAuthenticated]
     serializer_class = DeliveryOrderSerializer
 
     def create(self, request, *args, **kwargs):
+        """This is to create a new Delivery Order."""
         # Logic to create a new delivery order
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -269,7 +272,7 @@ class DeliveryOrderViewSet(viewsets.ModelViewSet):
         existing_order = DeliveryOrder.objects.filter(
             customer_name=validated_data["customer_name"],
             source_location=validated_data["source_location"],
-            destination_location=validated_data["destination_location"],
+            delivery_address=validated_data["delivery_address"],
             delivery_date=validated_data["delivery_date"],
             shipping_policy=validated_data["shipping_policy"],
         ).first()
@@ -278,16 +281,17 @@ class DeliveryOrderViewSet(viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
 
         # Generate the unique order ID
-        validated_data["order_unique_id"] = generate_delivery_order_unique_id(validated_data["source_location"])        
+        validated_data["order_unique_id"] = generate_delivery_order_unique_id(validated_data["source_location"].id)        
 
         # Check if products list is empty
-        products = validated_data.get('products', [])
+        products = validated_data.get('delivery_order_items', [])
         if not products:
-            return Response({"detail": "At least one product line is required."},
+            return Response({"detail": "At least one product item is required."},
                             status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            return super().create(request, *args, **kwargs)
+            self.perform_create(serializer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         except IntegrityError as e:
             return Response({"detail": "Error creating delivery order: " + str(e)},
                             status=status.HTTP_400_BAD_REQUEST)
@@ -295,43 +299,22 @@ class DeliveryOrderViewSet(viewsets.ModelViewSet):
             return Response({"detail": "An unexpected error occurred: " + str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
     def check_availability(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        validated_data = serializer.validated_data
-
-        products = validated_data.get('products', [])
-        if not products:
-            return Response({"detail": "At least one product line is required."},
-                            status=status.HTTP_400_BAD_REQUEST)
-
+        """This is to check for the availability of the Product Items in a Delievery Order. Append the delievery order id(pk) to the request"""
+        id = kwargs.get('pk')
         all_confirmed = True
-        for product in products:
-            # Check if product_name and quantity_to_deliver are provided
-            product_name = product.get("product_name")
-            quantity_to_deliver = product.get("quantity_to_deliver")
 
-            if not product_name or quantity_to_deliver is None:
-                return Response({"detail": "Product name and quantity to deliver are required."},
-                                status=status.HTTP_400_BAD_REQUEST)
-
-            checked_product = Product.objects.filter(product_name=product_name, is_hidden=False).first()
-            if not checked_product:
-                return Response({"detail": f"Product '{product_name}' not found."},
-                                status=status.HTTP_404_NOT_FOUND)
-
-            if checked_product.available_product_quantity < quantity_to_deliver:
-                product["is_available"] = False
+        if not DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id).exists():
+            return Response({"detail": "This delivery order does not exist: " + str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+        delivery_order_items = DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id)
+        for item in delivery_order_items:
+            if item.product_item.available_product_quantity < item.quantity_to_deliver:
+                item.is_available = False
                 all_confirmed = False
-            else:
-                product["is_available"] = True
 
-        # Update the status based on availability
-        delivery_order = DeliveryOrder.objects.filter(order_unique_id=validated_data["order_unique_id"], is_hidden=False).first()
-        if not delivery_order:
-            return Response({"detail": "Delivery order not found."},
-                            status=status.HTTP_404_NOT_FOUND)
-
+        delivery_order = DeliveryOrder.objects.filter(is_hidden=False, id=id).first()
         try:
             delivery_order.status = "ready" if all_confirmed else "waiting"
             delivery_order.save()
@@ -340,17 +323,34 @@ class DeliveryOrderViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 
     def confirm_delivery(self, request, *args, **kwargs):
         serializer = self.get_serializer
+        """This is to confirm the delivery order. Append the delievery order id(pk) to the request"""
+        id = kwargs.get('pk')
+
+        delivery_order = DeliveryOrder.objects.filter(is_hidden=False, id=id).first()
+        if delivery_order.status.lower().strip() != "ready":
+            return Response({"detail": "A Delivery Order cannot be Confirmed if the Status is not set to Ready"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            delivery_order.status = "done"
+            delivery_order.save()
+            serialized_order = DeliveryOrderSerializer(delivery_order)
+            return Response(serialized_order.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 # END FOR THE DELIVERY ORDER
 
 
 
 # START FOR THE RETURN RECORD
-class ReturnRecordViewSet(viewsets.ModelViewSet):
+class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrderReturn.objects.filter(is_hidden=False)
-    serializer_class = ReturnRecordSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = DeliveryOrderReturnSerializer
 
     def create(self, request, *args, **kwargs):
         data = request.data
@@ -397,7 +397,8 @@ class ReturnRecordViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
-class ReturnProductLineViewSet(viewsets.ModelViewSet):
+class DeliveryOrderReturnItemViewSet(viewsets.ModelViewSet):
     queryset = DeliveryOrderReturnItem.objects.all()
-    serializer_class = ReturnProductLineSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = DeliveryOrderReturnItemSerializer
 # END FOR THE RETURN RECORD
