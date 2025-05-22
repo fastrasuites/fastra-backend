@@ -74,9 +74,10 @@ class DoneScrapManager(models.Manager):
 
 INCOMING_PRODUCT_RECEIPT_TYPES = (
     ('vendor_receipt', 'Vendor Receipt'),
-    ('manufacturing', 'Manufacturing'),
+    ('manufacturing_receipt', 'Manufacturing'),
     ('internal_transfer', 'Internal Transfer'),
     ('returns', 'Returns'),
+    ('scrap', 'Scrap')
 )
 
 
