@@ -562,12 +562,6 @@ class IncomingProductItem(models.Model):
         on_delete=models.PROTECT,
         related_name='incoming_product_items'
     )
-    unit_of_measure = models.ForeignKey(
-        'purchase.UnitOfMeasure',
-        on_delete=models.PROTECT,
-        related_name='incoming_product_items'
-
-    )
     expected_quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -583,11 +577,9 @@ class IncomingProductItem(models.Model):
 
     def save(self, *args, **kwargs):
         if self.product:
-            certain_product = self.incoming_product.related_po.items.filter(
+            certain_product = self.incoming_product.related_po.items.get(
                 product_id=self.product_id
-            ).first()
-            if not self.unit_of_measure:
-                self.unit_of_measure = self.product.unit_of_measure
+            )
             if not self.expected_quantity:
                 self.expected_quantity = certain_product.qty
             if self.expected_quantity < 0 or self.quantity_received < 0:
