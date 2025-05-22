@@ -565,28 +565,35 @@ class IncomingProductItem(models.Model):
     expected_quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        verbose_name='Expected Quantity'
+        verbose_name='Expected Quantity',
+        default=0
     )
     quantity_received = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        verbose_name='Quantity Received'
+        verbose_name='Quantity Received',
+        default=0
     )
 
     objects = models.Manager()
 
     def save(self, *args, **kwargs):
         if self.product:
-            certain_product = self.incoming_product.related_po.items.get(
-                product_id=self.product_id
-            )
-            if not self.expected_quantity:
-                self.expected_quantity = certain_product.qty
+            related_po = self.incoming_product.related_po
+            if related_po:
+                # If related_po exists, set expected_quantity from the corresponding PO item
+                po_item = related_po.items.filter(product_id=self.product_id).first()
+                if po_item:
+                    self.expected_quantity = po_item.qty
+                else:
+                    raise ValidationError("Product not found in related purchase order items.")
+            else:
+                if not self.expected_quantity:
+                    raise ValidationError("Expected quantity is required if there is no related purchase order.")
             if self.expected_quantity < 0 or self.quantity_received < 0:
                 raise ValidationError("Quantity cannot be negative")
             if self.incoming_product.is_validated:
                 self.product.available_product_quantity += self.expected_quantity
-
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
