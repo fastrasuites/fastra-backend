@@ -34,7 +34,7 @@ router.register(r'scrap/scrap-item', ScrapItemViewSet, basename='scrap-item')
 # FOR THE DELIVERY ORDERS
 router.register(r'delivery-orders', DeliveryOrderViewSet, basename='delivery-orders')
 
-router.register(r'delivery-order-returns', DeliveryOrderReturnViewSet)
+router.register(r'delivery-order-returns', DeliveryOrderReturnViewSet, basename='delivery-order-returns')
 
 router.register(r'incoming-product', IncomingProductViewSet, basename='incoming-product')
 router.register(r'incoming-product/incoming-product-item', IncomingProductItemViewSet, basename='incoming-product-item')

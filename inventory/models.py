@@ -827,14 +827,14 @@ class DeliveryOrderReturn(models.Model):
     
 
 class DeliveryOrderReturnItem(models.Model):
-    return_record = models.ForeignKey(DeliveryOrderReturn, on_delete=models.CASCADE, related_name='return_products')
-    return_product_item = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='return_product_items')
+    delivery_order_return = models.ForeignKey(DeliveryOrderReturn, on_delete=models.CASCADE, related_name='delivery_order_return_items')
+    returned_product_item = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='returned_product_items')
     initial_quantity = models.PositiveIntegerField()
     returned_quantity = models.PositiveIntegerField(default=0)
     date_created = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.return_product_item.product_name} ({self.returned_quantity} {self.return_product_item.unit_of_measure})"
+        return f"{self.returned_product_item.product_name} ({self.returned_quantity} {self.returned_product_item.unit_of_measure})"
     
     def save(self, *args, **kwargs):
         for field in self._meta.fields:

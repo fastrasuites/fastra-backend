@@ -346,15 +346,18 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
 
 
 
-# START FOR THE RETURN RECORD
+# START FOR THE DELIVERY ORDER RETURN 
 class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrderReturn.objects.filter(is_hidden=False)
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = DeliveryOrderReturnSerializer
 
     def create(self, request, *args, **kwargs):
-        data = request.data
-        delivery_order_id = data.get('delivery_order')
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        delivery_order_id = validated_data.get('source_document').id
         if not delivery_order_id:
             return Response({"detail": "Delivery order ID is required."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -370,11 +373,11 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
             return Response({"detail": "This order is not eligible for returns."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate product lines:
-        return_products = data.get('return_products', [])
-        if not return_products or len(return_products) <= 0:
+        returned_product_items = validated_data.get('delivery_order_return_items', [])
+        if not returned_product_items or len(returned_product_items) <= 0:
             return Response({"detail": "At least one product line must be provided."}, status=status.HTTP_400_BAD_REQUEST)
         
-        for product in return_products:
+        for product in returned_product_items:
             if int(product.get('returned_quantity', 0)) <= 0:
                 return Response({"detail": "Returned quantity must be greater than zero for all products."}, status=status.HTTP_400_BAD_REQUEST)
             
@@ -382,14 +385,12 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
                 return Response({"detail": f"Returned quantity cannot be greater than initial quantity for {product['product_name']}."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Auto set unique_record_id, source_document, source_location, return_warehouse_location
-        data['unique_record_id'] = generate_returned_record_unique_id(delivery_order.order_unique_id)
-        data['source_document'] = delivery_order.order_unique_id
-        data['source_location'] = delivery_order.source_location.id
-        data['return_warehouse_location'] = delivery_order.source_location.id
+        validated_data['unique_record_id'] = generate_returned_record_unique_id(delivery_order.order_unique_id)
+        validated_data['source_document'] = delivery_order
+        validated_data['source_location'] = delivery_order.source_location
+        validated_data['return_warehouse_location'] = delivery_order.source_location
 
-        serializer = self.get_serializer(data=data)
-        serializer.is_valid(raise_exception=True)
-        if DeliveryOrderReturn.objects.filter(is_hidden=False, unique_record_id=data['unique_record_id']).exists():
+        if DeliveryOrderReturn.objects.filter(is_hidden=False, unique_record_id=validated_data['unique_record_id']).exists():
             return Response({"detail": "This record exists."}, status=status.HTTP_400_BAD_REQUEST)        
         self.perform_create(serializer)
 
@@ -401,4 +402,4 @@ class DeliveryOrderReturnItemViewSet(viewsets.ModelViewSet):
     queryset = DeliveryOrderReturnItem.objects.all()
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = DeliveryOrderReturnItemSerializer
-# END FOR THE RETURN RECORD
+# END FOR THE DELIVERY ORDER RETURN

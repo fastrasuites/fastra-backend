@@ -301,16 +301,15 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
 
 # START THE RETURN RECORD
 class DeliveryOrderReturnItemSerializer(serializers.ModelSerializer):
-    
+
     class Meta:
         model = DeliveryOrderReturnItem
-        fields = ['return_product_item', 'initial_quantity', 'returned_quantity']
+        fields = ['returned_product_item', 'initial_quantity', 'returned_quantity']
 
 
 class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
-    return_products = DeliveryOrderReturnItemSerializer(many=True)
-    unique_record_id = serializers.CharField()
-    source_document = serializers.CharField()
+    unique_record_id = serializers.CharField(read_only=True)
+    delivery_order_return_items = DeliveryOrderReturnItemSerializer(many=True)
 
     class Meta:
         model = DeliveryOrderReturn
@@ -321,21 +320,20 @@ class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
             'source_location',
             'return_warehouse_location',
             'reason_for_return',
-            'status',
-            'return_products',
+            'delivery_order_return_items',
         ]
         
     @transaction.atomic
     def create(self, validated_data):
-        return_products_data = validated_data.pop('return_products')
+        return_products_data = validated_data.pop('delivery_order_return_items')
         try:
-            return_record = DeliveryOrderReturn.objects.create(**validated_data)
-            return_product_list = []
+            delivery_order_return = DeliveryOrderReturn.objects.create(**validated_data)
+            returned_product_list = []
             for product_data in return_products_data:
-                one_product = DeliveryOrderReturnItem(return_record=return_record, **product_data)
-                return_product_list.append(one_product)
-            DeliveryOrderReturnItem.objects.bulk_create(return_product_list)
-            return return_record
+                one_product = DeliveryOrderReturnItem(delivery_order_return=delivery_order_return, **product_data)
+                returned_product_list.append(one_product)
+            DeliveryOrderReturnItem.objects.bulk_create(returned_product_list)
+            return delivery_order_return
         except IntegrityError as e:
             raise serializers.ValidationError(f"Database error occurred: {str(e)}")
         except Exception as e:
