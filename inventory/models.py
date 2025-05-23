@@ -744,3 +744,103 @@ def create_outgoing_stock_move(sender, instance, created, **kwargs):
             state='draft',
             created_by=instance.delivery.created_by  # replace with the appropriate inventory record creator
         )
+
+
+
+
+
+
+# START DELIVERY ORDERS
+class DeliveryOrder(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('waiting', 'Waiting'),
+        ('ready', 'Ready'),
+        ('done', 'Done'),
+    ]
+    
+    order_unique_id = models.CharField(max_length=50, unique=True, editable=False, null=False)
+    customer_name = models.CharField(max_length=255, null=False)
+    source_location = models.ForeignKey(Location, related_name='source_orders', on_delete=models.PROTECT)
+    delivery_address = models.CharField(max_length=255)  # This is the Delivery Address
+    date_created = models.DateTimeField(auto_now_add=True)
+    delivery_date = models.DateField()
+    shipping_policy = models.TextField(blank=True, null=True)
+    return_policy = models.TextField(blank=True, null=True)
+    assigned_to = models.CharField(max_length=255)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
+    is_hidden = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.order_unique_id} - {self.customer_name}"
+    
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        super().save(*args, **kwargs)
+        
+
+    
+class DeliveryOrderItem(models.Model):
+    delivery_order = models.ForeignKey(DeliveryOrder, on_delete=models.CASCADE, related_name='delivery_order_items')
+    product_item = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='product_items')
+    quantity_to_deliver = models.PositiveIntegerField()
+    is_available = models.BooleanField(default=False)
+    is_hidden = models.BooleanField(default=False)
+    date_created = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.product_item.product_name} ({self.quantity_to_deliver} {self.product_item.unit_of_measure})"
+    
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        super().save(*args, **kwargs)
+# END DELIVERY ORDERS
+
+
+
+# START RETURNED PRODUCTS
+class DeliveryOrderReturn(models.Model):
+    source_document = models.OneToOneField(DeliveryOrder, on_delete=models.CASCADE, related_name='source_document') #This is referencing the delivery order
+    unique_record_id = models.CharField(max_length=50, unique=True, editable=False, null=False, blank=False)
+    date_of_return = models.DateField(default=timezone.now)
+    source_location = models.ForeignKey(Location, related_name='source_delivery_location', on_delete=models.PROTECT) # In this case, this is the location of the Customer
+    return_warehouse_location = models.ForeignKey('Location', related_name='return_warehouse', on_delete=models.PROTECT)
+    reason_for_return = models.TextField()
+    status = models.CharField(max_length=10, default='waiting')
+    date_created = models.DateTimeField(auto_now_add=True)
+    is_hidden = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Return {self.unique_record_id} for Order {self.source_document.order_unique_id}"
+    
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        super().save(*args, **kwargs)
+    
+
+class DeliveryOrderReturnItem(models.Model):
+    delivery_order_return = models.ForeignKey(DeliveryOrderReturn, on_delete=models.CASCADE, related_name='delivery_order_return_items')
+    returned_product_item = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='returned_product_items')
+    initial_quantity = models.PositiveIntegerField()
+    returned_quantity = models.PositiveIntegerField(default=0)
+    date_created = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.returned_product_item.product_name} ({self.returned_quantity} {self.returned_product_item.unit_of_measure})"
+    
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        super().save(*args, **kwargs)
+# END RETURNED PRODUCTS

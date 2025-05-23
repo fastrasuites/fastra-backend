@@ -1,13 +1,14 @@
 from rest_framework import serializers
+from django.db import IntegrityError, transaction
 
 from purchase.models import Product, PurchaseOrder
 from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOrderSerializer
 
 from users.models import TenantUser
 
-from .models import (Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
-                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES)
 
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
+                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES)
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
@@ -276,3 +277,117 @@ class IncomingProductSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         return instance
+
+
+
+# START THE DELIVERY ORDERS
+class DeliveryOrderItemSerializer(serializers.ModelSerializer):
+    delivery_order = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = DeliveryOrderItem
+        exclude = ('is_hidden',)
+
+
+class DeliveryOrderSerializer(serializers.ModelSerializer):
+    delivery_order_items = DeliveryOrderItemSerializer(many=True)
+    order_unique_id = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = DeliveryOrder
+        fields = ['order_unique_id', 'customer_name', 'source_location', 
+                  'delivery_address', 'delivery_date', 'shipping_policy', 
+                  'return_policy', 'assigned_to', 'delivery_order_items', 'status']
+
+    @transaction.atomic
+    def create(self, validated_data):
+        products_data = validated_data.pop('delivery_order_items')
+        try:
+            delivery_order = DeliveryOrder.objects.create(**validated_data)
+            delivery_order_items = []
+            for product_data in products_data:
+                one_item = DeliveryOrderItem(delivery_order=delivery_order, **product_data)
+                delivery_order_items.append(one_item)
+            DeliveryOrderItem.objects.bulk_create(delivery_order_items)
+            return delivery_order
+        except IntegrityError as e:
+            raise serializers.ValidationError({"detail": "Error creating delivery order: " + str(e)})
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        products_data = validated_data.pop('delivery_order_items')
+        # Update parent fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        existing_products = {prod.id: prod for prod in instance.products.all()}
+        sent_product_ids = []
+        try:
+            for prod_data in products_data:
+                prod_id = prod_data.get('id', None)
+                if prod_id and prod_id in existing_products:
+                    # Update existing product
+                    product = existing_products[prod_id]
+                    for attr, value in prod_data.items():
+                        setattr(product, attr, value)
+                    product.save()
+                    sent_product_ids.append(prod_id)
+                else:
+                    # Create new product related to this delivery order
+                    DeliveryOrderItem.objects.create(delivery_order=instance, **prod_data)
+
+            # Delete products not in the update list
+            for prod_id, product in existing_products.items():
+                if prod_id not in sent_product_ids:
+                    product.delete()
+            return instance
+        except IntegrityError as e:
+            raise serializers.ValidationError({"detail": "Error updating delivery order: " + str(e)})
+        except Exception as e:
+            raise serializers.ValidationError({"detail": "An unexpected error occurred: " + str(e)})
+
+# END THE DELIVERY O
+
+
+# START THE RETURN RECORD
+class DeliveryOrderReturnItemSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = DeliveryOrderReturnItem
+        fields = ['returned_product_item', 'initial_quantity', 'returned_quantity']
+
+
+class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
+    unique_record_id = serializers.CharField(read_only=True)
+    delivery_order_return_items = DeliveryOrderReturnItemSerializer(many=True)
+
+    class Meta:
+        model = DeliveryOrderReturn
+        fields = [
+            'unique_record_id',
+            'source_document',
+            'date_of_return',
+            'source_location',
+            'return_warehouse_location',
+            'reason_for_return',
+            'delivery_order_return_items',
+        ]
+        
+    @transaction.atomic
+    def create(self, validated_data):
+        return_products_data = validated_data.pop('delivery_order_return_items')
+        try:
+            delivery_order_return = DeliveryOrderReturn.objects.create(**validated_data)
+            returned_product_list = []
+            for product_data in return_products_data:
+                one_product = DeliveryOrderReturnItem(delivery_order_return=delivery_order_return, **product_data)
+                returned_product_list.append(one_product)
+            DeliveryOrderReturnItem.objects.bulk_create(returned_product_list)
+            return delivery_order_return
+        except IntegrityError as e:
+            raise serializers.ValidationError(f"Database error occurred: {str(e)}")
+        except Exception as e:
+            raise serializers.ValidationError(f"An error occurred: {str(e)}")
+
+# END THE RETURN REDORD
