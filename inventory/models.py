@@ -74,9 +74,10 @@ class DoneScrapManager(models.Manager):
 
 INCOMING_PRODUCT_RECEIPT_TYPES = (
     ('vendor_receipt', 'Vendor Receipt'),
-    ('manufacturing', 'Manufacturing'),
+    ('manufacturing_receipt', 'Manufacturing'),
     ('internal_transfer', 'Internal Transfer'),
     ('returns', 'Returns'),
+    ('scrap', 'Scrap')
 )
 
 
@@ -523,6 +524,7 @@ class IncomingProduct(models.Model):
         on_delete=models.PROTECT,
         related_name='incoming_products_from_destination',
     )
+    status = models.CharField(choices=INCOMING_PRODUCT_STATUS, max_length=15, default='draft')
     is_validated = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=True)
     is_hidden = models.BooleanField(default=False)
@@ -561,39 +563,38 @@ class IncomingProductItem(models.Model):
         on_delete=models.PROTECT,
         related_name='incoming_product_items'
     )
-    unit_of_measure = models.ForeignKey(
-        'purchase.UnitOfMeasure',
-        on_delete=models.PROTECT,
-        related_name='incoming_product_items'
-
-    )
     expected_quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        verbose_name='Expected Quantity'
+        verbose_name='Expected Quantity',
+        default=0
     )
     quantity_received = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        verbose_name='Quantity Received'
+        verbose_name='Quantity Received',
+        default=0
     )
 
     objects = models.Manager()
 
     def save(self, *args, **kwargs):
         if self.product:
-            certain_product = self.incoming_product.related_po.items.filter(
-                product_id=self.product_id
-            ).first()
-            if not self.unit_of_measure:
-                self.unit_of_measure = self.product.unit_of_measure
-            if not self.expected_quantity:
-                self.expected_quantity = certain_product.qty
+            related_po = self.incoming_product.related_po
+            if related_po:
+                # If related_po exists, set expected_quantity from the corresponding PO item
+                po_item = related_po.items.filter(product_id=self.product_id).first()
+                if po_item:
+                    self.expected_quantity = po_item.qty
+                else:
+                    raise ValidationError("Product not found in related purchase order items.")
+            else:
+                if not self.expected_quantity:
+                    raise ValidationError("Expected quantity is required if there is no related purchase order.")
             if self.expected_quantity < 0 or self.quantity_received < 0:
                 raise ValidationError("Quantity cannot be negative")
             if self.incoming_product.is_validated:
                 self.product.available_product_quantity += self.expected_quantity
-
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)

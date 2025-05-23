@@ -1,14 +1,14 @@
 from rest_framework import serializers
 from django.db import IntegrityError, transaction
 
-from purchase.models import Product
+from purchase.models import Product, PurchaseOrder
 from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOrderSerializer
 
 from users.models import TenantUser
 
-from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
-                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct)
 
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
+                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES)
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
@@ -183,31 +183,60 @@ class IPItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = IncomingProductItem
-        fields = ['id', 'incoming_product', 'product', 'unit_of_measure',
+        fields = ['id', 'incoming_product', 'product',
                   'expected_quantity', 'quantity_received']
 
 
 class IncomingProductSerializer(serializers.ModelSerializer):
     incoming_product_items = IPItemSerializer(many=True)
+    related_po = serializers.PrimaryKeyRelatedField(many=False, queryset=PurchaseOrder.objects.filter(is_hidden=False), allow_null=True, allow_empty=True)
+    receipt_type = serializers.ChoiceField(choices=INCOMING_PRODUCT_RECEIPT_TYPES)
 
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
 
     class Meta:
         model = IncomingProduct
         fields = ['id', 'receipt_type', 'related_po', 'supplier', 'source_location', 'incoming_product_items',
-                  'destination_location', 'is_validated', 'can_edit', 'is_hidden']
+                  'destination_location', 'status', 'is_validated', 'can_edit', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated']
 
     def create(self, validated_data):
         """
-        Create a new Scrap with its associated items.
+        Create a new Incoming Product with its associated items.
         """
         items_data = validated_data.pop('incoming_product_items')
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create an Incoming Product.")
+        related_po = validated_data.get('related_po', None)
+        if related_po and IncomingProduct.objects.filter(related_po=related_po).exists():
+            raise serializers.ValidationError("This purchase order is already linked to another incoming product.")
         incoming_product = IncomingProduct.objects.create(**validated_data)
         for item_data in items_data:
-            IncomingProductItem.objects.create(incoming_product=incoming_product, **item_data)
+            product = item_data.get('product')
+            expected_quantity = item_data.get('expected_quantity', None)
+            quantity_received = item_data.get('quantity_received', 0)
+            if not product:
+                raise serializers.ValidationError("Invalid Product")
+            if related_po:
+                # Set expected_quantity from the corresponding PO item
+                po_item = related_po.items.filter(product_id=product.id).first()
+                if po_item:
+                    item_data['expected_quantity'] = po_item.qty
+                else:
+                    raise serializers.ValidationError("Product not found in related purchase order items.")
+            else:
+                if expected_quantity is None:
+                    raise serializers.ValidationError("Expected quantity is required if there is no related purchase order.")
+                item_data['expected_quantity'] = expected_quantity
+            if item_data['expected_quantity'] < 0 or quantity_received < 0:
+                raise serializers.ValidationError("Quantity cannot be negative")
+            ip_item = IncomingProductItem.objects.create(incoming_product=incoming_product, **item_data)
+            if not ip_item:
+                raise serializers.ValidationError("Failed to create Incoming Product Item.")
+            # Update product quantity if validated
+            if incoming_product.is_validated:
+                product.available_product_quantity += item_data['expected_quantity']
+                product.save()
         return incoming_product
 
     def update(self, instance, validated_data):
@@ -215,11 +244,33 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         Update an existing instance with validated data.
         """
         items_data = validated_data.pop('incoming_product_items', None)
+        related_po = validated_data.get('related_po', getattr(instance, 'related_po', None))
         if items_data:
             # Clear existing items and add new ones
             instance.incoming_product_items.all().delete()
             for item_data in items_data:
-                IncomingProductItem.objects.create(incoming_product=instance, **item_data)
+                product = item_data.get('product')
+                expected_quantity = item_data.get('expected_quantity')
+                quantity_received = item_data.get('quantity_received', 0)
+                if not product:
+                    raise serializers.ValidationError("Invalid Product")
+                if related_po:
+                    po_item = related_po.items.filter(product_id=product.id).first()
+                    if po_item:
+                        item_data['expected_quantity'] = po_item.qty
+                    else:
+                        raise serializers.ValidationError("Product not found in related purchase order items.")
+                else:
+                    if expected_quantity is None:
+                        raise serializers.ValidationError("Expected quantity is required if there is no related purchase order.")
+                if item_data['expected_quantity'] < 0 or quantity_received < 0:
+                    raise serializers.ValidationError("Quantity cannot be negative")
+                ip_item = IncomingProductItem.objects.create(incoming_product=instance, **item_data)
+                if not ip_item:
+                    raise serializers.ValidationError("Failed to create Incoming Product Item.")
+                if instance.is_validated:
+                    product.available_product_quantity += item_data['expected_quantity']
+                    product.save()
 
         # Update the instance fields
         for attr, value in validated_data.items():
