@@ -2,7 +2,7 @@ from django.db.models import Max, F, Value
 from django.db.models.functions import Substr, Cast
 from django.db import models
 
-from inventory.models import DeliveryOrder
+from inventory.models import DeliveryOrder, ReturnIncomingProduct
 
 
 def generate_delivery_order_unique_id(source_location):
@@ -27,5 +27,29 @@ def generate_returned_record_unique_id(delivery_order_id):
         id = f"RETD-{delivery_order_id}"
         return id
     return "Expects an ID but none was given"
+
+
+def generate_returned_incoming_product_unique_id(incoming_product_id, location_code):
+    if incoming_product_id is not None:
+        id = f"{location_code}RET-{incoming_product_id}"
+        return id
+    return "Expects an ID but none was given"
+
+
+def generate_returned_incoming_product_unique_id(location_code):
+    # Query to get the maximum unique_order_id based on the numeric part
+    max_unique_order_id = ReturnIncomingProduct.objects.annotate(
+        numeric_id=Cast(Substr('unique_id', 7, 4), output_field=models.IntegerField())
+    ).aggregate(max_id=Max('numeric_id'))['max_id']
+
+    if max_unique_order_id is not None:
+        max_unique_order_id += 1
+        max_unique_order_id = str(max_unique_order_id).zfill(4)
+        
+        id = f"{location_code}RET{max_unique_order_id}"
+        return id
+    id = f"{location_code}RET0001"
+    return id
+
 
                 

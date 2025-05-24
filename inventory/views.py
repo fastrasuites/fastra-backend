@@ -8,12 +8,12 @@ from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet
 from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
 
-from .models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
+from .models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
     IncomingProductItem
-from .serializers import DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer, DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, StockAdjustmentSerializer, \
+from .serializers import DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer, DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, ReturnIncomingProductSerializer, StockAdjustmentSerializer, \
     StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer, IncomingProductSerializer, IPItemSerializer
 
-from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id
+from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id, generate_returned_incoming_product_unique_id
 
 class LocationViewSet(SearchDeleteViewSet):
     queryset = Location.objects.all()
@@ -398,8 +398,29 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
-class DeliveryOrderReturnItemViewSet(viewsets.ModelViewSet):
+class DeliveryOrderReturnItemViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrderReturnItem.objects.all()
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = DeliveryOrderReturnItemSerializer
 # END FOR THE DELIVERY ORDER RETURN
+
+
+# START RETURN INCOMING PRODUCTS
+class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
+    queryset = ReturnIncomingProduct.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ReturnIncomingProductSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        try:
+            location_code = validated_data["source_document"].destination_location.location_code
+            validated_data['unique_id'] = generate_returned_incoming_product_unique_id(location_code)
+            self.perform_create(serializer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+# END RETURN INCOMING PRODUCTS
