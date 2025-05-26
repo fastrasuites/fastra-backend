@@ -28,6 +28,8 @@ class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin,
     def soft_delete(self, request, pk=None, *args, **kwargs):
         # Soft delete an instance
         instance = self.get_object()
+        if instance.is_hidden:
+            return Response({'error': 'Instance is already hidden'}, status=status.HTTP_400_BAD_REQUEST)
         instance.is_hidden = True
         instance.save()
         return Response({'status': 'hidden'}, status=status.HTTP_204_NO_CONTENT)

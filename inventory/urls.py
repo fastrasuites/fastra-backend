@@ -17,8 +17,10 @@ Including another URLconf
 from django.urls import path, include
 from rest_framework import routers
 
-from .views import (LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
+from .views import (DeliveryOrderReturnViewSet, DeliveryOrderViewSet, LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
                     ScrapViewSet, ScrapItemViewSet)
+from .views import (LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
+                    ScrapViewSet, ScrapItemViewSet, IncomingProductViewSet)
 
 router = routers.DefaultRouter()
 
@@ -29,7 +31,22 @@ router.register(r'stock-adjustment/stock-adjustment-item', StockAdjustmentItemVi
                 basename='stock-adjustment-item')
 router.register(r'scrap', ScrapViewSet, basename='scrap')
 router.register(r'scrap/scrap-item', ScrapItemViewSet, basename='scrap-item')
+# FOR THE DELIVERY ORDERS
+router.register(r'delivery-orders', DeliveryOrderViewSet, basename='delivery-orders')
+
+router.register(r'delivery-order-returns', DeliveryOrderReturnViewSet, basename='delivery-order-returns')
+
+router.register(r'incoming-product', IncomingProductViewSet, basename='incoming-product')
+# router.register(r'incoming-product/incoming-product-item', IncomingProductItemViewSet,
+# basename='incoming-product-item')
 
 urlpatterns = [
     path('', include(router.urls)),
+    # START FOR THE DELIVERY ORDERS
+    path('delivery-order/check-availability/<int:pk>/', DeliveryOrderViewSet.as_view({'get': 'check_availability'})),
+    path('delivery-order/confirm-delivery/<int:pk>/', DeliveryOrderViewSet.as_view({'get': 'confirm_delivery'})),
+    # END FOR THE DELIVERY ORDERS
+
+    # START FOR THE RETURN RECORDS
+    # END FOR THE RETURN RECORDS
 ]

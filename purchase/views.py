@@ -24,6 +24,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from companies.permissions import HasTenantAccess
 from core.utils import enforce_tenant_schema
+from inventory.models import IncomingProduct, Location, IncomingProductItem
 from users.models import TenantUser
 from .models import (PurchaseRequest, PurchaseRequestItem, Department, Vendor,
                      Product, RequestForQuotation, RequestForQuotationItem, UnitOfMeasure, PurchaseOrder, PurchaseOrderItem, PRODUCT_CATEGORY, Currency)
@@ -313,7 +314,7 @@ class VendorViewSet(SearchDeleteViewSet):
             return Response({
                 "message": "Vendor created successfully",
                 "vendor": {
-                    "url": vendor.url,
+                    # "url": vendor.url,
                     "company_name": vendor.company_name,
                     "email": vendor.email,
                     "address": vendor.address,
@@ -792,6 +793,49 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
             # return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+    @action(detail=True, methods=['post'])
+    def convert_to_incoming_product(self, request, pk=None):
+        try:
+            po = self.get_object()
+
+            if po.status != 'completed':
+                return Response({"detail": "Only approved Requests For Quotation can be converted to Purchase Orders."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if not po.actual_price:
+                return Response({'error': 'Actual price is required to convert to PO.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Create the Purchase Order
+            incoming_product = IncomingProduct.objects.create(
+                receipt_type="vendor_receipt",
+                related_po=po,
+                supplier=po.vendor,
+                source_location="SUPP00001",
+                destination_location=Location.get_active_locations(),
+                status='draft'
+            )
+
+            # Create po items from the RFQ items
+            for po_item in po.items.all():
+                IncomingProductItem.objects.create(
+                    incoming_product=incoming_product,
+                    product=po_item.product,
+                    expected_quantity=po_item.qty
+                )
+
+            return Response({
+                "detail": "Incoming product created successfully",
+                "incoming_product_id": po.id
+            }, status=status.HTTP_201_CREATED)
+
+        except PurchaseOrder.DoesNotExist:
+            return Response({"detail": "Purchase Order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        except Exception as e:
+            return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
 
     @action(detail=True, methods=['put', 'patch'])
     def submit(self, request, pk=None):
