@@ -4,11 +4,9 @@ from rest_framework import serializers
 
 from users.models import TenantUser
 from inventory.models import Location
-from .models import PurchaseRequest, PurchaseRequestItem, Department, Vendor, \
-    Product, RequestForQuotation, RequestForQuotationItem, \
-    UnitOfMeasure, RFQVendorQuote, RFQVendorQuoteItem, \
-    PurchaseOrder, PurchaseOrderItem, POVendorQuote, POVendorQuoteItem, \
-    PRODUCT_CATEGORY, Currency
+from .models import (PurchaseRequest, PurchaseRequestItem, Department, Vendor,
+                     Product, RequestForQuotation, RequestForQuotationItem, UnitOfMeasure,
+                     PurchaseOrder, PurchaseOrderItem, PRODUCT_CATEGORY, Currency)
 
 
 # Switched to HyperlinkedIdentityField, HyperlinkedRelatedField for hyperlink support
@@ -63,8 +61,6 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
         view_name='location-detail', lookup_field='id')
     items = PurchaseRequestItemSerializer(many=True, allow_empty=False)
     total_price = serializers.ReadOnlyField()
-    can_edit = serializers.ReadOnlyField()
-    is_submitted = serializers.ReadOnlyField()
 
     class Meta:
         model = PurchaseRequest
@@ -214,7 +210,7 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = RequestForQuotation
         fields = ['url', 'id', 'expiry_date', 'vendor', 'vendor_category', 'purchase_request', 'currency',
-                  'status', 'rfq_total_price', 'items', 'is_hidden', 'is_expired']
+                  'status', 'rfq_total_price', 'items', 'is_hidden', 'is_expired', 'is_submitted', 'can_edit']
         read_only_fields = ['date_created', 'date_updated', 'rfq_total_price']
 
     def create(self, validated_data):
@@ -248,60 +244,60 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
         return instance
 
 
-class RFQVendorQuoteItemSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='rfq-vendor-quote-item-detail')
-    rfq_vendor_quote = serializers.HyperlinkedRelatedField(
-        view_name='rfq-vendor-quote-detail', read_only=True)
-    product = serializers.HyperlinkedRelatedField(
-        queryset=Product.objects.filter(is_hidden=False),
-        view_name='product-detail')
-    # This field is a custom property on the model, not a serializer field.
-    get_total_price = serializers.ReadOnlyField()
-
-    class Meta:
-        model = RFQVendorQuoteItem
-        fields = ['id', 'url', 'rfq_vendor_quote', 'product', 'description', 'qty',
-                  'estimated_unit_price', 'get_total_price']
-
-
-class RFQVendorQuoteSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='rfq-vendor-quote-detail')
-    items = RFQVendorQuoteItemSerializer(many=True)
-    rfq = serializers.HyperlinkedRelatedField(
-        queryset=RequestForQuotation.objects.filter(is_hidden=False),
-        view_name='request-for-quotation-detail')
-    vendor = serializers.HyperlinkedRelatedField(
-        queryset=Vendor.objects.filter(is_hidden=False),
-        view_name='vendor-detail')
-    quote_total_price = serializers.ReadOnlyField()
-
-    class Meta:
-        model = RFQVendorQuote
-        fields = ['url', 'id', 'rfq', 'vendor', 'quote_total_price', 'items', 'is_hidden']
-        read_only_fields = ['id', 'quote_total_price']
-
-    def create(self, validated_data):
-        items_data = validated_data.pop('items')
-        if not items_data:
-            raise serializers.ValidationError("At least one item is required to create a RFQ vendor quote.")
-        rfq_vendor_quote = RFQVendorQuote.objects.create(**validated_data)
-        for item_data in items_data:
-            RFQVendorQuoteItem.objects.create(rfq_vendor_quote=rfq_vendor_quote, **item_data)
-        return rfq_vendor_quote
-
-    def update(self, instance, validated_data):
-        items_data = validated_data.pop('items', None)
-        instance.rfq = validated_data.get('rfq', instance.rfq)
-        instance.vendor = validated_data.get('vendor', instance.vendor)
-        instance.save()
-
-        if items_data is not None:
-            instance.items.all().delete()
-            for item_data in items_data:
-                RFQVendorQuoteItem.objects.update_or_create(id=item_data.get('id'),
-                                                            rfq_vendor_quote=instance,
-                                                            defaults=item_data)
-        return instance
+# class RFQVendorQuoteItemSerializer(serializers.HyperlinkedModelSerializer):
+#     url = serializers.HyperlinkedIdentityField(view_name='rfq-vendor-quote-item-detail')
+#     rfq_vendor_quote = serializers.HyperlinkedRelatedField(
+#         view_name='rfq-vendor-quote-detail', read_only=True)
+#     product = serializers.HyperlinkedRelatedField(
+#         queryset=Product.objects.filter(is_hidden=False),
+#         view_name='product-detail')
+#     # This field is a custom property on the model, not a serializer field.
+#     get_total_price = serializers.ReadOnlyField()
+#
+#     class Meta:
+#         model = RFQVendorQuoteItem
+#         fields = ['id', 'url', 'rfq_vendor_quote', 'product', 'description', 'qty',
+#                   'estimated_unit_price', 'get_total_price']
+#
+#
+# class RFQVendorQuoteSerializer(serializers.HyperlinkedModelSerializer):
+#     url = serializers.HyperlinkedIdentityField(view_name='rfq-vendor-quote-detail')
+#     items = RFQVendorQuoteItemSerializer(many=True)
+#     rfq = serializers.HyperlinkedRelatedField(
+#         queryset=RequestForQuotation.objects.filter(is_hidden=False),
+#         view_name='request-for-quotation-detail')
+#     vendor = serializers.HyperlinkedRelatedField(
+#         queryset=Vendor.objects.filter(is_hidden=False),
+#         view_name='vendor-detail')
+#     quote_total_price = serializers.ReadOnlyField()
+#
+#     class Meta:
+#         model = RFQVendorQuote
+#         fields = ['url', 'id', 'rfq', 'vendor', 'quote_total_price', 'items', 'is_hidden']
+#         read_only_fields = ['id', 'quote_total_price']
+#
+#     def create(self, validated_data):
+#         items_data = validated_data.pop('items')
+#         if not items_data:
+#             raise serializers.ValidationError("At least one item is required to create a RFQ vendor quote.")
+#         rfq_vendor_quote = RFQVendorQuote.objects.create(**validated_data)
+#         for item_data in items_data:
+#             RFQVendorQuoteItem.objects.create(rfq_vendor_quote=rfq_vendor_quote, **item_data)
+#         return rfq_vendor_quote
+#
+#     def update(self, instance, validated_data):
+#         items_data = validated_data.pop('items', None)
+#         instance.rfq = validated_data.get('rfq', instance.rfq)
+#         instance.vendor = validated_data.get('vendor', instance.vendor)
+#         instance.save()
+#
+#         if items_data is not None:
+#             instance.items.all().delete()
+#             for item_data in items_data:
+#                 RFQVendorQuoteItem.objects.update_or_create(id=item_data.get('id'),
+#                                                             rfq_vendor_quote=instance,
+#                                                             defaults=item_data)
+#         return instance
 
 
 class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
@@ -324,11 +320,14 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
 
 
 class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='purchase-order-detail', lookup_field='id', lookup_url_kwarg='id')
+    url = serializers.HyperlinkedIdentityField(view_name='purchase-order-detail', lookup_field='id',
+                                               lookup_url_kwarg='id')
     # created_by = serializers.HyperlinkedRelatedField(
     #     queryset=User.objects.filter(username__icontains='admin'),
     #     view_name='user-detail')
     items = PurchaseOrderItemSerializer(many=True)
+    # add a one-to-one serializer field
+    related_rfq = serializers.PrimaryKeyRelatedField(many=False, queryset=RequestForQuotation.objects.filter(is_hidden=False), allow_null=True, allow_empty=True)
     destination_location = serializers.HyperlinkedRelatedField(
         queryset=Location.objects.filter(is_hidden=False),
         view_name='location-detail', lookup_field='id')
@@ -343,8 +342,9 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = PurchaseOrder
-        fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'vendor', 'currency', 'payment_terms',
-                  'destination_location', 'purchase_policy', 'delivery_terms', 'items', 'po_total_price', 'is_hidden']
+        fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'related_rfq', 'vendor', 'currency',
+                  'payment_terms', 'destination_location', 'purchase_policy', 'delivery_terms',
+                  'items', 'po_total_price', 'is_hidden', 'is_submitted', 'can_edit']
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
@@ -377,57 +377,57 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         return instance
 
 
-class POVendorQuoteItemSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='po-vendor-quote-item-detail')
-    po_vendor_quote = serializers.HyperlinkedRelatedField(
-        view_name='po-vendor-quote-detail', read_only=True)
-    product = serializers.HyperlinkedRelatedField(
-        queryset=Product.objects.filter(is_hidden=False),
-        view_name='product-detail')
-    # This field is a custom property on the model, not a serializer field.
-    get_total_price = serializers.ReadOnlyField()
-
-    class Meta:
-        model = POVendorQuoteItem
-        fields = ['id', 'url', 'po_vendor_quote', 'product', 'description', 'qty',
-                  'estimated_unit_price', 'get_total_price']
-
-
-class POVendorQuoteSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='po-vendor-quote-detail')
-    vendor = serializers.HyperlinkedRelatedField(
-        queryset=Vendor.objects.filter(is_hidden=False),
-        view_name='vendor-detail')
-    purchase_order = serializers.HyperlinkedRelatedField(
-        queryset=PurchaseOrder.objects.filter(is_hidden=False),
-        view_name='purchase-order-detail')
-    items = POVendorQuoteItemSerializer(many=True)
-    # This field is a custom property on the model, not a serializer field.
-    quote_total_price = serializers.ReadOnlyField()
-
-    class Meta:
-        model = POVendorQuote
-        fields = ['url', 'id', 'purchase_order', 'vendor', 'quote_total_price', 'items', 'is_hidden']
-
-    def create(self, validated_data):
-        items_data = validated_data.pop('items')
-        if not items_data:
-            raise serializers.ValidationError("At least one item is required to create a PO vendor quote.")
-        po_vendor_quote = POVendorQuote.objects.create(**validated_data)
-        for item_data in items_data:
-            POVendorQuoteItem.objects.create(po_vendor_quote=po_vendor_quote, **item_data)
-        return po_vendor_quote
-
-    def update(self, instance, validated_data):
-        items_data = validated_data.pop('items', None)
-        instance.purchase_order = validated_data.get('purchase_order', instance.purchase_order)
-        instance.vendor = validated_data.get('vendor', instance.vendor)
-        instance.save()
-
-        if items_data is not None:
-            instance.items.all().delete()
-            for item_data in items_data:
-                POVendorQuoteItem.objects.update_or_create(id=item_data.get('id'),
-                                                           po_vendor_quote=instance,
-                                                           defaults=item_data)
-        return instance
+# class POVendorQuoteItemSerializer(serializers.HyperlinkedModelSerializer):
+#     url = serializers.HyperlinkedIdentityField(view_name='po-vendor-quote-item-detail')
+#     po_vendor_quote = serializers.HyperlinkedRelatedField(
+#         view_name='po-vendor-quote-detail', read_only=True)
+#     product = serializers.HyperlinkedRelatedField(
+#         queryset=Product.objects.filter(is_hidden=False),
+#         view_name='product-detail')
+#     # This field is a custom property on the model, not a serializer field.
+#     get_total_price = serializers.ReadOnlyField()
+#
+#     class Meta:
+#         model = POVendorQuoteItem
+#         fields = ['id', 'url', 'po_vendor_quote', 'product', 'description', 'qty',
+#                   'estimated_unit_price', 'get_total_price']
+#
+#
+# class POVendorQuoteSerializer(serializers.HyperlinkedModelSerializer):
+#     url = serializers.HyperlinkedIdentityField(view_name='po-vendor-quote-detail')
+#     vendor = serializers.HyperlinkedRelatedField(
+#         queryset=Vendor.objects.filter(is_hidden=False),
+#         view_name='vendor-detail')
+#     purchase_order = serializers.HyperlinkedRelatedField(
+#         queryset=PurchaseOrder.objects.filter(is_hidden=False),
+#         view_name='purchase-order-detail')
+#     items = POVendorQuoteItemSerializer(many=True)
+#     # This field is a custom property on the model, not a serializer field.
+#     quote_total_price = serializers.ReadOnlyField()
+#
+#     class Meta:
+#         model = POVendorQuote
+#         fields = ['url', 'id', 'purchase_order', 'vendor', 'quote_total_price', 'items', 'is_hidden']
+#
+#     def create(self, validated_data):
+#         items_data = validated_data.pop('items')
+#         if not items_data:
+#             raise serializers.ValidationError("At least one item is required to create a PO vendor quote.")
+#         po_vendor_quote = POVendorQuote.objects.create(**validated_data)
+#         for item_data in items_data:
+#             POVendorQuoteItem.objects.create(po_vendor_quote=po_vendor_quote, **item_data)
+#         return po_vendor_quote
+#
+#     def update(self, instance, validated_data):
+#         items_data = validated_data.pop('items', None)
+#         instance.purchase_order = validated_data.get('purchase_order', instance.purchase_order)
+#         instance.vendor = validated_data.get('vendor', instance.vendor)
+#         instance.save()
+#
+#         if items_data is not None:
+#             instance.items.all().delete()
+#             for item_data in items_data:
+#                 POVendorQuoteItem.objects.update_or_create(id=item_data.get('id'),
+#                                                            po_vendor_quote=instance,
+#                                                            defaults=item_data)
+#         return instance
