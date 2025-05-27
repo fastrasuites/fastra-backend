@@ -852,8 +852,10 @@ class ReturnIncomingProduct(models.Model):
     source_document = models.OneToOneField(IncomingProduct, on_delete=models.CASCADE, related_name="return_incoming_product")
     reason_for_return = models.TextField()
     returned_date = models.DateField(auto_now_add=False)
+    is_approved = models.BooleanField(default=False)
     is_hidden = models.BooleanField(default=False)
     date_created = models.DateTimeField(auto_now_add=True)
+    date_approved = models.DateTimeField(auto_now_add=False, null=True)
 
     def __str__(self):
         return self.unique_id

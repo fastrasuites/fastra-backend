@@ -1,3 +1,6 @@
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from django.http import HttpResponse
 from django.db.models import Max, F, Value
 from django.db.models.functions import Substr, Cast
 from django.db import models
@@ -50,6 +53,3 @@ def generate_returned_incoming_product_unique_id(location_code):
         return id
     id = f"{location_code}RET0001"
     return id
-
-
-                

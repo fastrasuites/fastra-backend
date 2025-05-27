@@ -395,7 +395,7 @@ class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
 
 # START RETURN INCOMING PRODUCT
 class ReturnIncomingProductItemSerializer(serializers.ModelSerializer):
-
+    
     class Meta:
         model = ReturnIncomingProductItem
         fields = ["product", "quantity_returned"]
@@ -404,11 +404,12 @@ class ReturnIncomingProductItemSerializer(serializers.ModelSerializer):
 class ReturnIncomingProductSerializer(serializers.ModelSerializer):
     unique_id = serializers.CharField(read_only=True)
     return_incoming_product_items = ReturnIncomingProductItemSerializer(many=True)
+    is_approved = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = ReturnIncomingProduct
-        fields = ["unique_id", "return_incoming_product_items",
-                  "source_document", "reason_for_return", "returned_date"]
+        fields = ["id", "unique_id", "return_incoming_product_items",
+                  "source_document", "reason_for_return", "returned_date", "is_approved"]
 
     @transaction.atomic
     def create(self, validated_data):
@@ -434,4 +435,21 @@ class ReturnIncomingProductSerializer(serializers.ModelSerializer):
         except Exception as e:
             raise serializers.ValidationError(f"An error occurred: {str(e)}")
 
+
+class ReturnIncomingProductItemReadOnlySerializer(serializers.ModelSerializer):
+    product = ProductSerializer(many=False, read_only=True)
+    
+    class Meta:
+        model = ReturnIncomingProductItem
+        fields = ["product", "quantity_returned"]
+
+
+class ReturnIncomingProductWithIncomingProductsSerializer(serializers.ModelSerializer):
+    source_document = IncomingProductSerializer(many=False, read_only=True)
+    return_incoming_product_items = ReturnIncomingProductItemReadOnlySerializer(many=True)
+
+    class Meta:
+        model = ReturnIncomingProduct
+        fields = ["unique_id", "return_incoming_product_items",
+                  "source_document", "reason_for_return", "returned_date"]
 # END RETURN INCOMING PRODUCT
