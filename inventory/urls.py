@@ -48,6 +48,6 @@ urlpatterns = [
     path('delivery-order/confirm-delivery/<int:pk>/', DeliveryOrderViewSet.as_view({'get': 'confirm_delivery'})),
     # END FOR THE DELIVERY ORDERS
 
-    path('return-incoming-product/approve/<int:pk>/', ReturnIncomingProductViewSet.as_view({'get': 'approve'})),
+    path('return-incoming-product/approve/<str:pk>/', ReturnIncomingProductViewSet.as_view({'get': 'approve'})),
 
 ]

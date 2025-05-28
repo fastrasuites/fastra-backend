@@ -848,7 +848,7 @@ class DeliveryOrderReturnItem(models.Model):
 
 # START RETURN OF INCOMING PRODUCTS
 class ReturnIncomingProduct(models.Model):
-    unique_id = models.CharField(max_length=50, unique=True, editable=False, null=False)
+    unique_id = models.CharField(max_length=50, primary_key=True, unique=True, editable=False, null=False)
     source_document = models.OneToOneField(IncomingProduct, on_delete=models.CASCADE, related_name="return_incoming_product")
     reason_for_return = models.TextField()
     returned_date = models.DateField(auto_now_add=False)
@@ -865,7 +865,8 @@ class ReturnIncomingProductItem(models.Model):
     return_incoming_product = models.ForeignKey(ReturnIncomingProduct, 
                                                 on_delete=models.CASCADE, related_name="return_incoming_product_items")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="return_product_items")
-    quantity_returned = models.PositiveIntegerField(default=0)
+    quantity_to_be_returned = models.PositiveIntegerField(null=False)
+    quantity_received = models.PositiveIntegerField(null=False)
     date_created = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

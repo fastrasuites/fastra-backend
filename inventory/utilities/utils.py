@@ -32,17 +32,10 @@ def generate_returned_record_unique_id(delivery_order_id):
     return "Expects an ID but none was given"
 
 
-def generate_returned_incoming_product_unique_id(incoming_product_id, location_code):
-    if incoming_product_id is not None:
-        id = f"{location_code}RET-{incoming_product_id}"
-        return id
-    return "Expects an ID but none was given"
-
-
 def generate_returned_incoming_product_unique_id(location_code):
     # Query to get the maximum unique_order_id based on the numeric part
     max_unique_order_id = ReturnIncomingProduct.objects.annotate(
-        numeric_id=Cast(Substr('unique_id', 7, 4), output_field=models.IntegerField())
+        numeric_id=Cast(Substr('unique_id', 8, 4), output_field=models.IntegerField())
     ).aggregate(max_id=Max('numeric_id'))['max_id']
 
     if max_unique_order_id is not None:

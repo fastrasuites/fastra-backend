@@ -10,12 +10,12 @@ from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
 
 from .models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
     IncomingProductItem
-from .serializers import DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer, DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, ReturnIncomingProductSerializer, ReturnIncomingProductWithIncomingProductsSerializer, StockAdjustmentSerializer, \
+from .serializers import DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer, DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, ReturnIncomingProductSerializer, StockAdjustmentSerializer, \
     StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer, IncomingProductSerializer, IPItemSerializer
 
 from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id, generate_returned_incoming_product_unique_id
 from django.utils import timezone as the_timezone
-
+from django.db import transaction
 
 class LocationViewSet(SearchDeleteViewSet):
     queryset = Location.objects.all()
@@ -423,20 +423,36 @@ class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
             validated_data['unique_id'] = generate_returned_incoming_product_unique_id(location_code)
             self.perform_create(serializer)
             
-            new_serializer = ReturnIncomingProductWithIncomingProductsSerializer(self.queryset[0], many=False, context={'request': request})
-            return Response(new_serializer.data, status=status.HTTP_201_CREATED)
+            # new_serializer = ReturnIncomingProductWithIncomingProductsSerializer(self.queryset[0], many=False, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         except ValueError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def approve(self, request, *args, **kwargs):
         try:
             id = kwargs.get('pk')
-            return_incoming_product = ReturnIncomingProduct.objects.filter(is_hidden=False, id=id).first()
-            return_incoming_product.is_approved = True
-            return_incoming_product.date_approved = the_timezone.now()
-            return_incoming_product.save()
+            return_incoming_product = ReturnIncomingProduct.objects.filter(is_hidden=False, unique_id=id).first()
+            if return_incoming_product is None:
+                return Response({'detail': "There are no records to approve in the return incoming product"}, status=status.HTTP_400_BAD_REQUEST)
+            if return_incoming_product.is_approved:
+                return Response({'detail': "You cannot approve an Approved return incoming product record"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            with transaction.atomic():
+                return_incoming_product.is_approved = True
+                return_incoming_product.date_approved = the_timezone.now()
+                return_incoming_product.save()
 
-            serializer =  ReturnIncomingProductSerializer(return_incoming_product, many=False)                    
+                return_serializer = ReturnIncomingProductSerializer(return_incoming_product, many=False, context={'request': request})
+                return_incoming_product_items = return_serializer.data.pop("return_incoming_product_items")
+                product_list = []
+                for item in return_incoming_product_items:
+                    # This is where we deduct the returned quantity from the available quantity and then update the database. 
+                    product = Product.objects.filter(is_hidden=False, id=item["id"]).first()
+                    product.available_product_quantity -= item["quantity_to_be_returned"]
+                    product_list.append(product)
+                Product.objects.bulk_update(product_list, fields=["available_product_quantity"])
+
+            serializer =  ReturnIncomingProductSerializer(return_incoming_product, many=False, context={'request': request})                    
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)

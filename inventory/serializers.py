@@ -395,20 +395,23 @@ class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
 
 # START RETURN INCOMING PRODUCT
 class ReturnIncomingProductItemSerializer(serializers.ModelSerializer):
-    
+    id = serializers.IntegerField(read_only=True)
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), write_only=True)
+    product_details = ProductSerializer(source="product", read_only=True)
     class Meta:
         model = ReturnIncomingProductItem
-        fields = ["product", "quantity_returned"]
+        fields = ["id", "product", "quantity_received", "quantity_to_be_returned", "product_details"]
 
 
 class ReturnIncomingProductSerializer(serializers.ModelSerializer):
     unique_id = serializers.CharField(read_only=True)
     return_incoming_product_items = ReturnIncomingProductItemSerializer(many=True)
     is_approved = serializers.BooleanField(read_only=True)
-
+    source_document = serializers.PrimaryKeyRelatedField(queryset=IncomingProduct.objects.all(), write_only=True)
+    source_document_details = IncomingProductSerializer(source="source_document", read_only=True)
     class Meta:
         model = ReturnIncomingProduct
-        fields = ["id", "unique_id", "return_incoming_product_items",
+        fields = ["unique_id", "return_incoming_product_items", "source_document_details",
                   "source_document", "reason_for_return", "returned_date", "is_approved"]
 
     @transaction.atomic
@@ -418,17 +421,10 @@ class ReturnIncomingProductSerializer(serializers.ModelSerializer):
             
             return_incoming_product = ReturnIncomingProduct.objects.create(**validated_data)
             returned_product_list = []
-            product_list = []
             for product_data in return_products_data:
                 one_product = ReturnIncomingProductItem(return_incoming_product=return_incoming_product, **product_data)
-                returned_product_list.append(one_product)
-
-                # This is where we deduct the returned quantity from the available quantity and then update the database. 
-                product = Product.objects.filter(is_hidden=False, id=product_data["product"].id).first()
-                product.available_product_quantity -= product_data["quantity_returned"]
-                product_list.append(product)
+                returned_product_list.append(one_product)                
             ReturnIncomingProductItem.objects.bulk_create(returned_product_list)
-            Product.objects.bulk_update(product_list, fields=["available_product_quantity"])
             return return_incoming_product
         except IntegrityError as e:
             raise serializers.ValidationError(f"Database error occurred: {str(e)}")
@@ -436,20 +432,4 @@ class ReturnIncomingProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"An error occurred: {str(e)}")
 
 
-class ReturnIncomingProductItemReadOnlySerializer(serializers.ModelSerializer):
-    product = ProductSerializer(many=False, read_only=True)
-    
-    class Meta:
-        model = ReturnIncomingProductItem
-        fields = ["product", "quantity_returned"]
-
-
-class ReturnIncomingProductWithIncomingProductsSerializer(serializers.ModelSerializer):
-    source_document = IncomingProductSerializer(many=False, read_only=True)
-    return_incoming_product_items = ReturnIncomingProductItemReadOnlySerializer(many=True)
-
-    class Meta:
-        model = ReturnIncomingProduct
-        fields = ["unique_id", "return_incoming_product_items",
-                  "source_document", "reason_for_return", "returned_date"]
 # END RETURN INCOMING PRODUCT
