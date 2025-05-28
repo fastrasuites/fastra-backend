@@ -296,7 +296,7 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DeliveryOrder
-        fields = ['order_unique_id', 'customer_name', 'source_location', 'id',
+        fields = ['id', 'order_unique_id', 'customer_name', 'source_location', 
                   'delivery_address', 'delivery_date', 'shipping_policy', 
                   'return_policy', 'assigned_to', 'delivery_order_items', 'status', 'date_created']
 
