@@ -11,17 +11,17 @@ from inventory.models import DeliveryOrder, ReturnIncomingProduct
 def generate_delivery_order_unique_id(source_location):
     # Query to get the maximum unique_order_id based on the numeric part
     max_unique_order_id = DeliveryOrder.objects.annotate(
-        numeric_id=Cast(Substr('order_unique_id', 7, 4), output_field=models.IntegerField())
+        numeric_id=Cast(Substr('order_unique_id', 9, 4), output_field=models.IntegerField())
     ).aggregate(max_id=Max('numeric_id'))['max_id']
 
     if max_unique_order_id is not None:
         max_unique_order_id += 1
         max_unique_order_id = str(max_unique_order_id).zfill(4)
         
-        source_location = source_location.id[:3].upper()
+        source_location = source_location[:4].upper()
         id = f"{source_location}-OUT-{max_unique_order_id}"
         return id
-    id = f"{source_location[:3]}-OUT-0001"
+    id = f"{source_location[:4]}-OUT-0001"
     return id
 
 

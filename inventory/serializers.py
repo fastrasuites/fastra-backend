@@ -292,12 +292,13 @@ class DeliveryOrderItemSerializer(serializers.ModelSerializer):
 class DeliveryOrderSerializer(serializers.ModelSerializer):
     delivery_order_items = DeliveryOrderItemSerializer(many=True)
     order_unique_id = serializers.CharField(read_only=True)
+    id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = DeliveryOrder
-        fields = ['order_unique_id', 'customer_name', 'source_location', 
+        fields = ['order_unique_id', 'customer_name', 'source_location', 'id',
                   'delivery_address', 'delivery_date', 'shipping_policy', 
-                  'return_policy', 'assigned_to', 'delivery_order_items', 'status']
+                  'return_policy', 'assigned_to', 'delivery_order_items', 'status', 'date_created']
 
     @transaction.atomic
     def create(self, validated_data):
