@@ -14,7 +14,6 @@ from .serializers import DeliveryOrderReturnItemSerializer, DeliveryOrderReturnS
     StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer, IncomingProductSerializer, IPItemSerializer
 
 from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id, generate_returned_incoming_product_unique_id
-from django.utils import timezone as the_timezone
 from django.db import transaction
 
 class LocationViewSet(SearchDeleteViewSet):
@@ -439,7 +438,6 @@ class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
             
             with transaction.atomic():
                 return_incoming_product.is_approved = True
-                return_incoming_product.date_approved = the_timezone.now()
                 return_incoming_product.save()
 
                 return_serializer = ReturnIncomingProductSerializer(return_incoming_product, many=False, context={'request': request})
