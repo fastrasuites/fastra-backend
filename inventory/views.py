@@ -9,12 +9,15 @@ from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet
 from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
 
 from .models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
-    IncomingProductItem
+    IncomingProductItem, StockMove
 from .serializers import DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer, DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, ReturnIncomingProductSerializer, StockAdjustmentSerializer, \
-    StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer, IncomingProductSerializer, IPItemSerializer
+    StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer, IncomingProductSerializer, IPItemSerializer, StockMoveSerializer
 
 from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id, generate_returned_incoming_product_unique_id
 from django.db import transaction
+from rest_framework import mixins, viewsets
+from .filters import StockMoveFilter
+from django_filters.rest_framework import DjangoFilterBackend
 
 class LocationViewSet(SearchDeleteViewSet):
     queryset = Location.objects.all()
@@ -455,3 +458,14 @@ class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 # END RETURN INCOMING PRODUCTS
+
+
+
+# START STOCK MOVES
+class StockMoveViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
+    queryset = StockMove.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = StockMoveSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = StockMoveFilter
+# END STOCK MOVES
