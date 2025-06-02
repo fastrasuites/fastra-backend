@@ -498,7 +498,7 @@ class ScrapItem(models.Model):
 
 class IncomingProduct(models.Model):
     """Records incoming products from suppliers"""
-    incoming_product_id = models.CharField(max_length=15, primary_key=True)
+    incoming_product_id = models.CharField(max_length=15, null=True)
     receipt_type = models.CharField(choices=INCOMING_PRODUCT_RECEIPT_TYPES, default="vendor_receipt")
     backorder_of = models.ForeignKey(
         'self',
