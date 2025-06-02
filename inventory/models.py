@@ -637,7 +637,7 @@ class IncomingProduct(models.Model):
 class IncomingProductItem(models.Model):
     incoming_product = models.ForeignKey(
         'IncomingProduct',
-        to_field="incoming_product_id",
+        # to_field="incoming_product_id",
         on_delete=models.CASCADE,
         related_name='incoming_product_items'
     )
