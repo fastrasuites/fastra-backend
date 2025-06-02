@@ -56,9 +56,11 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                                                    view_name='currency-detail')
     vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
                                                  view_name='vendor-detail')
-    requesting_location = serializers.HyperlinkedRelatedField(
+    requesting_location = serializers.PrimaryKeyRelatedField(
+        many=False,
         queryset=Location.objects.filter(is_hidden=False),
-        view_name='location-detail', lookup_field='id')
+        allow_null=True
+    )
     items = PurchaseRequestItemSerializer(many=True, allow_empty=False)
     total_price = serializers.ReadOnlyField()
 
@@ -327,10 +329,16 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     #     view_name='user-detail')
     items = PurchaseOrderItemSerializer(many=True)
     # add a one-to-one serializer field
-    related_rfq = serializers.PrimaryKeyRelatedField(many=False, queryset=RequestForQuotation.objects.filter(is_hidden=False), allow_null=True, allow_empty=True)
-    destination_location = serializers.HyperlinkedRelatedField(
+    related_rfq = serializers.PrimaryKeyRelatedField(
+        many=False,
+        queryset=RequestForQuotation.objects.filter(is_hidden=False, status='approved'),
+        allow_null=True
+    )
+    destination_location = serializers.PrimaryKeyRelatedField(
+        many=False,
         queryset=Location.objects.filter(is_hidden=False),
-        view_name='location-detail', lookup_field='id')
+        allow_null=True
+    )
     vendor = serializers.HyperlinkedRelatedField(
         queryset=Vendor.objects.filter(is_hidden=False),
         view_name='vendor-detail')
