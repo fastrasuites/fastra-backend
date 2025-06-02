@@ -601,14 +601,15 @@ class IncomingProduct(models.Model):
                     item['expected_quantity'] = received
             else:
                 # Scenario 3: More received
-                extra_qty = received - expected
-                if user_choice and user_choice.get('overpay'):
-                    # Adjust expected to received, update cost as needed
-                    item['expected_quantity'] = received
-                    # You may want to update cost here
-                else:
-                    # User wants to return extra, set received to expected
-                    item['quantity_received'] = expected
+                continue
+                # extra_qty = received - expected
+                # if user_choice and user_choice.get('overpay'):
+                #     # Adjust expected to received, update cost as needed
+                #     item['expected_quantity'] = received
+                #     # You may want to update cost here
+                # else:
+                #     # User wants to return extra, set received to expected
+                #     item['quantity_received'] = expected
 
         # If backorder is needed, create a new IncomingProduct
         if backorder_items:

@@ -195,13 +195,21 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         allow_null=True
     )
     receipt_type = serializers.ChoiceField(choices=INCOMING_PRODUCT_RECEIPT_TYPES)
-    user_choice = serializers.DictField(write_only=True, required=False)
+    user_choice = serializers.DictField(
+        write_only=True,
+        required=False,
+        child=serializers.BooleanField(),
+        default={'backorder': False, 'overpay': False},
+        help_text="Valid keys are: 'backorder', 'overpay'."
+    )
+    backorder_of = serializers.ReadOnlyField()
+
 
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
 
     class Meta:
         model = IncomingProduct
-        fields = ['id', 'receipt_type', 'related_po', 'user_choice', 'supplier', 'source_location', 'incoming_product_items',
+        fields = ['id', 'receipt_type', 'related_po', 'backorder_of', 'user_choice', 'supplier', 'source_location', 'incoming_product_items',
                   'destination_location', 'status', 'is_validated', 'can_edit', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated']
 
@@ -318,6 +326,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         Update an existing instance with validated data.
         """
         items_data = validated_data.pop('incoming_product_items', None)
+        user_choice = validated_data.pop('user_choice', {})
         related_po = validated_data.get('related_po', getattr(instance, 'related_po', None))
         if items_data:
             # Clear existing items and add new ones
