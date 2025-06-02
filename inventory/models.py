@@ -498,8 +498,8 @@ class ScrapItem(models.Model):
 
 class IncomingProduct(models.Model):
     """Records incoming products from suppliers"""
-    id = models.CharField(max_length=15, primary_key=True)
-    id_number = models.PositiveIntegerField(auto_created=True)
+    incoming_product_id = models.CharField(max_length=15, primary_key=True)
+    id = models.PositiveIntegerField(auto_created=True, primary_key=False)
     receipt_type = models.CharField(choices=INCOMING_PRODUCT_RECEIPT_TYPES, default="vendor_receipt")
     backorder_of = models.ForeignKey(
         'self',
@@ -557,16 +557,16 @@ class IncomingProduct(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.pk:  # Only perform these checks for new instances
-            if self.id and IncomingProduct.objects.filter(id=self.id).exists():
-                raise ValidationError(f"ID '{self.id}' already exists.")
+            if self.incoming_product_id and IncomingProduct.objects.filter(incoming_product_id=self.incoming_product_id).exists():
+                raise ValidationError(f"ID '{self.incoming_product_id}' already exists.")
             # Ensure the id_number is auto-incremented based on location_code
-            if not self.id_number:
+            if not self.id:
                 last_ip = IncomingProduct.objects.filter(
                     source_location__location_code=self.source_location.location_code
-                ).order_by('-id_number').first()
-                self.id_number = (last_ip.id_number + 1) if last_ip else 1
+                ).order_by('-id').first()
+                self.id = (last_ip.id + 1) if last_ip else 1
             # Generate the id based on location_code and id_number
-            self.id = f"{self.source_location.location_code}IN{self.id_number:05d}"
+            self.incoming_product_id = f"{self.source_location.location_code}IN{self.id:05d}"
         if self.is_validated:
             self.can_edit = False
         super(IncomingProduct, self).save(*args, **kwargs)
@@ -614,13 +614,13 @@ class IncomingProduct(models.Model):
         # If backorder is needed, create a new IncomingProduct
         if backorder_items:
             backorder = IncomingProduct.objects.create(
-                # copy relevant fields from self
+                receipt_type=self.receipt_type,
+                related_po=self.related_po,
                 supplier=self.supplier,
                 source_location=self.source_location,
                 destination_location=self.destination_location,
                 status='draft',
                 backorder_of=self,
-                # ... other fields ...
             )
             for bo_item in backorder_items:
                 IncomingProductItem.objects.create(
