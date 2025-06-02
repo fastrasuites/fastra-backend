@@ -573,12 +573,14 @@ class IncomingProduct(models.Model):
     def process_receipt(
             self,
             items_data,
-            user_choice={'backorder': False, 'overpay': False}
+            user_choice=None
     ):
         """
         items_data: list of dicts with 'product', 'expected_quantity', 'quantity_received'
         user_choice: dict with keys 'backorder' (True/False), 'overpay' (True/False)
         """
+        if user_choice is None:
+            user_choice = {'backorder': False, 'overpay': False}
         backorder_items = []
         over_received_items = []
         for item in items_data:
@@ -635,6 +637,7 @@ class IncomingProduct(models.Model):
 class IncomingProductItem(models.Model):
     incoming_product = models.ForeignKey(
         'IncomingProduct',
+        to_field="incoming_product_id",
         on_delete=models.CASCADE,
         related_name='incoming_product_items'
     )
