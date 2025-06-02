@@ -189,7 +189,7 @@ class IPItemSerializer(serializers.ModelSerializer):
 
 class IncomingProductSerializer(serializers.ModelSerializer):
     incoming_product_items = IPItemSerializer(many=True)
-    related_po = serializers.PrimaryKeyRelatedField(many=False, queryset=PurchaseOrder.objects.filter(is_hidden=False), allow_null=True, allow_empty=True)
+    related_po = serializers.PrimaryKeyRelatedField(many=False, queryset=PurchaseOrder.objects.filter(is_hidden=False, status='completed'), allow_null=True, allow_empty=True)
     receipt_type = serializers.ChoiceField(choices=INCOMING_PRODUCT_RECEIPT_TYPES)
 
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
