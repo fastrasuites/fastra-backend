@@ -10,7 +10,7 @@ from django.utils import timezone
 from decimal import Decimal
 
 from users.models import TenantUser
-from purchase.models import Product, Vendor, PurchaseOrder, UnitOfMeasure
+from purchase.models import Product, Vendor, PurchaseOrder
 
 LOCATION_TYPES = (
     ('internal', 'Internal'),
@@ -498,7 +498,16 @@ class ScrapItem(models.Model):
 
 class IncomingProduct(models.Model):
     """Records incoming products from suppliers"""
+    incoming_product_id = models.CharField(max_length=15, primary_key=True)
+    id = models.PositiveIntegerField(auto_created=True, primary_key=False)
     receipt_type = models.CharField(choices=INCOMING_PRODUCT_RECEIPT_TYPES, default="vendor_receipt")
+    backorder_of = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='backorders'
+    )
     related_po = models.OneToOneField(
         'purchase.PurchaseOrder',
         related_name='incoming_product',
@@ -547,9 +556,81 @@ class IncomingProduct(models.Model):
         return f"IP_ID: {self.pk:05d}"
 
     def save(self, *args, **kwargs):
+        if not self.pk:  # Only perform these checks for new instances
+            if self.incoming_product_id and IncomingProduct.objects.filter(incoming_product_id=self.incoming_product_id).exists():
+                raise ValidationError(f"ID '{self.incoming_product_id}' already exists.")
+            # Ensure the id_number is auto-incremented based on location_code
+            if not self.id:
+                last_ip = IncomingProduct.objects.filter(
+                    source_location__location_code=self.source_location.location_code
+                ).order_by('-id').first()
+                self.id = (last_ip.id + 1) if last_ip else 1
+            # Generate the id based on location_code and id_number
+            self.incoming_product_id = f"{self.source_location.location_code}IN{self.id:05d}"
         if self.is_validated:
             self.can_edit = False
         super(IncomingProduct, self).save(*args, **kwargs)
+
+    def process_receipt(
+            self,
+            items_data,
+            user_choice={'backorder': False, 'overpay': False}
+    ):
+        """
+        items_data: list of dicts with 'product', 'expected_quantity', 'quantity_received'
+        user_choice: dict with keys 'backorder' (True/False), 'overpay' (True/False)
+        """
+        backorder_items = []
+        over_received_items = []
+        for item in items_data:
+            expected = Decimal(item['expected_quantity'])
+            received = Decimal(item['quantity_received'])
+            if received == expected:
+                continue  # Scenario 1: All good
+            elif received < expected:
+                # Scenario 2: Less received
+                backorder_qty = expected - received
+                if user_choice and user_choice.get('backorder'):
+                    backorder_items.append({
+                        'product': item['product'],
+                        'expected_quantity': backorder_qty,
+                        'quantity_received': 0,
+                    })
+                else:
+                    # Discard remaining, update expected to received
+                    item['expected_quantity'] = received
+            else:
+                # Scenario 3: More received
+                continue
+                # extra_qty = received - expected
+                # if user_choice and user_choice.get('overpay'):
+                #     # Adjust expected to received, update cost as needed
+                #     item['expected_quantity'] = received
+                #     # You may want to update cost here
+                # else:
+                #     # User wants to return extra, set received to expected
+                #     item['quantity_received'] = expected
+
+        # If backorder is needed, create a new IncomingProduct
+        if backorder_items:
+            backorder = IncomingProduct.objects.create(
+                receipt_type=self.receipt_type,
+                related_po=self.related_po,
+                supplier=self.supplier,
+                source_location=self.source_location,
+                destination_location=self.destination_location,
+                status='draft',
+                backorder_of=self,
+            )
+            for bo_item in backorder_items:
+                IncomingProductItem.objects.create(
+                    incoming_product=backorder,
+                    product=bo_item['product'],
+                    expected_quantity=bo_item['expected_quantity'],
+                    quantity_received=0,
+                )
+            return backorder  # Return the backorder for further processing
+        return None
 
 
 class IncomingProductItem(models.Model):

@@ -199,9 +199,10 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
 
 class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='request-for-quotation-detail')
-    purchase_request = serializers.HyperlinkedRelatedField(
-        queryset=PurchaseRequest.objects.filter(is_hidden=False, status="approved"),
-        view_name='purchase-request-detail')
+    purchase_request = serializers.PrimaryKeyRelatedField(
+        many=False,
+        queryset=PurchaseRequest.objects.filter(is_hidden=False, status='approved')
+    )
     currency = serializers.HyperlinkedRelatedField(queryset=Currency.objects.filter(is_hidden=False),
                                                    view_name='currency-detail')
     vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
