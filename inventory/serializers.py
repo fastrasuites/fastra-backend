@@ -192,8 +192,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     related_po = serializers.PrimaryKeyRelatedField(
         many=False,
         queryset=PurchaseOrder.objects.filter(is_hidden=False, status='completed'),
-        allow_null=True,
-        allow_empty=True
+        allow_null=True
     )
     receipt_type = serializers.ChoiceField(choices=INCOMING_PRODUCT_RECEIPT_TYPES)
 

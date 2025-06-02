@@ -59,8 +59,7 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
     requesting_location = serializers.PrimaryKeyRelatedField(
         many=False,
         queryset=Location.objects.filter(is_hidden=False),
-        allow_null=True,
-        allow_empty=True
+        allow_null=True
     )
     items = PurchaseRequestItemSerializer(many=True, allow_empty=False)
     total_price = serializers.ReadOnlyField()
@@ -333,14 +332,12 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     related_rfq = serializers.PrimaryKeyRelatedField(
         many=False,
         queryset=RequestForQuotation.objects.filter(is_hidden=False, status='approved'),
-        allow_null=True,
-        allow_empty=True
+        allow_null=True
     )
     destination_location = serializers.PrimaryKeyRelatedField(
         many=False,
         queryset=Location.objects.filter(is_hidden=False),
-        allow_null=True,
-        allow_empty=True
+        allow_null=True
     )
     vendor = serializers.HyperlinkedRelatedField(
         queryset=Vendor.objects.filter(is_hidden=False),
