@@ -179,7 +179,7 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
 
 class IPItemSerializer(serializers.ModelSerializer):
     id = serializers.CharField(required=False, read_only=True)
-    incoming_product = serializers.ReadOnlyField(source="incoming_product.id")
+    incoming_product = serializers.ReadOnlyField(source="incoming_product.incoming_product_id")
 
     class Meta:
         model = IncomingProductItem
