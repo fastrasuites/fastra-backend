@@ -924,3 +924,32 @@ class DeliveryOrderReturnItem(models.Model):
                 setattr(self, field.name, value.strip())
         super().save(*args, **kwargs)
 # END RETURNED PRODUCTS
+
+
+# START RETURN OF INCOMING PRODUCTS
+class ReturnIncomingProduct(models.Model):
+    unique_id = models.CharField(max_length=50, primary_key=True, unique=True, editable=False, null=False)
+    source_document = models.OneToOneField(IncomingProduct, on_delete=models.CASCADE, related_name="return_incoming_product")
+    reason_for_return = models.TextField()
+    returned_date = models.DateField(auto_now_add=False)
+    is_approved = models.BooleanField(default=False)
+    is_hidden = models.BooleanField(default=False)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_approved = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.unique_id
+
+
+class ReturnIncomingProductItem(models.Model):
+    return_incoming_product = models.ForeignKey(ReturnIncomingProduct, 
+                                                on_delete=models.CASCADE, related_name="return_incoming_product_items")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="return_product_items")
+    quantity_to_be_returned = models.PositiveIntegerField(null=False)
+    quantity_received = models.PositiveIntegerField(null=False)
+    date_created = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.return_incoming_product.unique_id} {self.product.product_name}"
+# END RETURN OF INCOMING PRODUCTS
+

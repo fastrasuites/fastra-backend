@@ -7,7 +7,7 @@ from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOr
 from users.models import TenantUser
 
 
-from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, StockAdjustment, StockAdjustmentItem,
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, ReturnIncomingProductItem, StockAdjustment, StockAdjustmentItem,
                      Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES)
 
 
@@ -189,7 +189,11 @@ class IPItemSerializer(serializers.ModelSerializer):
 
 class IncomingProductSerializer(serializers.ModelSerializer):
     incoming_product_items = IPItemSerializer(many=True)
-    related_po = serializers.PrimaryKeyRelatedField(many=False, queryset=PurchaseOrder.objects.filter(is_hidden=False), allow_null=True, allow_empty=True)
+    related_po = serializers.PrimaryKeyRelatedField(
+        many=False,
+        queryset=PurchaseOrder.objects.filter(is_hidden=False, status='completed'),
+        allow_null=True
+    )
     receipt_type = serializers.ChoiceField(choices=INCOMING_PRODUCT_RECEIPT_TYPES)
     user_choice = serializers.DictField(write_only=True, required=False)
 
@@ -359,12 +363,13 @@ class DeliveryOrderItemSerializer(serializers.ModelSerializer):
 class DeliveryOrderSerializer(serializers.ModelSerializer):
     delivery_order_items = DeliveryOrderItemSerializer(many=True)
     order_unique_id = serializers.CharField(read_only=True)
+    id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = DeliveryOrder
-        fields = ['order_unique_id', 'customer_name', 'source_location', 
+        fields = ['id', 'order_unique_id', 'customer_name', 'source_location', 
                   'delivery_address', 'delivery_date', 'shipping_policy', 
-                  'return_policy', 'assigned_to', 'delivery_order_items', 'status']
+                  'return_policy', 'assigned_to', 'delivery_order_items', 'status', 'date_created']
 
     @transaction.atomic
     def create(self, validated_data):
@@ -458,3 +463,45 @@ class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"An error occurred: {str(e)}")
 
 # END THE RETURN REDORD
+
+
+# START RETURN INCOMING PRODUCT
+class ReturnIncomingProductItemSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(read_only=True)
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), write_only=True)
+    product_details = ProductSerializer(source="product", read_only=True)
+    class Meta:
+        model = ReturnIncomingProductItem
+        fields = ["id", "product", "quantity_received", "quantity_to_be_returned", "product_details"]
+
+
+class ReturnIncomingProductSerializer(serializers.ModelSerializer):
+    unique_id = serializers.CharField(read_only=True)
+    return_incoming_product_items = ReturnIncomingProductItemSerializer(many=True)
+    is_approved = serializers.BooleanField(read_only=True)
+    source_document = serializers.PrimaryKeyRelatedField(queryset=IncomingProduct.objects.all(), write_only=True)
+    source_document_details = IncomingProductSerializer(source="source_document", read_only=True)
+    class Meta:
+        model = ReturnIncomingProduct
+        fields = ["unique_id", "return_incoming_product_items", "source_document_details",
+                  "source_document", "reason_for_return", "returned_date", "is_approved"]
+
+    @transaction.atomic
+    def create(self, validated_data):
+        return_products_data = validated_data.pop('return_incoming_product_items')
+        try:
+            
+            return_incoming_product = ReturnIncomingProduct.objects.create(**validated_data)
+            returned_product_list = []
+            for product_data in return_products_data:
+                one_product = ReturnIncomingProductItem(return_incoming_product=return_incoming_product, **product_data)
+                returned_product_list.append(one_product)                
+            ReturnIncomingProductItem.objects.bulk_create(returned_product_list)
+            return return_incoming_product
+        except IntegrityError as e:
+            raise serializers.ValidationError(f"Database error occurred: {str(e)}")
+        except Exception as e:
+            raise serializers.ValidationError(f"An error occurred: {str(e)}")
+
+
+# END RETURN INCOMING PRODUCT
