@@ -1,5 +1,6 @@
 from datetime import timezone
 from django.db import models
+from django.db.utils import IntegrityError
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -191,8 +192,8 @@ class IncomingProductViewSet(SearchDeleteViewSet):
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         try:
-            serializer.is_valid(raise_exception=True)
             incoming_product = serializer.save()
 
             # Process receipt to handle backorders
@@ -330,7 +331,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         all_confirmed = True
 
         if not DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id).exists():
-            return Response({"detail": "This delivery order does not exist: " + str(e)},
+            return Response({"detail": "This delivery order does not exist"},
                             status=status.HTTP_400_BAD_REQUEST)
         delivery_order_items = DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id)
         for item in delivery_order_items:

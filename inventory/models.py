@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.db.models.signals import pre_save, pre_delete, post_save
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
@@ -74,7 +74,7 @@ class DoneScrapManager(models.Manager):
 
 INCOMING_PRODUCT_RECEIPT_TYPES = (
     ('vendor_receipt', 'Vendor Receipt'),
-    ('manufacturing_receipt', 'Manufacturing'),
+    ('manufacturing_receipt', 'Manufacturing Receipt'),
     ('internal_transfer', 'Internal Transfer'),
     ('returns', 'Returns'),
     ('scrap', 'Scrap')
@@ -88,7 +88,7 @@ class VendorReceiptIPManager(models.Manager):
 
 class ManufacturingIPManager(models.Manager):
     def get_queryset(self):
-        return super(ManufacturingIPManager, self).get_queryset().filter(receipt_type="manufacturing")
+        return super(ManufacturingIPManager, self).get_queryset().filter(receipt_type="manufacturing_receipt")
 
 
 class InternalTransferIPManager(models.Manager):
@@ -99,6 +99,11 @@ class InternalTransferIPManager(models.Manager):
 class ReturnsIPManager(models.Manager):
     def get_queryset(self):
         return super(ReturnsIPManager, self).get_queryset().filter(receipt_type="returns")
+
+
+class ScrapIPManager(models.Manager):
+    def get_queryset(self):
+        return super(ScrapIPManager, self).get_queryset().filter(receipt_type="scrap")
 
 
 INCOMING_PRODUCT_STATUS = (
@@ -499,9 +504,11 @@ class ScrapItem(models.Model):
 class IncomingProduct(models.Model):
     """Records incoming products from suppliers"""
     incoming_product_id = models.CharField(max_length=15, primary_key=True)
+    id_number = models.PositiveIntegerField(auto_created=True)
     receipt_type = models.CharField(choices=INCOMING_PRODUCT_RECEIPT_TYPES, default="vendor_receipt")
     backorder_of = models.ForeignKey(
         'self',
+        to_field='incoming_product_id',
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -544,9 +551,10 @@ class IncomingProduct(models.Model):
     canceled_incoming_products = CanceledIncomingProductManager()
 
     vendor_receipt_incoming_products = VendorReceiptIPManager()
-    manufacturing_incoming_products = ManufacturingIPManager()
+    manufacturing_receipt_incoming_products = ManufacturingIPManager()
     internal_transfer_incoming_products = InternalTransferIPManager()
     returns_incoming_products = ReturnsIPManager()
+    scrap_incoming_products = ScrapIPManager()
 
     class Meta:
         ordering = ['-date_updated', '-date_created']
@@ -559,13 +567,15 @@ class IncomingProduct(models.Model):
             if self.incoming_product_id and IncomingProduct.objects.filter(incoming_product_id=self.incoming_product_id).exists():
                 raise ValidationError(f"ID '{self.incoming_product_id}' already exists.")
             # Ensure the id_number is auto-incremented based on location_code
-            if not self.id:
-                last_ip = IncomingProduct.objects.filter(
-                    source_location__location_code=self.source_location.location_code
-                ).order_by('-id').first()
-                self.id = (last_ip.id + 1) if last_ip else 1
-            # Generate the id based on location_code and id_number
-            self.incoming_product_id = f"{self.source_location.location_code}IN{self.id:05d}"
+            with transaction.atomic():
+                if not self.id_number:
+                    last_ip = IncomingProduct.objects.filter(
+                        source_location__location_code=self.source_location.location_code
+                    ).order_by('-id_number').first()
+                    self.id_number = (last_ip.id_number + 1) if last_ip else 1
+                # Generate the id based on location_code and id_number
+                location_code = str(self.source_location.location_code)
+                self.incoming_product_id = f"{location_code}IN{self.id_number:05d}"
         if self.is_validated:
             self.can_edit = False
         super(IncomingProduct, self).save(*args, **kwargs)
@@ -637,7 +647,6 @@ class IncomingProduct(models.Model):
 class IncomingProductItem(models.Model):
     incoming_product = models.ForeignKey(
         'IncomingProduct',
-        to_field="incoming_product_id",
         on_delete=models.CASCADE,
         related_name='incoming_product_items'
     )
