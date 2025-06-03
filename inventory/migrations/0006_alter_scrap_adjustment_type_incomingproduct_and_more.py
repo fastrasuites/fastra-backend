@@ -20,7 +20,8 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='IncomingProduct',
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('incoming_product_id', models.CharField(primary_key=True, verbose_name='ID')),
+                ('id_number', models.PositiveIntegerField(auto_created=True)),
                 ('receipt_type', models.CharField(choices=[('vendor_receipt', 'Vendor Receipt'), ('manufacturing', 'Manufacturing'), ('internal_transfer', 'Internal Transfer'), ('returns', 'Returns')], default='vendor_receipt')),
                 ('date_created', models.DateTimeField(auto_now_add=True)),
                 ('date_updated', models.DateTimeField(auto_now=True)),

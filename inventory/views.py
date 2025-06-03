@@ -1,5 +1,6 @@
 from datetime import timezone
 from django.db import models
+from django.db.utils import IntegrityError
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -195,8 +196,23 @@ class IncomingProductViewSet(SearchDeleteViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        incoming_product = serializer.save()
-        return Response(self.get_serializer(incoming_product).data, status=status.HTTP_201_CREATED)
+        try:
+            incoming_product = serializer.save()
+
+            # Process receipt to handle backorders
+            items_data = request.data.get('incoming_product_items', [])
+            user_choice = request.data.get('user_choice', {'backorder': False, 'overpay': False})
+            backorder = incoming_product.process_receipt(items_data, user_choice)
+            response_data = serializer.data
+            if backorder:
+                response_data = {
+                    "incoming_product": serializer.data,
+                    "backorder": f"Backorder created with ID {backorder.id}"
+                }
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['get'])
     def check_editable(self, request, *args, **kwargs):
@@ -208,6 +224,14 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         return Response({'status': 'editable'}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'])
+    def list_backorders(self, request, *args, **kwargs):
+        """
+        List all backorders related to the given Incoming Product.
+        """
+        incoming_product = self.get_object()
+        return incoming_product.backorders.all()
 
 
 # class IncomingProductItemViewSet(viewsets.ModelViewSet):
@@ -310,7 +334,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         all_confirmed = True
 
         if not DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id).exists():
-            return Response({"detail": "This delivery order does not exist: " + str(e)},
+            return Response({"detail": "This delivery order does not exist"},
                             status=status.HTTP_400_BAD_REQUEST)
         delivery_order_items = DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id)
         for item in delivery_order_items:
