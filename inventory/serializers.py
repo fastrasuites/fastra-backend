@@ -205,12 +205,13 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     backorder_of = serializers.ReadOnlyField()
 
 
-    id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
+    incoming_product_id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
 
     class Meta:
         model = IncomingProduct
-        fields = ['id', 'receipt_type', 'related_po', 'backorder_of', 'user_choice', 'supplier', 'source_location', 'incoming_product_items',
-                  'destination_location', 'status', 'is_validated', 'can_edit', 'is_hidden']
+        fields = ['incoming_product_id', 'receipt_type', 'related_po', 'backorder_of', 'user_choice',
+                  'supplier', 'source_location', 'incoming_product_items', 'destination_location', 'status',
+                  'is_validated', 'can_edit', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated']
 
     def validate(self, data):
@@ -252,9 +253,12 @@ class IncomingProductSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(f"Invalid user choice key: {key}. Valid keys are: {', '.join(valid_keys)}")
 
         # Ensure that the receipt type is one of the allowed types
-        if data.get('receipt_type') not in INCOMING_PRODUCT_RECEIPT_TYPES:
+        receipt_type = data.get('receipt_type')
+        # INCOMING_PRODUCT_RECEIPT_TYPES may be a list of tuples, so extract the valid values
+        valid_receipt_types = [choice[0] if isinstance(choice, tuple) else choice for choice in INCOMING_PRODUCT_RECEIPT_TYPES]
+        if receipt_type not in valid_receipt_types:
             raise serializers.ValidationError(
-                "Invalid receipt type. Must be one of: " + ", ".join(INCOMING_PRODUCT_RECEIPT_TYPES)
+                "Invalid receipt type. Must be one of: " + ", ".join(str(v) for v in valid_receipt_types)
             )
 
         # Ensure that the supplier, source location, and destination location are provided
