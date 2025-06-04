@@ -34,7 +34,7 @@ class LocationViewSet(SearchDeleteViewSet):
 
     def create(self, request, *args, **kwargs):
         try:
-            if MultiLocation.objects.first().is_activated and Location.get_active_locations() >= 1:
+            if MultiLocation.objects.first().is_activated and len(Location.get_active_locations()) >= 1:
                 return Response(
                     {'error': 'Max number of Locations reached.'},
                     status=status.HTTP_400_BAD_REQUEST
