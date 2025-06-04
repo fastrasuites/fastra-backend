@@ -367,7 +367,8 @@ class IncomingProductSerializer(serializers.ModelSerializer):
 # START THE DELIVERY ORDERS
 class DeliveryOrderItemSerializer(serializers.ModelSerializer):
     delivery_order = serializers.PrimaryKeyRelatedField(read_only=True)
-    product_item = ProductSerializer(read_only=True)
+    product_details = ProductSerializer(read_only=True)
+    product_item = serializers.PrimaryKeyRelatedField(queryset=Product.objects.filter(is_hidden=False), write_only=True)
 
     class Meta:
         model = DeliveryOrderItem
