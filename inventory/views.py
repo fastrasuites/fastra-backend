@@ -183,8 +183,8 @@ class IncomingProductViewSet(SearchDeleteViewSet):
     serializer_class = IncomingProductSerializer
     permission_classes = [permissions.IsAuthenticated]
     search_fields = ['date_created', 'status', 'destination_location']
-    lookup_field = 'id'
-    lookup_url_kwarg = 'id'
+    lookup_field = 'incoming_product_id'
+    lookup_url_kwarg = 'incoming_product_id'
 
     def get_queryset(self):
         queryset = super().get_queryset()
