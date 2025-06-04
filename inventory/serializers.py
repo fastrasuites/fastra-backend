@@ -8,7 +8,7 @@ from users.models import TenantUser
 
 
 from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, ReturnIncomingProductItem, StockAdjustment, StockAdjustmentItem,
-                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES)
+                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES, StockMove)
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
@@ -367,6 +367,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
 # START THE DELIVERY ORDERS
 class DeliveryOrderItemSerializer(serializers.ModelSerializer):
     delivery_order = serializers.PrimaryKeyRelatedField(read_only=True)
+    product_item = ProductSerializer(read_only=True)
 
     class Meta:
         model = DeliveryOrderItem
@@ -518,3 +519,16 @@ class ReturnIncomingProductSerializer(serializers.ModelSerializer):
 
 
 # END RETURN INCOMING PRODUCT
+
+
+
+# START STOCK MOVE
+class StockMoveSerializer(serializers.ModelSerializer):
+    date_created = serializers.DateTimeField(read_only=True)
+    date_moved = serializers.DateTimeField(read_only=True)
+    product = ProductSerializer(read_only=True, many=False)
+    class Meta:
+        model = StockMove
+        fields = ["id", "product", "quantity", "source_document_id",
+                  "source_location", "destination_location", "date_created", "date_moved"]
+# END STOCK MOVE
