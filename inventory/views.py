@@ -19,6 +19,7 @@ from django.db import transaction
 from rest_framework import mixins, viewsets
 from .filters import StockMoveFilter
 from django_filters.rest_framework import DjangoFilterBackend
+from django.core.exceptions import ObjectDoesNotExist
 
 class LocationViewSet(SearchDeleteViewSet):
     queryset = Location.objects.all()
@@ -232,6 +233,61 @@ class IncomingProductViewSet(SearchDeleteViewSet):
         """
         incoming_product = self.get_object()
         return incoming_product.backorders.all()
+
+    def partial_update(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            instance = self.get_object()
+
+            instance.receipt_type = data.get("receipt_type", instance.receipt_type) or instance.receipt_type
+            instance.related_po_id = data.get("related_po", instance.related_po_id)
+            instance.supplier_id = data.get("supplier", instance.supplier_id)
+            instance.source_location_id = data.get("source_location", instance.source_location_id)
+            instance.destination_location_id = data.get("destination_location", instance.destination_location_id)
+            instance.status = data.get("status", instance.status)
+
+            with transaction.atomic():
+                items = data.get("incoming_product_items", [])
+                if items:
+                    for item in items:
+                        try:
+                            item_id = item.get('id', None)
+                            if item_id and IncomingProductItem.objects.filter(id=item_id, incoming_product_id=instance.incoming_product_id).exists():
+                                item_data = IncomingProductItem.objects.get(id=item_id, incoming_product_id=instance.incoming_product_id)
+                                item_data.product_id = item["product"]
+                                item_data.expected_quantity = item["expected_quantity"]
+                                item_data.quantity_received = item["quantity_received"]
+                                item_data.save()
+                            else:
+                                IncomingProductItem.objects.create(
+                                    incoming_product_id=instance.incoming_product_id,
+                                    expected_quantity=item["expected_quantity"],
+                                    quantity_received=item["quantity_received"],
+                                    product_id=item["product"]
+                                )
+                        except KeyError as ke:
+                            return Response(
+                                {"error": f"Missing field in incoming product item: {str(ke)}"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                        except Exception as e:
+                            return Response(
+                                {"error": f"Error processing incoming product item: {str(e)}"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+
+                instance.save()
+
+            return_serializer = IncomingProductSerializer(instance, many=False)
+            return Response({"detail": return_serializer.data}, status=status.HTTP_200_OK)
+
+        except ObjectDoesNotExist:
+            return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
+        except IntegrityError as e:
+            return Response({"error": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 # class IncomingProductItemViewSet(viewsets.ModelViewSet):

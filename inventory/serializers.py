@@ -178,13 +178,16 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
 
 
 class IPItemSerializer(serializers.ModelSerializer):
-    id = serializers.CharField(required=False, read_only=True)
+    id = serializers.CharField(required=False)
     incoming_product = serializers.ReadOnlyField(source="incoming_product.incoming_product_id")
 
     class Meta:
         model = IncomingProductItem
         fields = ['id', 'incoming_product', 'product',
                   'expected_quantity', 'quantity_received']
+        extra_kwargs = {
+            'id': {'required': False, 'allow_null': True},
+        }
 
 
 class IncomingProductSerializer(serializers.ModelSerializer):
