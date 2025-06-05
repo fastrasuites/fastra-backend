@@ -402,7 +402,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         try:
             delivery_order.status = "ready" if all_confirmed else "waiting"
             delivery_order.save()
-            serialized_order = DeliveryOrderSerializer(delivery_order)
+            serialized_order = DeliveryOrderSerializer(delivery_order, context={'request': request})
             return Response(serialized_order.data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
@@ -421,7 +421,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         try:
             delivery_order.status = "done"
             delivery_order.save()
-            serialized_order = DeliveryOrderSerializer(delivery_order)
+            serialized_order = DeliveryOrderSerializer(delivery_order, context={'request': request})
             return Response(serialized_order.data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
