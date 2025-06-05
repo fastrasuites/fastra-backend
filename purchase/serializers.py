@@ -142,12 +142,12 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
     unit_of_measure = serializers.HyperlinkedRelatedField(
         queryset=UnitOfMeasure.objects.filter(is_hidden=False),
         view_name='unit-of-measure-detail')
-
+    unit_of_measure_details = UnitOfMeasureSerializer(read_only=True, source='unit_of_measure')
     class Meta:
         model = Product
         fields = ['url', 'id', 'product_name', 'product_description', 'product_category',
                   'available_product_quantity', 'total_quantity_purchased', 'unit_of_measure',
-                  'created_on', 'updated_on', 'is_hidden', 'check_for_duplicates']
+                  'created_on', 'updated_on', 'is_hidden', 'check_for_duplicates', 'unit_of_measure_details']
 
     # Check if the product_category is among the options available
     def validate_product_category(self, value):
