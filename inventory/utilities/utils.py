@@ -10,9 +10,7 @@ from inventory.models import DeliveryOrder, ReturnIncomingProduct
 
 def generate_delivery_order_unique_id(source_location):
     # Query to get the maximum unique_order_id based on the numeric part
-    max_unique_order_id = DeliveryOrder.objects.annotate(
-        numeric_id=Cast(Substr('order_unique_id', 9, 4), output_field=models.IntegerField())
-    ).aggregate(max_id=Max('numeric_id'))['max_id']
+    max_unique_order_id = DeliveryOrder.objects.count()
 
     if max_unique_order_id is not None:
         max_unique_order_id += 1
