@@ -147,7 +147,7 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
         model = Product
         fields = ['url', 'id', 'product_name', 'product_description', 'product_category',
                   'available_product_quantity', 'total_quantity_purchased', 'unit_of_measure',
-                  'created_on', 'updated_on', 'is_hidden', 'check_for_duplicates', "unit_of_measure_details"]
+                  'created_on', 'updated_on', 'is_hidden', 'check_for_duplicates', 'unit_of_measure_details']
 
     # Check if the product_category is among the options available
     def validate_product_category(self, value):
