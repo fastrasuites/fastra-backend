@@ -101,7 +101,7 @@ class UnitOfMeasureSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = UnitOfMeasure
-        fields = ['url', 'unit_name', 'unit_category', 'created_on', 'is_hidden']
+        fields = ['url', 'unit_name', 'unit_symbol', 'unit_category', 'created_on', 'is_hidden']
 
 
 class CurrencySerializer(serializers.HyperlinkedModelSerializer):
@@ -109,7 +109,7 @@ class CurrencySerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Currency
-        fields = ['url', 'id', 'currency_name', 'currency_symbol', 'created_on', 'is_hidden']
+        fields = ['url', 'id', 'currency_name', 'currency_code', 'currency_symbol', 'created_on', 'is_hidden']
 
 
 class ExcelUploadSerializer(serializers.Serializer):
@@ -212,7 +212,7 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = RequestForQuotation
-        fields = ['url', 'id', 'expiry_date', 'vendor', 'vendor_category', 'purchase_request', 'currency',
+        fields = ['url', 'id', 'expiry_date', 'vendor', 'purchase_request', 'currency',
                   'status', 'rfq_total_price', 'items', 'is_hidden', 'is_expired', 'is_submitted', 'can_edit']
         read_only_fields = ['date_created', 'date_updated', 'rfq_total_price']
 

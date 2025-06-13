@@ -28,6 +28,15 @@ class LocationSerializer(serializers.HyperlinkedModelSerializer):
             'url': {'view_name': 'location-detail', 'lookup_field': 'id'}  # Ensure this matches the `lookup_field`
         }
 
+    def create(self, validated_data):
+        if MultiLocation.objects.exists():
+            multilocation = MultiLocation.objects.first()  # Adjust as needed
+            if not multilocation.is_activated and Location.objects.count() >= 3:
+                raise serializers.ValidationError("max numbers of locations reached")
+        else:
+            MultiLocation.objects.create(is_activated=False)
+        return super().create(validated_data)
+
 
 class MultiLocationSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='multi-location-detail')
@@ -35,6 +44,19 @@ class MultiLocationSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = MultiLocation
         fields = ['url', 'is_activated']
+
+    def validate(self, data):
+        # Get the current instance if updating
+        instance = getattr(self, 'instance', None)
+        is_activated = data.get('is_activated', getattr(instance, 'is_activated', None))
+
+        # You may need to adjust this depending on your model's relationship
+        locations_count = Location.objects.count()  # Or filter by tenant/org if needed
+
+        if not is_activated and locations_count > 3:
+            raise serializers.ValidationError("reduce number of locations to three before deactivating")
+
+        return data
 
 
 class StockAdjustmentItemSerializer(serializers.ModelSerializer):

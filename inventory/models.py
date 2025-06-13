@@ -230,14 +230,13 @@ class Location(models.Model):
 
     @classmethod
     def get_active_locations(cls):
-        return cls.objects.all().exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
+        return cls.objects.exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
 
     # def save(self, *args, **kwargs):
-    #     self.id = f"{self.location_code}{self.id_number:05d}"
-    #     if (MultiLocation.objects.filter(is_activated=False).first()
-    #             and Location.objects.filter(is_hidden=False).count() >= 3):
-    #         raise Exception("Maximum number of locations reached")
-    #     super().save(*args, **kwargs)
+    #    self.id = f"{self.location_code}{self.id_number:05d}"
+    #    if not MultiLocation.objects.filter(is_activated=True).exists() and Location.objects.filter(is_hidden=False).count() >= 3:
+    #        raise Exception("Maximum number of locations reached")
+    #    super().save(*args, **kwargs)
 
     def save(self, *args, **kwargs):
         # Ensure the location code and location name are unique
@@ -257,7 +256,7 @@ class Location(models.Model):
         # Generate the id based on location_code and id_number
         self.id = f"{self.location_code}{self.id_number:05d}"
         # Check the maximum number of locations if MultiLocation is not activated
-        if not MultiLocation.objects.first().is_activated and Location.objects.filter(is_hidden=False).count() >= 3:
+        if not MultiLocation.objects.filter(is_activated=True).exists() and Location.objects.filter(is_hidden=False).count() >= 3:
             raise Exception("Maximum number of locations reached")
         super().save(*args, **kwargs)
 
@@ -280,16 +279,31 @@ class MultiLocation(models.Model):
 
     def save(self, *args, **kwargs):
         self.clean()
+        # Prevent deactivation if more than 3 locations exist
+        if self.pk:  # Only on update
+            old = MultiLocation.objects.get(pk=self.pk)
+            if old.is_activated and not self.is_activated:
+                if Location.objects.filter(is_hidden=False).count() > 3:
+                    raise ValidationError("Reduce number of locations to three before deactivating MultiLocation.")
         return super(MultiLocation, self).save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        # Prevent deletion
-        raise ValidationError("This instance cannot be deleted")
+        # Confirm deletion with the user
+        print("Are you sure you want to delete MultiLocation instance?")
+        input_value = input("Type 'yes' to confirm deletion: ")
+        if input_value.lower() == 'yes':
+            return super(MultiLocation, self).delete(*args, **kwargs)
+        else:
+            print("Deletion cancelled.")
 
 
 @receiver(pre_delete, sender=MultiLocation)
 def prevent_deletion(sender, instance, **kwargs):
-    raise ValidationError("This instance cannot be deleted")
+    print("Are you sure you want to delete MultiLocation instance?")
+    input_value = input("Type 'yes' to confirm deletion: ")
+    if input_value.lower() != 'yes':
+        print("Deletion cancelled.")
+        raise ValidationError("Deletion cancelled by user.")
 
 
 @receiver(pre_save, sender=MultiLocation)
