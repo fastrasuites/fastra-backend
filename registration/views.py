@@ -6,6 +6,7 @@ from rest_framework import viewsets, generics
 from rest_framework import status
 from django.utils.text import slugify
 from django.contrib.auth import login, authenticate, get_user_model
+from django.core.management import call_command
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
 from .models import Tenant, Domain
@@ -42,6 +43,7 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
 
         try:
             tenant, otp = serializer.save()
+            call_command('create-default-config-schema', tenant.schema_name)
 
             api_base_domain = settings.API_BASE_DOMAIN
             sanitized_name = slugify(tenant.schema_name, allow_unicode=True)
