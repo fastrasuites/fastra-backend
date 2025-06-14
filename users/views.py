@@ -8,11 +8,13 @@ from rest_framework.views import APIView
 from django.contrib.auth.models import Group, Permission, User
 
 from .models import TenantUser
-from .serializers import UserSerializer, TenantUserSerializer, GroupSerializer, PermissionSerializer, \
+from .serializers import ChangePasswordSerializer, NewTenantUserSerializer, UserSerializer, TenantUserSerializer, GroupSerializer, PermissionSerializer, \
     GroupPermissionSerializer, PasswordChangeSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.sites.shortcuts import get_current_site
-from .utils import Util
+from .utils import Util, generate_random_password
+from django_tenants.utils import schema_context
+from django.db import transaction
 
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
@@ -235,3 +237,114 @@ class PasswordChangeView(APIView):
             user.save()
             return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+# START TO CREATE AN ACCOUNT THAT BELONGS TO A PARTICULAR TENANT
+class NewTenantUserViewSet(SearchDeleteViewSet):
+    queryset = TenantUser.objects.all()
+    serializer_class = NewTenantUserSerializer
+    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    search_fields = ['user__username', 'user__email']
+
+    def get_user_email(self, tenant_user):
+        if hasattr(tenant_user, 'user') and hasattr(tenant_user.user, 'email'):
+            return tenant_user.user.email
+        elif 'email' in self.request.data:
+            return self.request.data['email']
+        else:
+            raise ValueError("No email address available for verification")
+
+    def send_verification_email(self, tenant_user):
+        try:
+            email = self.get_user_email(tenant_user)
+        except ValueError as e:
+            print(f"Error: {str(e)}")
+            return
+
+        token = RefreshToken.for_user(tenant_user)
+        token['email'] = email
+
+        current_site = get_current_site(self.request).domain
+        verification_url = f'https://{current_site}/email-verify?token={str(token.access_token)}'
+
+        email_body = f'Hi {tenant_user.user.username},\n\nUse the link below to verify your email:\n{verification_url}'
+        email_data = {
+            'email_body': email_body,
+            'to_email': email,
+            'email_subject': 'Verify Your Email'
+        }
+        Util.send_email(email_data)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        tenant_schema_name = request.auth["schema_name"]
+        serializer.validated_data["tenant_schema_name"] = tenant_schema_name
+        tenant_user = self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.validated_data)
+        return Response({
+            'detail': 'Tenant user created successfully. If an email was provided, a verification link has been sent.',
+            'user': serializer.data
+        }, status=status.HTTP_201_CREATED, headers=headers)
+
+
+    def reset_password(self, request, pk=None):
+        try:
+            email = request.data.get("email", None)
+            user = None
+            with schema_context('public'):
+                user = User.objects.get(email=email)
+
+            tenant_user = TenantUser.objects.get(user_id=user.id)
+            new_password = generate_random_password()
+            user.set_password(new_password) #The reason we have this is to has the password and then save into the db where commit=False for now
+            tenant_user.password = user.password         
+            tenant_user.temp_password = new_password
+
+            with transaction.atomic():
+                tenant_user.save()
+                with schema_context('public'):
+                    user.save()
+
+            return Response({'detail': f'Password reset successfully. New Password is {new_password}'}, status=status.HTTP_200_OK)
+        except Exception as ex:
+            return Response({"detail": str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class NewTenantPasswordViewSet(SearchDeleteViewSet):
+    serializer_class = ChangePasswordSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    search_fields = ['user__username', 'user__email']
+
+    def get_object(self):
+        return TenantUser.objects.get(user=self.request.user)
+    
+    def change_password(self, request, *args, **kwargs):
+        serializer = ChangePasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            result = serializer.change_password(serializer.validated_data)
+            return Response(result, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)        
+
+
+class NewTenantProfileViewSet(SearchDeleteViewSet):
+    queryset = TenantUser.objects.all()
+    serializer_class = NewTenantUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
+
+    def update_user_information(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(data=request.data, partial=True)
+        # Validate incoming data
+        serializer.is_valid(raise_exception=True)
+        serializer.update_user_information(instance, serializer.validated_data)
+        
+        refreshed_serializer = self.get_serializer(instance)
+        return Response(refreshed_serializer.data, status=status.HTTP_200_OK)
+
+
+# END TO CREATE AN ACCOUNT THAT BELONGS TO A PARTICULAR TENANT

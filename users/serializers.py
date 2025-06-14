@@ -1,3 +1,4 @@
+import uuid
 from rest_framework import serializers
 from django.contrib.auth.models import User, Group, Permission
 import re
@@ -8,7 +9,10 @@ from django.contrib.auth.password_validation import validate_password
 from core.errors.exceptions import TenantNotFoundException
 from registration.models import Tenant
 from users.models import TenantUser
+from django.db import transaction
 
+from users.utils import generate_random_password
+from django_tenants.utils import schema_context
 
 # from accounting.models import TenantUser
 
@@ -219,3 +223,166 @@ class PasswordChangeSerializer(serializers.Serializer):
         instance.set_password(validated_data['new_password'])
         instance.save()
         return instance
+    
+
+
+# START THE VIEWS FOR THE NEW TENANT USER ACCOUNT
+class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
+    id = serializers.IntegerField(read_only=True) 
+    user = serializers.SerializerMethodField()
+    groups = serializers.ListField(required=False, write_only=True)
+    name = serializers.CharField(write_only=True)
+    email = serializers.EmailField(write_only=True)
+    temp_password = serializers.CharField(read_only=True)
+    class Meta:
+        model = TenantUser
+        fields = ['id', 'user', 'name', 'email', 'role', 'phone_number', 'language', 'timezone',
+                  'in_app_notifications', 'email_notifications', 'groups', 'temp_password', 'date_created']
+
+    def get_user(self, obj):
+        try:
+            user = None
+            with schema_context('public'):
+                user = User.objects.get(id=obj.user_id)
+                return {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name
+                }
+        except User.DoesNotExist:
+            return None
+
+    def validate_groups(self, value):
+        # we are automatically converting each item to uppercase
+        return [item.upper() for item in value]    
+    
+    def validate_email(self, value):
+        with schema_context('public'):
+            if User.objects.filter(email=value).exists():
+                raise serializers.ValidationError("This email already exists")
+        return value
+    
+    @transaction.atomic
+    def create(self, validated_data):
+        tenant_schema_name = validated_data.pop('tenant_schema_name')
+        tenant = Tenant.objects.get(schema_name=tenant_schema_name)
+        if not tenant:
+            raise TenantNotFoundException()
+        
+        password = generate_random_password()
+        name_list = validated_data["name"].strip().split(' ')
+        first_name = validated_data["name"]
+        last_name = None
+        if len(name_list) > 1:
+            first_name = name_list[0]
+            last_name = name_list[1]
+
+        new_user = None
+        username = f"{first_name[:4]}_{uuid.uuid4().hex[:8]}"
+
+        with schema_context('public'):
+            new_user = User.objects.create(email=validated_data["email"], password=password, username=username,
+                                           first_name=first_name, last_name=last_name)
+            new_user.set_password(password)
+            new_user.save()
+
+        validated_data["temp_password"] = password
+        validated_data["password"] = new_user.password
+        
+        groups = validated_data.pop('groups', [])
+        validated_data.pop('name')
+        validated_data.pop('email')
+        
+        tenant_user = TenantUser.objects.create(user_id=new_user.id, tenant=tenant, **validated_data)
+        with schema_context('public'):
+            group_objs = [Group.objects.get(name=group_name) for group_name in groups if Group.objects.filter(name=group_name).exists()]
+            new_user.groups.add(*group_objs)
+        return tenant_user
+
+    @transaction.atomic
+    def update_user_information(self, instance, validated_data):
+        user = None
+        tenant_user = instance
+
+        with schema_context('public'):
+            if not User.objects.filter(id=instance.user_id).exists():
+                raise serializers.ValidationError({"detail": "User does not exists"})
+            user = User.objects.get(id=instance.user_id)
+
+        if validated_data.get("name", None) is not None:
+            name_list = validated_data["name"].strip().split(' ')
+            first_name = validated_data["name"]
+            last_name = None
+            if len(name_list) > 1:
+                first_name = name_list[0]
+                last_name = name_list[1]
+            user.first_name = first_name
+            user.last_name = last_name
+
+        if validated_data.get("email", None) is not None:
+            user.email = validated_data.get("email")
+
+        if validated_data.get("role", None) is not None:
+            tenant_user.role = validated_data["role"]
+
+        if validated_data.get("phone_number", None) is not None:
+            tenant_user.phone_number = validated_data["phone_number"]
+
+        if validated_data.get("in_app_notifications", None) is not None:
+            tenant_user.in_app_notifications = validated_data["in_app_notifications"]
+        
+        if validated_data.get("email_notifications", None) is not None:
+            tenant_user.email_notifications = validated_data["email_notifications"]
+        
+        if validated_data.get("groups", None) is not None:
+            groups = validated_data.pop("groups")
+            with schema_context('public'):
+                group_objs = [Group.objects.get(name=group_name) for group_name in groups if Group.objects.filter(name=group_name).exists()]
+                user.groups.set(group_objs)
+        
+        tenant_user.save()
+        with schema_context('public'):
+            user.save()
+
+        return tenant_user
+
+class ChangePasswordSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField(write_only=True, required=True)
+    old_password = serializers.CharField(write_only=True, required=True)
+    new_password = serializers.CharField(write_only=True, required=True)
+    confirm_password = serializers.CharField(write_only=True, required=True)
+
+    def validate(self, data):
+        if not TenantUser.objects.filter(user_id=data["user_id"]).exists():
+            raise serializers.ValidationError({"detail": "This user does not exists"})
+        tenant_user = TenantUser.objects.get(user_id=data["user_id"])
+        if tenant_user.temp_password != data["old_password"]:
+            raise serializers.ValidationError({"detail": "Incorrect Old Password !!!"})
+        
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError({"detail": "Passwords do not match."})              
+        return data
+    
+    
+    def change_password(self, validated_data):
+        try:
+            user = None
+            with schema_context('public'):
+                user = User.objects.get(id=validated_data["user_id"])
+            tenant_user = TenantUser.objects.get(user_id=validated_data["user_id"])
+
+            user.set_password(validated_data["new_password"])
+            tenant_user.password = user.password
+            tenant_user.temp_password = None
+
+            with transaction.atomic():
+                tenant_user.save()
+                with schema_context('public'):
+                    user.save()
+            return {"detail": "Password changed successfully"}
+    
+        except Exception as e:
+            raise serializers.ValidationError(f"Failed to change password: {str(e)}")
+    # END THE VIEWS FOR THE NEW TENANT USER ACCOUNT

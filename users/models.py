@@ -36,6 +36,9 @@ class TenantUser(models.Model):
     email_notifications = models.BooleanField(default=False)
     is_hidden = models.BooleanField(default=False)
     password = models.CharField(max_length=128, blank=True, null=True)
+    temp_password = models.CharField(max_length=128, blank=True, null=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True, blank=True, null=True)
 
     def set_tenant_password(self, raw_password):
         self.password = make_password(raw_password)
