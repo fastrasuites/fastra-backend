@@ -57,7 +57,7 @@ class CompanyProfile(models.Model):
     time_zone = models.CharField(max_length=50, choices=TIMEZONE_CHOICES, default='UTC', null=False)
 
 
-class OTP(models.Model):
+"""class OTP(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     code = models.CharField(max_length=4)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -73,3 +73,4 @@ class OTP(models.Model):
 
     def is_valid(self):
         return timezone.now() <= self.expires_at and not self.is_used
+        """

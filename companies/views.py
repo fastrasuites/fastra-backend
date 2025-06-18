@@ -5,7 +5,8 @@ from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render, redirect
 from django.urls import reverse
-from django.core.mail import send_mail
+#from django.core.mail import send_mail
+from registration.utils import Util
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth import login as auth_login
@@ -31,7 +32,8 @@ from registration.utils import check_otp_time_expired, compare_password, set_ten
 from registration.models import Tenant, Domain
 from users.models import TenantUser
 
-from .models import CompanyProfile, OTP
+from .models import CompanyProfile
+from registration.models import OTP
 from .serializers import TenantSerializer, VerifyEmailSerializer, RequestForgottenPasswordSerializer, \
     ForgottenPasswordSerializer, CompanyProfileSerializer, ResendVerificationEmailSerializer
 from .utils import Util
@@ -74,6 +76,14 @@ class VerifyEmail(generics.GenericAPIView):
                 tenant.is_verified = True
                 tenant.otp_verified_at = timezone.now()
                 tenant.save()
+                with schema_context("public"):
+                    user = tenant.created_by
+                    print("Created by user:", user)
+
+                    if user:
+                        if user.is_superuser and user.is_staff:
+                            user.profile.is_verified = True
+                            user.profile.save()
                 return Response({'status': 'verified', 'message': 'Email successfully verified.'},
                                 status=status.HTTP_200_OK)
 
@@ -275,19 +285,47 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
         if serializer.is_valid():
             email = serializer.validated_data['email']
             try:
-                user = User.objects.get(email=email)
+                #user = User.objects.get(email=email)
+                user = User.objects.get(email=email, is_superuser=True, is_staff=True)
                 if not user.profile.is_verified:
                     return Response({'error': 'Email is not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+                
+                #otp = OTP.objects.create(user=user)
 
-                otp = OTP.objects.create(user=user)
+                try:
+                    otp = OTP.objects.create(user=user)
+                    print(f"OTP created: {otp.code}")  # Confirm the object and code
+                except Exception as e:
+                    import traceback
+                    print("Failed to create OTP")
+                    print(traceback.format_exc())  # Full error stack trace
+                    return Response({'error': 'Internal error creating OTP'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                send_mail(
+                email_body = (
+                    f"Hi {user.username},\n\n"
+                    f"We received a request to reset your password. Use the OTP (One-Time Password) below to proceed:\n\n"
+                    f"OTP: {otp.code}\n\n"
+                    f"This OTP is valid for the next 10 minutes.\n\n"
+                    f"If you did not request a password reset, please ignore this email or contact support.\n\n"
+                    f"Thanks,\n"
+                    f"The fastrasuite Team"
+                )
+
+                email_data = {
+                    'email_body': email_body,
+                    'to_email': user.email,
+                    'email_subject': 'Your Password Reset OTP'
+                }
+
+                """Util.send_email(
                     'Forgotten Password OTP',
                     f'Your OTP for forgotten password is: {otp.code}',
                     settings.DEFAULT_FROM_EMAIL,
                     [email],
                     fail_silently=False,
-                )
+                )"""
+
+                Util.send_email(email_data)
                 request.session['forgotten_password_email'] = email  # Store email in session
                 return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
             except User.DoesNotExist:
@@ -318,6 +356,23 @@ class ForgottenPasswordView(generics.GenericAPIView):
                 if otp and otp.is_valid():
                     user.set_password(new_password)
                     user.save()
+                    tenant = user.tenants.first()
+                    if tenant:
+                        print(tenant)
+                        print(user)
+                        with tenant_context(tenant):
+                            try:
+                                tenant_user = TenantUser.objects.get(user_id=user.id, tenant=tenant)
+                                print(tenant_user)
+                                tenant_user.set_tenant_password(new_password)
+                                tenant_user.save()
+                            except TenantUser.DoesNotExist:
+                                return Response({'error': 'Tenant user not found.'}, status=status.HTTP_404_NOT_FOUND)
+                            except Exception as e:
+                                import traceback
+                                print("Unexpected error in tenant_context block:")
+                                print(traceback.format_exc())
+                                return Response({'error': 'Unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                     otp.delete()  # Delete the OTP after successful use
                     del request.session['forgotten_password_email']  # Clear the email from session
                     return Response({'detail': 'Password has been updated successfully.'}, status=status.HTTP_200_OK)
@@ -344,16 +399,43 @@ class ResendOTPView(generics.GenericAPIView):
             OTP.objects.filter(user=user, is_used=False).update(is_used=True)
 
             # Create new OTP
-            otp = OTP.objects.create(user=user)
+            #otp = OTP.objects.create(user=user)
+            try:
+                otp = OTP.objects.create(user=user)
+                print(f"OTP created: {otp.code}")
+            except Exception as e:
+                import traceback
+                print("Failed to create OTP")
+                print(traceback.format_exc())
+                return Response({'error': 'Internal error creating OTP'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            email_body = (
+                f"Hi {user.username},\n\n"
+                f"You recently requested to reset your password.\n\n"
+                f"Your One-Time Password (OTP) is: {otp.code}\n\n"
+                f"This code will expire in 10 minutes. Please do not share this code with anyone.\n\n"
+                f"If you did not initiate this request, please ignore this message or contact Fastra support immediately.\n\n"
+                f"Best regards,\n"
+                f"The FastraSuite Team"
+            )
+
+            email_data = {
+                'email_body': email_body,
+                'to_email': user.email,
+                'email_subject': 'Password Reset OTP'
+            }
+
 
             # Send email with new OTP
-            send_mail(
+            """send_mail(
                 'New Forgotten Password OTP',
                 f'Your new OTP for forgotten password is: {otp.code}',
                 settings.DEFAULT_FROM_EMAIL,
                 [email],
                 fail_silently=False,
             )
+            """
+            Util.send_email(email_data)
             return Response({'message': 'New OTP sent successfully'}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({'error': 'No user found with this email address'}, status=status.HTTP_404_NOT_FOUND)
@@ -370,7 +452,13 @@ class UpdateCompanyProfileView(generics.UpdateAPIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def get_object(self):
-        tenant = self.request.user.tenant
+        tenant_id = self.request.user.id
+
+        tenant_user = TenantUser.objects.filter(user_id=tenant_id).first()
+        if not tenant_user:
+            return Response({'error': 'Tenant user not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        tenant = tenant_user.tenant
         company_profile, created = CompanyProfile.objects.get_or_create(tenant=tenant)
         return company_profile
 
