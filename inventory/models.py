@@ -915,7 +915,7 @@ class DeliveryOrderReturn(models.Model):
     source_document = models.OneToOneField(DeliveryOrder, on_delete=models.CASCADE, related_name='source_document') #This is referencing the delivery order
     unique_record_id = models.CharField(max_length=50, unique=True, editable=False, null=False, blank=False)
     date_of_return = models.DateField(default=timezone.now)
-    source_location = models.ForeignKey(Location, related_name='source_delivery_location', on_delete=models.PROTECT) # In this case, this is the location of the Customer
+    source_location = models.CharField(max_length=255, default=None, null=True) # In this case, this is the location of the Customer
     return_warehouse_location = models.ForeignKey('Location', related_name='return_warehouse', on_delete=models.PROTECT)
     reason_for_return = models.TextField()
     status = models.CharField(max_length=10, default='waiting')
