@@ -10,7 +10,7 @@ from django.core.management import call_command
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
 from .models import Tenant, Domain
-from .serializers import TenantRegistrationSerializer, LoginSerializer
+from .serializers import NewGroupSerializer, TenantRegistrationSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .utils import Util, set_tenant_schema
 from django.contrib.sites.shortcuts import get_current_site
@@ -19,6 +19,9 @@ from django.conf import settings
 from django.db import transaction
 from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
+from rest_framework import permissions
+from django.contrib.auth.models import Group
+
 
 @extend_schema_view(
     create=extend_schema(
@@ -153,3 +156,16 @@ class LoginView(APIView):
             "tenant_schema_name": tenant_schema_name,
             "tenant_company_name": tenant_company_name
         }, status=status.HTTP_200_OK)
+
+
+
+# START THE NEW GROUP VIEWSET
+class NewGroupViewSet(viewsets.ModelViewSet):
+    queryset = Group.objects.all()
+    serializer_class = NewGroupSerializer
+    permission_classes = [AllowAny]
+    search_fields = ['name']
+
+    def perform_create(self, serializer):
+        serializer.save()
+# END THE NEW GROUP VIEWSET
