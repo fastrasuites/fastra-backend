@@ -22,12 +22,16 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f'The schema name "{schema_name}" does not exist.'))
             return
         self.stdout.write(self.style.NOTICE(f'Processing schema: {schema_name}'))
-        with schema_context(schema_name):
-            multilocation = MultiLocation.objects.all().exists()
-            deleted_location_count, _ = Location.objects.all().delete()
-            if multilocation and deleted_location_count > 0:
-                self.stdout.write(self.style.SUCCESS(
-                    f'Deleted {deleted_location_count} Location records in schema {schema_name}'))
-            else:
-                self.stdout.write(self.style.NOTICE(
-                    f'No Location records found in schema {schema_name}'))
+        try:
+            with schema_context(schema_name):
+                multilocation = MultiLocation.objects.all().exists()
+                deleted_location_count, _ = Location.objects.all().delete()
+                if multilocation and deleted_location_count > 0:
+                    self.stdout.write(self.style.SUCCESS(
+                        f'Deleted {deleted_location_count} Location records in schema {schema_name}'))
+                else:
+                    self.stdout.write(self.style.NOTICE(
+                        f'No Location records found in schema {schema_name}'))
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(
+                f'Error processing schema {schema_name}: {e}'))

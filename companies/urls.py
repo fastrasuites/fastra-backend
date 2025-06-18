@@ -18,8 +18,8 @@ urlpatterns = [
     path('resend-verification-email/', ResendVerificationEmail.as_view(), name='resend-verification-email'),
 
     path('request-forgotten-password/', RequestForgottenPasswordView.as_view(), name='request-password-reset'),
-    path('reset-password/', ForgottenPasswordView.as_view(), name='reset-password'),
-    path('resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
+    #path('reset-password/', ForgottenPasswordView.as_view(), name='reset-password'),
+    #path('resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
 
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
