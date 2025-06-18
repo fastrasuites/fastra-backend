@@ -15,6 +15,7 @@ from django.contrib.sites.shortcuts import get_current_site
 from .utils import Util, generate_random_password
 from django_tenants.utils import schema_context
 from django.db import transaction
+from .utils import convert_to_base64
 
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
@@ -282,6 +283,8 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
 
         tenant_schema_name = request.auth["schema_name"]
         serializer.validated_data["tenant_schema_name"] = tenant_schema_name
+        if 'signature_image' in serializer.validated_data:
+            serializer.validated_data["signature"] = convert_to_base64(serializer.validated_data["signature_image"])
         tenant_user = self.perform_create(serializer)
         headers = self.get_success_headers(serializer.validated_data)
         return Response({
