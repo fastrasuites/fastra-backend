@@ -11,7 +11,7 @@ from registration.models import Tenant
 from users.models import TenantUser
 from django.db import transaction
 
-from users.utils import generate_random_password
+from users.utils import convert_to_base64, generate_random_password
 from django_tenants.utils import schema_context
 
 # from accounting.models import TenantUser
@@ -234,10 +234,15 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
     name = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
     temp_password = serializers.CharField(read_only=True)
+    signature_image = serializers.ImageField(write_only=True, required=False)
+
     class Meta:
         model = TenantUser
         fields = ['id', 'user', 'name', 'email', 'role', 'phone_number', 'language', 'timezone',
-                  'in_app_notifications', 'email_notifications', 'groups', 'temp_password', 'date_created']
+                  'in_app_notifications', 'email_notifications', 'groups', 'temp_password', 'date_created',
+                  'signature', 'signature_image']
+        extra_kwargs = {'signature': {'read_only': True}}
+
 
     def get_user(self, obj):
         try:
@@ -294,6 +299,7 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         groups = validated_data.pop('groups', [])
         validated_data.pop('name')
         validated_data.pop('email')
+        validated_data.pop('signature_image')
         
         tenant_user = TenantUser.objects.create(user_id=new_user.id, tenant=tenant, **validated_data)
         with schema_context('public'):
@@ -335,6 +341,9 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         
         if validated_data.get("email_notifications", None) is not None:
             tenant_user.email_notifications = validated_data["email_notifications"]
+        
+        if validated_data.get("signature_image", None) is not None:
+            tenant_user.signature = convert_to_base64(validated_data["signature_image"])
         
         if validated_data.get("groups", None) is not None:
             groups = validated_data.pop("groups")
