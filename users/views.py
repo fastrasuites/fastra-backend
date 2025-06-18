@@ -283,7 +283,8 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
 
         tenant_schema_name = request.auth["schema_name"]
         serializer.validated_data["tenant_schema_name"] = tenant_schema_name
-        serializer.validated_data["signature"] = convert_to_base64(serializer.validated_data["signature_image"])
+        if 'signature_image' in serializer.validated_data:
+            serializer.validated_data["signature"] = convert_to_base64(serializer.validated_data["signature_image"])
         tenant_user = self.perform_create(serializer)
         headers = self.get_success_headers(serializer.validated_data)
         return Response({

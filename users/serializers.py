@@ -299,7 +299,7 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         groups = validated_data.pop('groups', [])
         validated_data.pop('name')
         validated_data.pop('email')
-        validated_data.pop('signature_image')
+        validated_data.pop('signature_image', None)
         
         tenant_user = TenantUser.objects.create(user_id=new_user.id, tenant=tenant, **validated_data)
         with schema_context('public'):
