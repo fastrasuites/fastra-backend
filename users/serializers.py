@@ -412,7 +412,7 @@ class AccessGroupRightSerializer(serializers.ModelSerializer):
 
     def validate_group_name(self, value):
         value = value.strip().upper()
-        if AccessGroupRight.objects.filter(group_name=value).exists():
+        if AccessGroupRight.objects.filter(group_name__iexact=value).exists():
             raise serializers.ValidationError("This group name already exists.")
         return value
 

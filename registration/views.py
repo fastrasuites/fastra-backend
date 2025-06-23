@@ -185,7 +185,7 @@ class ApplicationViewSet(SoftDeleteWithModelViewSet):
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
 
-        if Application.objects.filter(name=validated_data["name"]).exists():
+        if Application.objects.filter(name__iexact=validated_data["name"]).exists():
             return Response({"detail": "The application with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
@@ -202,7 +202,7 @@ class ApplicationModuleViewSet(SoftDeleteWithModelViewSet):
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
 
-        if ApplicationModule.objects.filter(name=validated_data["name"]).exists():
+        if ApplicationModule.objects.filter(name__iexact=validated_data["name"], application=validated_data["application"]).exists():
             return Response({"detail": "The application module with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
@@ -219,7 +219,7 @@ class AccessRightViewSet(SoftDeleteWithModelViewSet):
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
 
-        if AccessRight.objects.filter(name=validated_data["name"]).exists():
+        if AccessRight.objects.filter(name__iexact=validated_data["name"]).exists():
             return Response({"detail": "The access right with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
