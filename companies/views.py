@@ -446,7 +446,8 @@ class TenantViewSet(viewsets.ModelViewSet):
     serializer_class = TenantSerializer
 
 
-class UpdateCompanyProfileView(generics.UpdateAPIView):
+#class UpdateCompanyProfileView(generics.UpdateAPIView):
+class UpdateCompanyProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = CompanyProfileSerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
     parser_classes = (MultiPartParser, FormParser)
@@ -456,7 +457,8 @@ class UpdateCompanyProfileView(generics.UpdateAPIView):
 
         tenant_user = TenantUser.objects.filter(user_id=tenant_id).first()
         if not tenant_user:
-            return Response({'error': 'Tenant user not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise PermissionDenied(detail='Tenant user not found.')
+            #return Response({'error': 'Tenant user not found.'}, status=status.HTTP_404_NOT_FOUND)
         
         tenant = tenant_user.tenant
         company_profile, created = CompanyProfile.objects.get_or_create(tenant=tenant)
