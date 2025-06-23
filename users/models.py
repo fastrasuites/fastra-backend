@@ -3,7 +3,7 @@ from django.contrib.auth.hashers import make_password, check_password
 from django.contrib.auth.models import User, Group
 from django_tenants.utils import schema_context
 
-from registration.models import Tenant
+from registration.models import AccessRight, Application, ApplicationModule, Tenant
 import pytz
 
 LANGUAGE_CHOICES = [
@@ -41,6 +41,7 @@ class TenantUser(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True, blank=True, null=True)
     signature = models.TextField(null=True, default=None, blank=True)
+    user_image = models.TextField(null=True, default=None, blank=True)
 
     def set_tenant_password(self, raw_password):
         self.password = make_password(raw_password)
@@ -56,3 +57,38 @@ class TenantUser(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.tenant.company_name} ({self.role.name})"
+    
+
+
+#THIS IS HERE BECAUSE EACH TENANT CAN DETERMINE THEIR VARIOUS ACCESS GROUP NAMES AND IT IS DYNAMIC WITH THE COMPANY STRUCTURE
+class AccessGroupRight(models.Model):
+    access_code = models.CharField(max_length=20, null=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, null=True, related_name="application_group")
+    application_module = models.ForeignKey(ApplicationModule, on_delete=models.CASCADE, related_name="module_rights")
+    group_name = models.CharField(max_length=20, null=False)
+    access_right = models.ForeignKey(AccessRight, on_delete=models.CASCADE)
+    is_hidden =  models.BooleanField(default=False)
+    date_updated = models.DateTimeField(auto_now=True, null=True, blank=True)
+    date_created = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.group_name)
+            if isinstance(value, str):
+                setattr(self, field.group_name, value.strip().upper())
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Group Name: {self.group_name}"
+    
+
+
+class AccessGroupRightUser(models.Model):
+    access_group_right = models.ForeignKey(AccessGroupRight, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    is_hidden =  models.BooleanField(default=False)
+    date_updated = models.DateTimeField(auto_now=True, null=True, blank=True)
+    date_created = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.access_group_right.group_name} - {self.user.email}"

@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, status, generics, filters
 from rest_framework import permissions
@@ -12,11 +12,14 @@ from .serializers import ChangePasswordSerializer, NewTenantUserSerializer, User
     GroupPermissionSerializer, PasswordChangeSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.sites.shortcuts import get_current_site
-from .utils import Util, generate_random_password
+from .utils import Util, generate_access_code_for_access_group, generate_random_password
 from django_tenants.utils import schema_context
 from django.db import transaction
 from .utils import convert_to_base64
-
+from .models import AccessGroupRight
+from .serializers import AccessGroupRightSerializer
+from rest_framework.exceptions import ValidationError
+from rest_framework import serializers
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
@@ -351,3 +354,94 @@ class NewTenantProfileViewSet(SearchDeleteViewSet):
 
 
 # END TO CREATE AN ACCOUNT THAT BELONGS TO A PARTICULAR TENANT
+
+
+
+# START THE CREATION OF ACCESS GROUP
+class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
+    queryset = AccessGroupRight.objects.filter(is_hidden=False) # type: ignore
+    serializer_class = AccessGroupRightSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'access_code'
+
+    def get_object(self):
+        access_code = self.kwargs.get(self.lookup_field)
+        return get_object_or_404(AccessGroupRight, access_code=access_code)
+    
+    def retrieve(self, request, access_code=None):
+        # Use .filter() to get multiple results
+        queryset = AccessGroupRight.objects.filter(access_code=access_code)
+        if not queryset.exists():
+            return Response({"detail": "No records found for this access code."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Use a serializer that returns many=True
+        serializer = AccessGroupRightSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def create(self, request, *args, **kwargs):
+        serializer = AccessGroupRightSerializer(data=request.data)
+        if serializer.is_valid():
+            result = serializer.save()
+            return Response(result, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+  
+    
+    def partial_update(self, request, access_code=None):
+        data = request.data
+
+        group_name = data.get("group_name", None)
+        application_id = data.get("application_id", None)
+        application_name = data.get("application_name", "")
+
+        access_rights = data.get("access_rights", None)
+
+        if not AccessGroupRight.objects.filter(access_code=access_code).exists():
+            return Response({"detail": "Access group does not exist for the specified application"}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            if access_rights is not None:
+                # Delete old rights
+                AccessGroupRight.objects.filter(access_code=access_code).delete()
+
+                access_code = access_code
+                access_groups = []
+
+                for action in access_rights:
+                    if action.get("module", None) is None and action.get("rights", None) is None:
+                        return Response({"detail": "Both module and rights key must be provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+                    module_id = action["module"]
+                    rights = action["rights"]
+
+                    for right_id in rights:
+                        access_group = AccessGroupRight(
+                            group_name=group_name,
+                            application_id=application_id,
+                            access_code=access_code,
+                            application_module_id=module_id,
+                            access_right_id=right_id
+                        )
+                        try:
+                            access_group.full_clean(exclude=["date_created", "date_updated"])
+                            access_groups.append(access_group)
+
+                        except ValidationError as ve:
+                            raise serializers.ValidationError(f"Validation failed for access group: {ve}")
+
+                
+                AccessGroupRight.objects.bulk_create(access_groups)
+
+        return Response({"detail": "Access Group Updated Successfully"}, status=status.HTTP_200_OK)
+
+
+    def destroy(self, request, *args, **kwargs):
+        access_code = kwargs.get(self.lookup_field)
+
+        # Example: Delete all rows with the same access_code
+        queryset = self.queryset.filter(access_code=access_code)
+        if not queryset.exists():
+            raise Response({"detail": "No access group found with this access code."})
+        queryset.delete()
+        return Response(
+            {"detail": f"Access group deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+# END THE CREATION OF ACCESS GROUP

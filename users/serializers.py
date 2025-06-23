@@ -7,11 +7,11 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.contrib.auth.password_validation import validate_password
 
 from core.errors.exceptions import TenantNotFoundException
-from registration.models import Tenant
-from users.models import TenantUser
+from registration.models import AccessRight, ApplicationModule, Tenant
+from users.models import AccessGroupRight, TenantUser
 from django.db import transaction
 
-from users.utils import convert_to_base64, generate_random_password
+from users.utils import convert_to_base64, generate_access_code_for_access_group, generate_random_password
 from django_tenants.utils import schema_context
 
 # from accounting.models import TenantUser
@@ -395,3 +395,81 @@ class ChangePasswordSerializer(serializers.Serializer):
         except Exception as e:
             raise serializers.ValidationError(f"Failed to change password: {str(e)}")
     # END THE VIEWS FOR THE NEW TENANT USER ACCOUNT
+
+
+# START THE ACCESSGROUP RIGHT SERIALIZER
+class AccessGroupRightSerializer(serializers.ModelSerializer):
+    group_name = serializers.CharField(max_length=20, required=True)
+    application_name = serializers.CharField(required=True, write_only=True)
+    application_id = serializers.IntegerField(required=True)
+    access_rights = serializers.ListField(child=serializers.DictField(), required=True, write_only=True)
+
+    class Meta:
+        model = AccessGroupRight
+        fields = ["access_code", "group_name", "application_id", "application_name", 
+                  "application_module", "access_rights", "access_right", "date_updated", "date_created"]
+        read_only_fields = ["access_right", "application_module", "access_code"]
+
+    def validate_group_name(self, value):
+        value = value.strip().upper()
+        if AccessGroupRight.objects.filter(group_name=value).exists():
+            raise serializers.ValidationError("This group name already exists.")
+        return value
+
+    def validate_access_rights(self, value):
+        for item in value:
+            module_id = item.get("module")
+            rights = item.get("rights")
+
+            if not isinstance(module_id, int):
+                raise serializers.ValidationError(f"Invalid module ID: {module_id}")
+
+            if not isinstance(rights, list) or not all(isinstance(r, int) for r in rights):
+                raise serializers.ValidationError(f"Rights must be a list of integers: {rights}")
+
+            # Optional: Validate module/right existence
+            if not ApplicationModule.objects.filter(id=module_id).exists():
+                raise serializers.ValidationError(f"Module with ID {module_id} does not exist.")
+
+            for right_id in rights:
+                if not AccessRight.objects.filter(id=right_id).exists():
+                    raise serializers.ValidationError(f"AccessRight with ID {right_id} does not exist.")
+
+        return value
+
+    def create(self, validated_data):
+        group_name = validated_data["group_name"].strip().upper()
+        application_name = validated_data["application_name"]
+        application_id = validated_data["application_id"]
+        access_rights = validated_data["access_rights"]
+
+        access_code = generate_access_code_for_access_group(application_name, group_name)
+        access_groups = []
+        for action in access_rights:
+            module_id = action["module"]
+            rights = action["rights"]
+
+            for right_id in rights:
+                access_group = AccessGroupRight(
+                    group_name=group_name,
+                    application_id=application_id,
+                    access_code=access_code,
+                    application_module_id=module_id,
+                    access_right_id=right_id
+                )
+                try:
+                    access_group.full_clean(exclude=["date_created", "date_updated"])
+                    access_groups.append(access_group)
+                    from django.core.exceptions import ValidationError
+
+                except ValidationError as ve:
+                    raise serializers.ValidationError(f"Validation failed for access group: {ve}")
+
+        with transaction.atomic():
+            AccessGroupRight.objects.bulk_create(access_groups)
+
+        return {
+            "detail": "Access Group Created Successfully",
+            "group_name": group_name
+        }
+# END THE ACCESSGROUP RIGHT SERIALIZER

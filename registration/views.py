@@ -9,8 +9,8 @@ from django.contrib.auth import login, authenticate, get_user_model
 from django.core.management import call_command
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
-from .models import Tenant, Domain
-from .serializers import NewGroupSerializer, TenantRegistrationSerializer, LoginSerializer
+from .models import Application, Tenant, Domain
+from .serializers import AccessRightSerializer, ApplicationModuleSerializer, ApplicationSerializer, TenantRegistrationSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .utils import Util, set_tenant_schema
 from django.contrib.sites.shortcuts import get_current_site
@@ -21,6 +21,8 @@ from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
 from rest_framework import permissions
 from django.contrib.auth.models import Group
+from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
+from .models import ApplicationModule, AccessRight
 
 
 @extend_schema_view(
@@ -159,13 +161,68 @@ class LoginView(APIView):
 
 
 
-# START THE NEW GROUP VIEWSET
-class NewGroupViewSet(viewsets.ModelViewSet):
-    queryset = Group.objects.all()
-    serializer_class = NewGroupSerializer
-    permission_classes = [AllowAny]
-    search_fields = ['name']
+# START THE APPLICATION, APPLICATION MODULE AND ACCESS RIGHTS VIEWSETS 
+class ApplicationViewSet(SoftDeleteWithModelViewSet):
+    queryset = Application.objects.filter(is_hidden=False)
+    permission_classes = []
+    serializer_class = ApplicationSerializer
 
-    def perform_create(self, serializer):
-        serializer.save()
-# END THE NEW GROUP VIEWSET
+    def list(self, request):
+        applications = Application.objects.filter(is_hidden=False)
+        access_rights = AccessRight.objects.filter(is_hidden=False)
+
+        applications_data = self.serializer_class(applications, many=True).data
+        access_rights_data = AccessRightSerializer(access_rights, many=True).data
+
+        return Response({
+            "applications": applications_data,
+            "access_rights": access_rights_data
+        }, status=status.HTTP_200_OK)
+    
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        if Application.objects.filter(name=validated_data["name"]).exists():
+            return Response({"detail": "The application with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class ApplicationModuleViewSet(SoftDeleteWithModelViewSet):
+    queryset = ApplicationModule.objects.filter(is_hidden=False)
+    permission_classes = []
+    serializer_class = ApplicationModuleSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        if ApplicationModule.objects.filter(name=validated_data["name"]).exists():
+            return Response({"detail": "The application module with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class AccessRightViewSet(SoftDeleteWithModelViewSet):
+    queryset = AccessRight.objects.filter(is_hidden=False)
+    permission_classes = []
+    serializer_class = AccessRightSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        if AccessRight.objects.filter(name=validated_data["name"]).exists():
+            return Response({"detail": "The access right with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+

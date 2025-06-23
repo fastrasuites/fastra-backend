@@ -6,7 +6,7 @@ from rest_framework import serializers
 from users.models import TenantUser
 from users.serializers import TenantUserSerializer
 # from accounting.models import TenantUser
-from .models import Tenant, UserProfile
+from .models import AccessRight, Application, ApplicationModule, Tenant, UserProfile
 from django.contrib.auth.models import User, Group
 from django.contrib.auth.password_validation import validate_password
 from django.utils.text import slugify
@@ -144,17 +144,20 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, required=True)
 
 
-class NewGroupSerializer(serializers.ModelSerializer):
+class ApplicationModuleSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Group
-        fields = ['id', 'name']
+        model = ApplicationModule
+        fields = ["id", "name", "application", "date_created", "date_updated"]
+     
+     
+class ApplicationSerializer(serializers.ModelSerializer):
+    modules = ApplicationModuleSerializer(source='application_modules', many=True, read_only=True)
+    class Meta:
+        model = Application
+        fields = ["id", "name", "modules"]
 
-    def validate(self, value):
-        # we are automatically converting it to uppercase
-        value["name"] = value["name"].upper()
-        if Group.objects.filter(name=value["name"]).exists():
-            raise serializers.ValidationError({"name": "This name already exists."})
-        return value
-    
-    def create(self, validated_data):
-        return Group.objects.create(**validated_data)
+
+class AccessRightSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AccessRight
+        fields = ["id", "name"]

@@ -5,6 +5,8 @@ from django.core.mail import EmailMessage
 import mimetypes
 from rest_framework.exceptions import APIException
 
+from users.models import AccessGroupRight
+
 class Util:
     @staticmethod
     def send_email(data):
@@ -32,6 +34,21 @@ def convert_to_base64(signature_file, max_size=5 * 1024 * 1024):
     return encoded_image
 
 
+def generate_access_code_for_access_group(app_name, group_name):
+    app_abv = app_name.upper()[:3]
+    group_abv = group_name.upper()[:3]
+    access_code = f"{app_abv}-{group_abv}-"    
+    max_num = AccessGroupRight.objects.values('access_code').distinct().count()
+    if max_num is not None or max_num != 0:
+        max_num += 1
+        last_digits = str(max_num).zfill(4)        
+        access_code = f"{app_abv}-{group_abv}-{last_digits}"
+        return access_code
+    access_code = f"{app_abv}-{group_abv}-0001"
+    return access_code
+
+
 if __name__ == "__main__":
     password = generate_random_password()
     print("The Password is: ", password)
+    print(generate_access_code_for_access_group("PURCHASE", "MANAGER"))

@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import NewTenantPasswordViewSet, NewTenantProfileViewSet, NewTenantUserViewSet, UserViewSet, PasswordChangeView, GroupViewSet, PermissionViewSet, GroupPermissionViewSet
+from .views import AccessGroupRightViewSet, NewTenantPasswordViewSet, NewTenantProfileViewSet, NewTenantUserViewSet, UserViewSet, PasswordChangeView, GroupViewSet, PermissionViewSet, GroupPermissionViewSet
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -11,6 +11,7 @@ router.register(r'tenant-users', NewTenantUserViewSet, basename='tenant-user')
 router.register(r'groups', GroupViewSet)
 router.register(r'permissions', PermissionViewSet)
 router.register(r'group-permissions', GroupPermissionViewSet, basename='group-permissions')
+router.register(r'access-group-right', AccessGroupRightViewSet, basename='access-group-right')
 
 urlpatterns = [
     path('', include(router.urls)),
