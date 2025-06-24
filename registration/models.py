@@ -5,7 +5,7 @@ from django.contrib.auth.hashers import make_password, check_password
 from django.contrib.auth.models import User
 from django.utils import timezone
 import random
-
+from django.contrib.auth.models import Group
 
 
 class Tenant(TenantMixin):
@@ -61,3 +61,22 @@ class OTP(models.Model):
 
     def is_valid(self):
         return timezone.now() <= self.expires_at and not self.is_used
+
+class AccessRight(models.Model):
+    name = models.CharField(max_length=20, null=False)    
+    is_hidden = models.BooleanField(default=False) 
+    date_updated = models.DateTimeField(auto_now=True, null=True, blank=True)
+    date_created = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip().lower())
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Access Right: {self.name}"
+    
+
+

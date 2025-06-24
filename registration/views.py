@@ -9,8 +9,9 @@ from django.contrib.auth import login, authenticate, get_user_model
 from django.core.management import call_command
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
+from registration.config import DESIRED_INVENTORY_MODELS, DESIRED_PURCHASE_MODELS
 from .models import Tenant, Domain
-from .serializers import NewGroupSerializer, TenantRegistrationSerializer, LoginSerializer
+from .serializers import AccessRightSerializer, TenantRegistrationSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .utils import Util, set_tenant_schema
 from django.contrib.sites.shortcuts import get_current_site
@@ -21,6 +22,10 @@ from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
 from rest_framework import permissions
 from django.contrib.auth.models import Group
+from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
+from .models import AccessRight
+from django.contrib.contenttypes.models import ContentType
+
 
 
 @extend_schema_view(
@@ -159,13 +164,62 @@ class LoginView(APIView):
 
 
 
-# START THE NEW GROUP VIEWSET
-class NewGroupViewSet(viewsets.ModelViewSet):
-    queryset = Group.objects.all()
-    serializer_class = NewGroupSerializer
-    permission_classes = [AllowAny]
-    search_fields = ['name']
+# START THE APPLICATION, APPLICATION MODULE AND ACCESS RIGHTS VIEWSETS 
+class ApplicationViewSet(SoftDeleteWithModelViewSet):
 
-    def perform_create(self, serializer):
-        serializer.save()
-# END THE NEW GROUP VIEWSET
+    def list(self, request):
+        inventory_results = ContentType.objects.filter(
+        app_label='inventory',
+        model__in=DESIRED_INVENTORY_MODELS
+        )
+        # Query for purchase models
+        purchase_results = ContentType.objects.filter(
+            app_label='purchase',
+            model__in=DESIRED_PURCHASE_MODELS
+        )
+
+        # Sending the Available Access rights to display
+        access_rights = AccessRight.objects.filter(is_hidden=False)
+        access_rights_data = AccessRightSerializer(access_rights, many=True).data
+
+        # Combine results into a structured format
+        data = {
+            "applications": [
+                {"INVENTORY": [item.model for item in inventory_results]},
+                {"PURCHASE": [item.model for item in purchase_results]}
+                ],
+            "access_rights": access_rights_data
+            }
+        
+        return Response(data, status=status.HTTP_200_OK)
+    
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        if Application.objects.filter(name__iexact=validated_data["name"]).exists():
+            return Response({"detail": "The application with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class AccessRightViewSet(SoftDeleteWithModelViewSet):
+    queryset = AccessRight.objects.filter(is_hidden=False)
+    permission_classes = []
+    serializer_class = AccessRightSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        if AccessRight.objects.filter(name__iexact=validated_data["name"]).exists():
+            return Response({"detail": "The access right with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
