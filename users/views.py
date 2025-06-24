@@ -319,7 +319,6 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
             return Response({"detail": str(ex)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 class NewTenantPasswordViewSet(SearchDeleteViewSet):
     serializer_class = ChangePasswordSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -351,8 +350,6 @@ class NewTenantProfileViewSet(SearchDeleteViewSet):
         
         refreshed_serializer = self.get_serializer(instance)
         return Response(refreshed_serializer.data, status=status.HTTP_200_OK)
-
-
 # END TO CREATE AN ACCOUNT THAT BELONGS TO A PARTICULAR TENANT
 
 
@@ -390,8 +387,8 @@ class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
         data = request.data
 
         group_name = data.get("group_name", None)
-        application_id = data.get("application_id", None)
-        application_name = data.get("application_name", "")
+        application = data.get("application", None)
+        application_module = data.get("application_module", "")
 
         access_rights = data.get("access_rights", None)
 
@@ -407,28 +404,26 @@ class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
                 access_groups = []
 
                 for action in access_rights:
-                    if action.get("module", None) is None and action.get("rights", None) is None:
+                    if action.get("module", None) is None or action.get("rights", None) is None:
                         return Response({"detail": "Both module and rights key must be provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-                    module_id = action["module"]
+                    module = action["module"]
                     rights = action["rights"]
 
                     for right_id in rights:
                         access_group = AccessGroupRight(
-                            group_name=group_name,
-                            application_id=application_id,
+                            group_name=group_name.upper().strip(),
+                            application=application.lower().strip(),
                             access_code=access_code,
-                            application_module_id=module_id,
+                            application_module=module.lower().strip(),
                             access_right_id=right_id
                         )
                         try:
-                            access_group.full_clean(exclude=["date_created", "date_updated"])
                             access_groups.append(access_group)
 
                         except ValidationError as ve:
                             raise serializers.ValidationError(f"Validation failed for access group: {ve}")
 
-                
                 AccessGroupRight.objects.bulk_create(access_groups)
 
         return Response({"detail": "Access Group Updated Successfully"}, status=status.HTTP_200_OK)
@@ -440,7 +435,7 @@ class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
         # Example: Delete all rows with the same access_code
         queryset = self.queryset.filter(access_code=access_code)
         if not queryset.exists():
-            raise Response({"detail": "No access group found with this access code."})
+            return Response({"detail": "No access group found with this access code."})
         queryset.delete()
         return Response(
             {"detail": f"Access group deleted successfully."}, status=status.HTTP_204_NO_CONTENT)

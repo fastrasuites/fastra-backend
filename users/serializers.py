@@ -7,12 +7,14 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.contrib.auth.password_validation import validate_password
 
 from core.errors.exceptions import TenantNotFoundException
-from registration.models import AccessRight, ApplicationModule, Tenant
+from registration.models import AccessRight, Tenant
 from users.models import AccessGroupRight, TenantUser
 from django.db import transaction
 
 from users.utils import convert_to_base64, generate_access_code_for_access_group, generate_random_password
 from django_tenants.utils import schema_context
+from django.contrib.contenttypes.models import ContentType
+
 
 # from accounting.models import TenantUser
 
@@ -400,61 +402,55 @@ class ChangePasswordSerializer(serializers.Serializer):
 # START THE ACCESSGROUP RIGHT SERIALIZER
 class AccessGroupRightSerializer(serializers.ModelSerializer):
     group_name = serializers.CharField(max_length=20, required=True)
-    application_name = serializers.CharField(required=True, write_only=True)
-    application_id = serializers.IntegerField(required=True)
     access_rights = serializers.ListField(child=serializers.DictField(), required=True, write_only=True)
 
     class Meta:
         model = AccessGroupRight
-        fields = ["access_code", "group_name", "application_id", "application_name", 
+        fields = ["access_code", "group_name", "application", 
                   "application_module", "access_rights", "access_right", "date_updated", "date_created"]
-        read_only_fields = ["access_right", "application_module", "access_code"]
-
-    def validate_group_name(self, value):
-        value = value.strip().upper()
-        if AccessGroupRight.objects.filter(group_name__iexact=value).exists():
-            raise serializers.ValidationError("This group name already exists.")
-        return value
+        read_only_fields = ["access_right", "access_code"]
 
     def validate_access_rights(self, value):
         for item in value:
-            module_id = item.get("module")
+            module = item.get("module")
             rights = item.get("rights")
 
-            if not isinstance(module_id, int):
-                raise serializers.ValidationError(f"Invalid module ID: {module_id}")
+            if not isinstance(module, str):
+                raise serializers.ValidationError(f"Invalid module Type: {module}")
 
             if not isinstance(rights, list) or not all(isinstance(r, int) for r in rights):
                 raise serializers.ValidationError(f"Rights must be a list of integers: {rights}")
 
-            # Optional: Validate module/right existence
-            if not ApplicationModule.objects.filter(id=module_id).exists():
-                raise serializers.ValidationError(f"Module with ID {module_id} does not exist.")
-
+            # Optional: Validate right existence
             for right_id in rights:
                 if not AccessRight.objects.filter(id=right_id).exists():
                     raise serializers.ValidationError(f"AccessRight with ID {right_id} does not exist.")
 
         return value
+    
+    
+    def validate_application(self, value):
+        if not ContentType.objects.filter(app_label__icontains=value).exists():
+            raise serializers.ValidationError(f"{value} module does not exist.")
+        return value
 
     def create(self, validated_data):
         group_name = validated_data["group_name"].strip().upper()
-        application_name = validated_data["application_name"]
-        application_id = validated_data["application_id"]
+        application = validated_data["application"]
         access_rights = validated_data["access_rights"]
 
-        access_code = generate_access_code_for_access_group(application_name, group_name)
+        access_code = generate_access_code_for_access_group(application, group_name)
         access_groups = []
         for action in access_rights:
-            module_id = action["module"]
+            module = action["module"]
             rights = action["rights"]
 
             for right_id in rights:
                 access_group = AccessGroupRight(
-                    group_name=group_name,
-                    application_id=application_id,
+                    group_name=group_name.upper(),
+                    application=application.lower(),
                     access_code=access_code,
-                    application_module_id=module_id,
+                    application_module=module.lower(),
                     access_right_id=right_id
                 )
                 try:

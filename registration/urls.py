@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import AccessRightViewSet, ApplicationModuleViewSet, ApplicationViewSet
+from .views import AccessRightViewSet, ApplicationViewSet
 from companies.views import RequestForgottenPasswordView, ForgottenPasswordView, ResendOTPView
 from .views import TenantRegistrationViewSet, LoginView
 from rest_framework import routers
@@ -7,7 +7,7 @@ from rest_framework import routers
 router = routers.DefaultRouter()
 
 router.register(r'application', ApplicationViewSet, basename='application')
-router.register(r'application-module', ApplicationModuleViewSet, basename='application-module')
+# router.register(r'application-module', ApplicationModuleViewSet, basename='application-module')
 router.register(r'access-right', AccessRightViewSet, basename='access-right')
 
 

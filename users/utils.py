@@ -6,6 +6,8 @@ import mimetypes
 from rest_framework.exceptions import APIException
 
 from users.models import AccessGroupRight
+from django.db.models import Max
+from django.db import connection
 
 class Util:
     @staticmethod
@@ -38,8 +40,9 @@ def generate_access_code_for_access_group(app_name, group_name):
     app_abv = app_name.upper()[:3]
     group_abv = group_name.upper()[:3]
     access_code = f"{app_abv}-{group_abv}-"    
-    max_num = AccessGroupRight.objects.values('access_code').distinct().count()
-    if max_num is not None or max_num != 0:
+
+    max_num = AccessGroupRight.get_next_id()
+    if max_num is not None and max_num != 0:
         max_num += 1
         last_digits = str(max_num).zfill(4)        
         access_code = f"{app_abv}-{group_abv}-{last_digits}"

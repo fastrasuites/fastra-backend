@@ -6,7 +6,7 @@ from rest_framework import serializers
 from users.models import TenantUser
 from users.serializers import TenantUserSerializer
 # from accounting.models import TenantUser
-from .models import AccessRight, Application, ApplicationModule, Tenant, UserProfile
+from .models import AccessRight, Tenant, UserProfile
 from django.contrib.auth.models import User, Group
 from django.contrib.auth.password_validation import validate_password
 from django.utils.text import slugify
@@ -142,19 +142,6 @@ class TenantRegistrationSerializer(serializers.ModelSerializer):
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     password = serializers.CharField(write_only=True, required=True)
-
-
-class ApplicationModuleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ApplicationModule
-        fields = ["id", "name", "application", "date_created", "date_updated"]
-     
-     
-class ApplicationSerializer(serializers.ModelSerializer):
-    modules = ApplicationModuleSerializer(source='application_modules', many=True, read_only=True)
-    class Meta:
-        model = Application
-        fields = ["id", "name", "modules"]
 
 
 class AccessRightSerializer(serializers.ModelSerializer):

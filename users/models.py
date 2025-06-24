@@ -3,8 +3,9 @@ from django.contrib.auth.hashers import make_password, check_password
 from django.contrib.auth.models import User, Group
 from django_tenants.utils import schema_context
 
-from registration.models import AccessRight, Application, ApplicationModule, Tenant
+from registration.models import AccessRight, Tenant
 import pytz
+from django.db import connection
 
 LANGUAGE_CHOICES = [
     ('en', 'English'),
@@ -63,8 +64,8 @@ class TenantUser(models.Model):
 #THIS IS HERE BECAUSE EACH TENANT CAN DETERMINE THEIR VARIOUS ACCESS GROUP NAMES AND IT IS DYNAMIC WITH THE COMPANY STRUCTURE
 class AccessGroupRight(models.Model):
     access_code = models.CharField(max_length=20, null=False)
-    application = models.ForeignKey(Application, on_delete=models.CASCADE, null=True, related_name="application_group")
-    application_module = models.ForeignKey(ApplicationModule, on_delete=models.CASCADE, related_name="module_rights")
+    application = models.CharField(max_length=50, null=True)
+    application_module = models.CharField(max_length=50, null=True)
     group_name = models.CharField(max_length=20, null=False)
     access_right = models.ForeignKey(AccessRight, on_delete=models.CASCADE)
     is_hidden =  models.BooleanField(default=False)
@@ -76,7 +77,19 @@ class AccessGroupRight(models.Model):
             value = getattr(self, field.group_name)
             if isinstance(value, str):
                 setattr(self, field.group_name, value.strip().upper())
+        if self.application:
+            self.application = self.application.lower()
+        if self.application_module:
+            self.application_module = self.application_module.lower()
         super().save(*args, **kwargs)
+
+    @classmethod
+    def get_next_id(cls):
+        with connection.cursor() as cursor:
+            # Use the correct sequence name for the current tenant's schema
+            cursor.execute("SELECT nextval('users_accessgroupright_id_seq')")
+            next_id = cursor.fetchone()[0]
+        return next_id
 
     def __str__(self):
         return f"Group Name: {self.group_name}"
