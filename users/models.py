@@ -72,11 +72,7 @@ class AccessGroupRight(models.Model):
     date_updated = models.DateTimeField(auto_now=True, null=True, blank=True)
     date_created = models.DateTimeField(auto_now_add=True, null=True, blank=True)
 
-    def save(self, *args, **kwargs):
-        for field in self._meta.fields:
-            value = getattr(self, field.group_name)
-            if isinstance(value, str):
-                setattr(self, field.group_name, value.strip().upper())
+    def save(self, *args, **kwargs):        
         if self.application:
             self.application = self.application.lower()
         if self.application_module:
