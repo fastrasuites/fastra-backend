@@ -21,7 +21,7 @@ from django_tenants.utils import schema_context, tenant_context
 from rest_framework import viewsets, generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser,JSONParser
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -331,6 +331,7 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 class VerifyOTPView(generics.GenericAPIView):
     serializer_class = OTPVerificationSerializer 
     permission_classes = [AllowAny]
@@ -526,7 +527,7 @@ class TenantViewSet(viewsets.ModelViewSet):
 class UpdateCompanyProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = CompanyProfileSerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
-    parser_classes = (MultiPartParser, FormParser)
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get_object(self):
         tenant_id = self.request.user.id
@@ -541,8 +542,10 @@ class UpdateCompanyProfileView(generics.RetrieveUpdateAPIView):
         return company_profile
 
     def update(self, request, *args, **kwargs):
+        print("Incoming data:", request.data)
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
+
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)

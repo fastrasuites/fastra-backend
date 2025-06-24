@@ -27,8 +27,6 @@ TIMEZONE_CHOICES = [(tz, tz) for tz in pytz.all_timezones]
 
 
 
-
-
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):
     if created:
@@ -44,17 +42,25 @@ class CompanyProfile(models.Model):
     tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE)
     logo = models.ImageField(upload_to='company_logo', blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
-    address = models.CharField(max_length=255, blank=True, null=True)
+    street_address = models.CharField(max_length=255, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, blank=True, null=True)
-    zip_code = models.CharField(max_length=20, blank=True, null=True)
     country = models.CharField(max_length=100, blank=True, null=True)
     registration_number = models.CharField(max_length=100, blank=True, null=True)
     tax_id = models.CharField(max_length=100, blank=True, null=True)
     currency = models.CharField(max_length=20, choices=CURRENCY_CHOICES, default='NGN', null=False)
     industry = models.CharField(max_length=100, blank=True, null=True)
     language = models.CharField(max_length=20, choices=LANGUAGE_CHOICES, default='en', null=False)
-    time_zone = models.CharField(max_length=50, choices=TIMEZONE_CHOICES, default='UTC', null=False)
+    company_size = models.CharField(max_length=20, blank=True, null=True)
+    website = models.URLField(max_length=255, blank=True, null=True)
+
+
+class CompanyRole(models.Model):
+    name = models.CharField(max_length=100)
+    company = models.ForeignKey('CompanyProfile', related_name='roles', on_delete=models.CASCADE)
+
+    def __str__(self):
+        return self.name
 
 
 """class OTP(models.Model):
