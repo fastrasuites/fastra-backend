@@ -34,7 +34,7 @@ from users.models import TenantUser
 
 from .models import CompanyProfile
 from registration.models import OTP
-from .serializers import TenantSerializer, VerifyEmailSerializer, RequestForgottenPasswordSerializer, \
+from .serializers import OTPVerificationSerializer, TenantSerializer, VerifyEmailSerializer, RequestForgottenPasswordSerializer, \
     ForgottenPasswordSerializer, CompanyProfileSerializer, ResendVerificationEmailSerializer
 from .utils import Util
 from .permissions import IsAdminUser
@@ -331,9 +331,86 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+class VerifyOTPView(generics.GenericAPIView):
+    serializer_class = OTPVerificationSerializer  # Only includes the `otp` field
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.session.get('forgotten_password_email')
+        if not email:
+            return Response(
+                {'error': 'No email found in session. Please initiate the forgotten password process again.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            otp_code = serializer.validated_data['otp']
+            try:
+                user = User.objects.get(email=email)
+                otp = OTP.objects.filter(user=user, code=otp_code).order_by('-created_at').first()
+
+                if otp and otp.is_valid():
+                    request.session['otp_verified'] = True  # Flag that OTP is verified
+                    return Response({'detail': 'OTP verified successfully.'}, status=status.HTTP_200_OK)
+                else:
+                    return Response({'error': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
+            except User.DoesNotExist:
+                return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ResetPasswordView(generics.GenericAPIView):
+    serializer_class = ForgottenPasswordSerializer 
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.session.get('forgotten_password_email')
+        otp_verified = request.session.get('otp_verified')
+
+        if not email or not otp_verified:
+            return Response({'error': 'OTP verification required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            new_password = serializer.validated_data['new_password']
+            confirm_password = serializer.validated_data['confirm_password']
+
+            if new_password != confirm_password:
+                return Response({'error': 'Passwords do not match.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                user = User.objects.get(email=email)
+                user.set_password(new_password)
+                user.save()
+
+                tenant = user.tenants.first()
+                if tenant:
+                    with tenant_context(tenant):
+                        try:
+                            tenant_user = TenantUser.objects.get(user_id=user.id, tenant=tenant)
+                            tenant_user.set_tenant_password(new_password)
+                            tenant_user.save()
+                        except TenantUser.DoesNotExist:
+                            return Response({'error': 'Tenant user not found.'}, status=status.HTTP_404_NOT_FOUND)
+                        except Exception:
+                            import traceback
+                            print(traceback.format_exc())
+                            return Response({'error': 'Unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+                # Optional cleanup
+                OTP.objects.filter(user=user).delete()
+                del request.session['forgotten_password_email']
+                del request.session['otp_verified']
+
+                return Response({'detail': 'Password has been updated successfully.'}, status=status.HTTP_200_OK)
+
+            except User.DoesNotExist:
+                return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class ForgottenPasswordView(generics.GenericAPIView):
+"""class ForgottenPasswordView(generics.GenericAPIView):
     serializer_class = ForgottenPasswordSerializer
     permission_classes = [AllowAny]
 
@@ -381,7 +458,7 @@ class ForgottenPasswordView(generics.GenericAPIView):
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+"""
 
 class ResendOTPView(generics.GenericAPIView):
     permission_classes = [AllowAny]

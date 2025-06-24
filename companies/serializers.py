@@ -18,8 +18,11 @@ class ResendVerificationEmailSerializer(serializers.Serializer):
 class RequestForgottenPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
-class ForgottenPasswordSerializer(serializers.Serializer):
+
+class OTPVerificationSerializer(serializers.Serializer):
     otp = serializers.CharField(required=True, max_length=4, min_length=4)
+
+class ForgottenPasswordSerializer(serializers.Serializer):
     new_password = serializers.CharField(write_only=True, required=True)
     confirm_password = serializers.CharField(write_only=True, required=True)
 
@@ -45,5 +48,5 @@ class TenantSerializer(serializers.ModelSerializer):
 class CompanyProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompanyProfile
-        fields = ['logo', 'phone', 'address', 'city', 'state', 'zip_code', 'country', 
-                  'registration_number', 'tax_id', 'currency', 'industry', 'language', 'time_zone']
+        fields = ['logo', 'phone', 'street_address', 'city', 'state', 'country', 
+                  'registration_number', 'tax_id', 'industry', 'language', 'roles', ' company_size']
