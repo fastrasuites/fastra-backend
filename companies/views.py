@@ -294,11 +294,11 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
 
                 try:
                     otp = OTP.objects.create(user=user)
-                    print(f"OTP created: {otp.code}")  # Confirm the object and code
+                    print(f"OTP created: {otp.code}") 
                 except Exception as e:
                     import traceback
                     print("Failed to create OTP")
-                    print(traceback.format_exc())  # Full error stack trace
+                    print(traceback.format_exc()) 
                     return Response({'error': 'Internal error creating OTP'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
                 email_body = (
@@ -326,13 +326,13 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
                 )"""
 
                 Util.send_email(email_data)
-                request.session['forgotten_password_email'] = email  # Store email in session
+                request.session['forgotten_password_email'] = email  
                 return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 class VerifyOTPView(generics.GenericAPIView):
-    serializer_class = OTPVerificationSerializer  # Only includes the `otp` field
+    serializer_class = OTPVerificationSerializer 
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -350,7 +350,7 @@ class VerifyOTPView(generics.GenericAPIView):
                 otp = OTP.objects.filter(user=user, code=otp_code).order_by('-created_at').first()
 
                 if otp and otp.is_valid():
-                    request.session['otp_verified'] = True  # Flag that OTP is verified
+                    request.session['otp_verified'] = True 
                     return Response({'detail': 'OTP verified successfully.'}, status=status.HTTP_200_OK)
                 else:
                     return Response({'error': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -397,7 +397,6 @@ class ResetPasswordView(generics.GenericAPIView):
                             print(traceback.format_exc())
                             return Response({'error': 'Unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                # Optional cleanup
                 OTP.objects.filter(user=user).delete()
                 del request.session['forgotten_password_email']
                 del request.session['otp_verified']
