@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import AccessRightViewSet, ApplicationViewSet
-from companies.views import RequestForgottenPasswordView, ForgottenPasswordView, ResendOTPView
+from companies.views import RequestForgottenPasswordView,ResendOTPView, ResetPasswordView, VerifyOTPView
 from .views import TenantRegistrationViewSet, LoginView
 from rest_framework import routers
 
@@ -17,8 +17,11 @@ urlpatterns = [
 
     # path('new-groups/', NewGroupViewSet.as_view({'post': 'create', 'get': 'list'}), name='new-groups'),
     # path('new-groups/<int:pk>/', NewGroupViewSet.as_view({'patch': 'partial_update'}), name='new-groups-edit'),
+    #path('request-forgotten-password/', RequestForgottenPasswordView.as_view(), name='request-password-reset'),
+    #path('reset-password/', ForgottenPasswordView.as_view(), name='reset-password'),
     path('request-forgotten-password/', RequestForgottenPasswordView.as_view(), name='request-password-reset'),
-    path('reset-password/', ForgottenPasswordView.as_view(), name='reset-password'),
+    path('verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
+    path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
     path('resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
 ]
 
