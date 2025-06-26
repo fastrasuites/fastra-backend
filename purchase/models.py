@@ -166,6 +166,7 @@ def generate_unique_po_id():
 
 class UnitOfMeasure(models.Model):
     unit_name = models.CharField(max_length=100)
+    unit_symbol = models.CharField(max_length=10, unique=True, null=True, blank=True)
     unit_category = models.CharField(max_length=100)
     created_on = models.DateTimeField(auto_now_add=True)
     is_hidden = models.BooleanField(default=False)
@@ -185,6 +186,7 @@ class UnitOfMeasure(models.Model):
 
 class Currency(models.Model):
     currency_name = models.CharField(max_length=100)
+    currency_code = models.CharField(max_length=10, unique=True, null=True, blank=True)
     currency_symbol = CKEditor5Field(blank=True, null=True)
     created_on = models.DateTimeField(auto_now_add=True)
     is_hidden = models.BooleanField(default=False)
@@ -409,7 +411,6 @@ class RequestForQuotation(models.Model):
     expiry_date = models.DateTimeField(null=True, blank=True,
                                        help_text="Leave blank for no expiry")
     vendor = models.ForeignKey('Vendor', on_delete=models.CASCADE)
-    vendor_category = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=100, choices=RFQ_STATUS, default='draft')
 
     date_created = models.DateTimeField(auto_now_add=True)

@@ -35,7 +35,7 @@ class LocationViewSet(SearchDeleteViewSet):
 
     def create(self, request, *args, **kwargs):
         try:
-            if MultiLocation.objects.first().is_activated and len(Location.get_active_locations()) >= 1:
+            if not MultiLocation.objects.filter(is_activated=True).exists() and len(Location.get_active_locations()) >= 1:
                 return Response(
                     {'error': 'Max number of Locations reached.'},
                     status=status.HTTP_400_BAD_REQUEST
@@ -305,6 +305,13 @@ class MultiLocationViewSet(viewsets.GenericViewSet):
     def change_status(self, request):
         try:
             instance = self.get_queryset().first()
+            if instance.is_activated:
+                # Deactivating: check if locations > 3
+                if Location.get_active_locations().count() > 1:
+                    return Response({
+                        'status': 'error',
+                        'message': 'Reduce number of locations to three before deactivating'
+                    }, status=status.HTTP_400_BAD_REQUEST)
             instance.is_activated = not instance.is_activated
             instance.save()
 
@@ -402,7 +409,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         try:
             delivery_order.status = "ready" if all_confirmed else "waiting"
             delivery_order.save()
-            serialized_order = DeliveryOrderSerializer(delivery_order)
+            serialized_order = DeliveryOrderSerializer(delivery_order, context={'request': request})
             return Response(serialized_order.data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
@@ -421,7 +428,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         try:
             delivery_order.status = "done"
             delivery_order.save()
-            serialized_order = DeliveryOrderSerializer(delivery_order)
+            serialized_order = DeliveryOrderSerializer(delivery_order, context={'request': request})
             return Response(serialized_order.data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
