@@ -17,7 +17,7 @@ class Command(BaseCommand):
                 try:
                     # Use get_or_create for MultiLocation
                     multi_location, created = MultiLocation.objects.get_or_create(
-                        id=1, defaults={'is_activated': False}
+                        defaults={'is_activated': False}
                     )
                     if created:
                         self.stdout.write(
