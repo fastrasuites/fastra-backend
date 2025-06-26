@@ -18,8 +18,7 @@ urlpatterns = [
     # path('new-groups/', NewGroupViewSet.as_view({'post': 'create', 'get': 'list'}), name='new-groups'),
     # path('new-groups/<int:pk>/', NewGroupViewSet.as_view({'patch': 'partial_update'}), name='new-groups-edit'),
     path('request-forgotten-password/', RequestForgottenPasswordView.as_view(), name='request-password-reset'),
-    path('verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
-    path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
+    path('reset-password/', ForgottenPasswordView.as_view(), name='reset-password'),
     path('resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
 ]
 
