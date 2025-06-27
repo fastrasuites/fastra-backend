@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import TenantViewSet, VerifyEmail, RequestForgottenPasswordView, ForgottenPasswordView, \
+from .views import TenantViewSet, VerifyEmail, RequestForgottenPasswordView,\
     ResendVerificationEmail, UpdateCompanyProfileView, ResendOTPView, ProtectedView
 
 from rest_framework_simplejwt.views import (
