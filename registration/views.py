@@ -166,6 +166,7 @@ class LoginView(APIView):
 
 # START THE APPLICATION, APPLICATION MODULE AND ACCESS RIGHTS VIEWSETS 
 class ApplicationViewSet(SoftDeleteWithModelViewSet):
+    permission_classes = [AllowAny]
 
     def list(self, request):
         inventory_results = ContentType.objects.filter(
