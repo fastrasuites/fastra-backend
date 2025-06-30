@@ -71,16 +71,23 @@ class CompanyRoleSerializer(serializers.ModelSerializer):
 
 class CompanyProfileSerializer(serializers.ModelSerializer):
     roles = CompanyRoleSerializer(many=True, required=False)
+    logo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = CompanyProfile
         fields = [
-            'logo', 'phone', 'street_address', 'city', 'state', 'country',
+            'logo', 'logo_url', 'phone', 'street_address', 'city', 'state', 'country',
             'registration_number', 'tax_id', 'industry', 'language',
             'company_size', 'website', 'roles'
         ]
 
 
+    def get_logo_url(self, obj):
+        request = self.context.get('request')
+        if obj.logo and hasattr(obj.logo, 'url'):
+            return request.build_absolute_uri(obj.logo.url)
+        return None
+    
     def update(self, instance, validated_data):
         print(validated_data)
         roles_data = validated_data.pop('roles', [])
