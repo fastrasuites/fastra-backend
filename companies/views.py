@@ -376,7 +376,14 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
                     fail_silently=False,
                 )"""
 
-                Util.send_email(email_data)
+                #Util.send_email(email_data)
+                try:
+                    Util.send_email(email_data)
+                except Exception as e:
+                    import traceback
+                    print("Failed to send email")
+                    print(traceback.format_exc())
+                    return Response({'error': 'Error sending email, please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                 request.session['forgotten_password_email'] = email  # Store email in session
                 return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
             except User.DoesNotExist:
@@ -404,7 +411,8 @@ class VerifyOTPView(generics.GenericAPIView):
                 otp = OTP.objects.filter(user=user, code=otp_code).order_by('-created_at').first()
 
                 if otp and otp.is_valid():
-                    request.session['otp_verified'] = True 
+                    otp.is_used = True
+                    otp.save()
                     return Response({'detail': 'OTP verified successfully.'}, status=status.HTTP_200_OK)
                 else:
                     return Response({'error': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -424,9 +432,10 @@ class ResetPasswordView(generics.GenericAPIView):
                 {'error': 'Email is required for OTP verification.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        otp_verified = request.session.get('otp_verified')
+
+        otp = OTP.objects.filter(user__email=email, is_used=True).order_by('-created_at').first()
         print("i got here")
-        if not email or not otp_verified:
+        if not otp:
             print("i got here 2")
             return Response({'error': 'OTP verification required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -458,8 +467,6 @@ class ResetPasswordView(generics.GenericAPIView):
                             return Response({'error': 'Unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
                 OTP.objects.filter(user=user).delete()
-                del request.session['forgotten_password_email']
-                del request.session['otp_verified']
 
                 return Response({'detail': 'Password has been updated successfully.'}, status=status.HTTP_200_OK)
 
@@ -583,6 +590,7 @@ class UpdateCompanyProfileView(generics.RetrieveUpdateAPIView):
         if getattr(instance, '_prefetched_objects_cache', None):
             instance._prefetched_objects_cache = {}
 
+        print(serializer.data.get("logo"))
         return Response(serializer.data)
 
     def handle_exception(self, exc):
