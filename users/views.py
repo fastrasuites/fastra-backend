@@ -283,10 +283,19 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
 
             access_group = AccessGroupRight.objects.filter(
                 access_code__in=access_codes
-            ).values_list('application', flat=True).distinct()
+            ).distinct('access_code', 'group_name')
+            access_group = list(access_group)
+            access_groups = []
+            for grp in access_group:
+                access_dict = {
+                    "access_code": grp.access_code,
+                    "application": grp.application,
+                    "group_name": grp.group_name
+                }
+                access_groups.append(access_dict)
 
             data = serializer.data
-            data["application_accesses"] = list(access_group)
+            data["application_accesses"] = access_groups
 
             with schema_context("public"):
                 user = User.objects.get(pk=access_group_user[0].user_id)
