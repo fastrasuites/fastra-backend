@@ -37,21 +37,6 @@ def convert_to_base64(signature_file, max_size=5 * 1024 * 1024):
 
 
 def generate_access_code_for_access_group(app_name, group_name):
-    app_abv = app_name.upper()[:3]
-    group_abv = group_name.upper()[:3]
-    access_code = f"{app_abv}-{group_abv}-"    
-
-    max_num = AccessGroupRight.get_next_id()
-    if max_num is not None and max_num != 0:
-        max_num += 1
-        last_digits = str(max_num).zfill(4)        
-        access_code = f"{app_abv}-{group_abv}-{last_digits}"
-        return access_code
-    access_code = f"{app_abv}-{group_abv}-0001"
-    return access_code
-
-
-def generate_access_code_for_access_group(app_name, group_name):
     try:
         # Validate input types and values
         if not app_name or not isinstance(app_name, str):
@@ -80,7 +65,7 @@ def generate_access_code_for_access_group(app_name, group_name):
     except Exception as e:
         # Optionally log the error
         # logger.error(f"Access code generation failed: {str(e)}")
-        return f"ERR-{app_name[:3].upper()}-{group_name[:3].upper()}"
+        return f"Error creating an access_code"
 
 
 

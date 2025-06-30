@@ -260,9 +260,19 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         except User.DoesNotExist:
             return None
 
-    def validate_groups(self, value):
-        # we are automatically converting each item to uppercase
-        return [item.upper() for item in value]    
+    def validate_access_codes(self, value):
+        # Convert all access codes to uppercase
+        value = [item.upper() for item in value]
+        valid_codes = set(AccessGroupRight.objects.values_list('access_code', flat=True))
+        invalid_codes = [code for code in value if code not in valid_codes]
+
+        if invalid_codes:
+            raise serializers.ValidationError(
+                f"The following access codes are invalid: {', '.join(invalid_codes)}"
+            )
+
+        return value
+
     
     def validate_email(self, value):
         if self.context['request'].method == "PATCH":

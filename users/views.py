@@ -375,8 +375,12 @@ class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
         serializer = AccessGroupRightSerializer(queryset, many=True)
         return Response(serializer.data)
     
-    #This was restructured so as  For Tega to have the Data endpoint to use on his end conveniently without the stress of making another query
     def get_restructured(self, request):
+        """
+        Retrieves a restructured dataset of access groups grouped by application.
+        This method was implemented to provide a convenient data endpoint for external use cases,
+        avoiding the need for additional queries on the client side.
+        """
         try:
             applications = AccessGroupRight.objects.values_list('application', flat=True).distinct()
             if not applications:
@@ -405,10 +409,20 @@ class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
 
             return Response(data, status=status.HTTP_200_OK)
 
-        except Exception as e:
+        except ValidationError as e:
+            return Response(
+                {"detail": "Invalid data provided."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except serializers.SerializerError as e:
+            return Response(
+                {"detail": "An error occurred while serializing the data."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception:
             # Log error here if desired
             return Response(
-                {"detail": "An error occurred while processing the request.", "error": str(e)},
+                {"detail": "An unexpected error occurred while processing the request."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
