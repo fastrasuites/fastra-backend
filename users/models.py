@@ -27,7 +27,8 @@ ROLE_CHOICES = [
 ]
 
 class TenantUser(models.Model):
-    role = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, related_name='role', default=None)
+    role = models.CharField(max_length=50, null=True, default=None)
+    # role = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, related_name='role', default=None)
     # user = models.ForeignKey(User, on_delete=models.CASCADE, default=None, related_name='tenant_users')
     user_id = models.IntegerField(null=False, unique=True, default=None)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='tenant_users', default=None)
