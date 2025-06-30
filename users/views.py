@@ -16,10 +16,12 @@ from .utils import Util, generate_access_code_for_access_group, generate_random_
 from django_tenants.utils import schema_context
 from django.db import transaction
 from .utils import convert_to_base64
-from .models import AccessGroupRight
+from .models import AccessGroupRight, AccessGroupRightUser
 from .serializers import AccessGroupRightSerializer
 from rest_framework.exceptions import ValidationError
 from rest_framework import serializers
+from rest_framework.exceptions import NotFound
+from django.core.exceptions import ObjectDoesNotExist
 
 class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
@@ -250,6 +252,39 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
     serializer_class = NewTenantUserSerializer
     permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
     search_fields = ['user__username', 'user__email']
+
+
+    def retrieve(self, request, pk=None):
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            
+            access_group_user = AccessGroupRightUser.objects.filter(user_id=pk)
+            access_codes = None
+            if not access_group_user.exists():
+                access_codes = []
+            else:
+                access_codes = [code.access_code for code in access_group_user]
+
+            access_group = AccessGroupRight.objects.filter(
+                access_code__in=access_codes
+            ).values_list('application', flat=True).distinct()
+
+            data = serializer.data
+            data["application_accesses"] = list(access_group)
+
+            return Response(data)
+
+        except ObjectDoesNotExist:
+            raise NotFound(detail="Requested object not found.")
+
+        except Exception as e:
+            return Response(
+                {"detail": f"An unexpected error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 
     def get_user_email(self, tenant_user):
         if hasattr(tenant_user, 'user') and hasattr(tenant_user.user, 'email'):
