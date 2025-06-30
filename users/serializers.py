@@ -487,6 +487,7 @@ class AccessGroupRightSerializer(serializers.ModelSerializer):
 
         return {
             "detail": "Access Group Created Successfully",
-            "group_name": group_name
+            "group_name": group_name,
+            "access_code": access_code
         }
 # END THE ACCESSGROUP RIGHT SERIALIZER
