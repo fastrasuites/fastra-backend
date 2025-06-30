@@ -253,6 +253,21 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
     search_fields = ['user__username', 'user__email']
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        tenant_users = serializer.data
+
+        for data in tenant_users:
+            with schema_context("public"):
+                user = User.objects.get(pk=data["user_id"])
+                data["email"] = user.email
+                data["first_name"] = user.first_name
+                data["last_name"] = user.last_name
+                data["last_login"] = user.last_login
+
+        return Response(tenant_users)
+
 
     def retrieve(self, request, pk=None):
         try:
@@ -273,6 +288,12 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
             data = serializer.data
             data["application_accesses"] = list(access_group)
 
+            with schema_context("public"):
+                user = User.objects.get(pk=access_group_user[0].user_id)
+                data["email"] = user.email
+                data["first_name"] = user.first_name
+                data["last_name"] = user.last_name
+                data["last_login"] = user.last_login
             return Response(data)
 
         except ObjectDoesNotExist:
