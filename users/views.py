@@ -344,7 +344,7 @@ class NewTenantProfileViewSet(SearchDeleteViewSet):
     def update_user_information(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(data=request.data, partial=True)
-        # Validate incoming data
+        # # Validate incoming data
         serializer.is_valid(raise_exception=True)
         serializer.update_user_information(instance, serializer.validated_data)
         
@@ -374,7 +374,44 @@ class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
         # Use a serializer that returns many=True
         serializer = AccessGroupRightSerializer(queryset, many=True)
         return Response(serializer.data)
+    
+    #This was restructured so as  For Tega to have the Data endpoint to use on his end conveniently without the stress of making another query
+    def get_restructured(self, request):
+        try:
+            applications = AccessGroupRight.objects.values_list('application', flat=True).distinct()
+            if not applications:
+                return Response({"detail": "No applications found."}, status=status.HTTP_404_NOT_FOUND)
 
+            data = []
+            exclude_fields = {'date_created', 'date_updated', 'application'}
+
+            for app in applications:
+                access_groups = AccessGroupRight.objects.filter(application=app).distinct('access_code', 'group_name')
+                
+                if not access_groups.exists():
+                    continue  # Skip applications with no access groups
+
+                serialized = AccessGroupRightSerializer(access_groups, many=True)
+
+                cleaned_data = [
+                    {k: v for k, v in item.items() if k not in exclude_fields}
+                    for item in serialized.data
+                ]
+
+                data.append({
+                    "application": app,
+                    "access_groups": cleaned_data
+                })
+
+            return Response(data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            # Log error here if desired
+            return Response(
+                {"detail": "An error occurred while processing the request.", "error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     def create(self, request, *args, **kwargs):
         serializer = AccessGroupRightSerializer(data=request.data)
         if serializer.is_valid():

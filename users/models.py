@@ -93,11 +93,11 @@ class AccessGroupRight(models.Model):
 
 
 class AccessGroupRightUser(models.Model):
-    access_group_right = models.ForeignKey(AccessGroupRight, on_delete=models.CASCADE)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    access_code = models.CharField(max_length=20, null=True, blank=True)
+    user_id = models.BigIntegerField(null=True, blank=True)
     is_hidden =  models.BooleanField(default=False)
     date_updated = models.DateTimeField(auto_now=True, null=True, blank=True)
     date_created = models.DateTimeField(auto_now_add=True, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.access_group_right.group_name} - {self.user.email}"
+        return f"{self.access_code} - {self.user_id}"
