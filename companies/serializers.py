@@ -5,7 +5,7 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from .models import CompanyRole, Tenant, CompanyProfile
-
+import json
 # Verify Email
 class VerifyEmailSerializer(serializers.Serializer):
     token = serializers.CharField(required=True)
@@ -59,6 +59,16 @@ class CompanyRoleSerializer(serializers.ModelSerializer):
         fields = ['id', 'name']
 
 
+class CompanyRoleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanyRole
+        fields = ['id', 'name']
+
+    def validate_roles(self, value):
+        print("✅ validate_roles received:", value)
+        return value
+
+
 class CompanyProfileSerializer(serializers.ModelSerializer):
     roles = CompanyRoleSerializer(many=True, required=False)
 
@@ -70,7 +80,9 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
             'company_size', 'website', 'roles'
         ]
 
+
     def update(self, instance, validated_data):
+        print(validated_data)
         roles_data = validated_data.pop('roles', [])
 
         # Update other profile fields
@@ -85,4 +97,6 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
             if name and name.lower() not in [r.lower() for r in existing_names]:
                 CompanyRole.objects.create(company=instance, name=name)
 
-        return instance
+        return instance 
+
+

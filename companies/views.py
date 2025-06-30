@@ -1,3 +1,4 @@
+import json
 import jwt
 from urllib.parse import urlparse
 
@@ -388,11 +389,12 @@ class VerifyOTPView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        email = request.session.get('forgotten_password_email')
+        email = request.data.get('email')
         if not email:
             return Response(
-                {'error': 'No email found in session. Please initiate the forgotten password process again.'},
-                status=status.HTTP_400_BAD_REQUEST)
+                {'error': 'Email is required for OTP verification.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
@@ -416,7 +418,12 @@ class ResetPasswordView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        email = request.session.get('forgotten_password_email')
+        email = request.data.get('email')
+        if not email:
+            return Response(
+                {'error': 'Email is required for OTP verification.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         otp_verified = request.session.get('otp_verified')
         print("i got here")
         if not email or not otp_verified:
@@ -544,10 +551,32 @@ class UpdateCompanyProfileView(generics.RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         print("Incoming data:", request.data)
+
+        data = request.data.copy()
+        data._mutable = True  # allow mutation
+
+        roles_raw = data.get('roles')
+        if roles_raw:
+            if isinstance(roles_raw, list):
+                roles_raw = roles_raw[0]  # extract JSON string from list
+            try:
+                parsed_roles = json.loads(roles_raw)
+                data.setlist('roles', parsed_roles)
+            except json.JSONDecodeError:
+                return Response({"error": "Invalid JSON in roles"}, status=400)
+            
+     #we try to extract roles from the list, and make sure it remains  a list but then extract all other that are aready a list
+     #and  convert it to a simple dictionary most especially keys that have only one value
+        fields_to_keep_as_list = {'roles'}
+        data = {
+            k: v if k in fields_to_keep_as_list else v[0] if isinstance(v, list) and len(v) == 1 else v
+            for k, v in data.lists()
+        }
+        print("Clean dict data:", data)
+
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
-
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer = self.get_serializer(instance, data=data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
 
