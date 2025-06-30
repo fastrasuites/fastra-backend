@@ -27,7 +27,7 @@ ROLE_CHOICES = [
 ]
 
 class TenantUser(models.Model):
-    role = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, related_name='role', default=None)
+    role = models.CharField(max_length=50, null=True)
     # user = models.ForeignKey(User, on_delete=models.CASCADE, default=None, related_name='tenant_users')
     user_id = models.IntegerField(null=False, unique=True, default=None)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='tenant_users', default=None)
@@ -93,11 +93,11 @@ class AccessGroupRight(models.Model):
 
 
 class AccessGroupRightUser(models.Model):
-    access_group_right = models.ForeignKey(AccessGroupRight, on_delete=models.CASCADE)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    access_code = models.CharField(max_length=20, null=True, blank=True)
+    user_id = models.BigIntegerField(null=True, blank=True)
     is_hidden =  models.BooleanField(default=False)
     date_updated = models.DateTimeField(auto_now=True, null=True, blank=True)
     date_created = models.DateTimeField(auto_now_add=True, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.access_group_right.group_name} - {self.user.email}"
+        return f"{self.access_code} - {self.user_id}"

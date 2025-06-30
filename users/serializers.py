@@ -8,7 +8,7 @@ from django.contrib.auth.password_validation import validate_password
 
 from core.errors.exceptions import TenantNotFoundException
 from registration.models import AccessRight, Tenant
-from users.models import AccessGroupRight, TenantUser
+from users.models import AccessGroupRight, AccessGroupRightUser, TenantUser
 from django.db import transaction
 
 from users.utils import convert_to_base64, generate_access_code_for_access_group, generate_random_password
@@ -231,8 +231,7 @@ class PasswordChangeSerializer(serializers.Serializer):
 # START THE VIEWS FOR THE NEW TENANT USER ACCOUNT
 class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
     id = serializers.IntegerField(read_only=True) 
-    user = serializers.SerializerMethodField()
-    groups = serializers.ListField(required=False, write_only=True)
+    access_codes = serializers.ListField(required=False, write_only=True)
     name = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
     temp_password = serializers.CharField(read_only=True)
@@ -240,8 +239,8 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = TenantUser
-        fields = ['id', 'user', 'name', 'email', 'role', 'phone_number', 'language', 'timezone',
-                  'in_app_notifications', 'email_notifications', 'groups', 'temp_password', 'date_created',
+        fields = ['id', 'user_id', 'name', 'email', 'role', 'phone_number', 'language', 'timezone',
+                  'in_app_notifications', 'email_notifications', 'access_codes', 'temp_password', 'date_created',
                   'signature', 'signature_image']
         extra_kwargs = {'signature': {'read_only': True}}
 
@@ -261,11 +260,24 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         except User.DoesNotExist:
             return None
 
-    def validate_groups(self, value):
-        # we are automatically converting each item to uppercase
-        return [item.upper() for item in value]    
+    def validate_access_codes(self, value):
+        # Convert all access codes to uppercase
+        value = [item.upper() for item in value]
+        valid_codes = set(AccessGroupRight.objects.values_list('access_code', flat=True))
+        invalid_codes = [code for code in value if code not in valid_codes]
+
+        if invalid_codes:
+            raise serializers.ValidationError(
+                f"The following access codes are invalid: {', '.join(invalid_codes)}"
+            )
+
+        return value
+
     
     def validate_email(self, value):
+        if self.context['request'].method == "PATCH":
+            return value
+
         with schema_context('public'):
             if User.objects.filter(email=value).exists():
                 raise serializers.ValidationError("This email already exists")
@@ -298,15 +310,19 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         validated_data["temp_password"] = password
         validated_data["password"] = new_user.password
         
-        groups = validated_data.pop('groups', [])
+        access_codes = validated_data.pop('access_codes', [])
         validated_data.pop('name')
         validated_data.pop('email')
         validated_data.pop('signature_image', None)
         
         tenant_user = TenantUser.objects.create(user_id=new_user.id, tenant=tenant, **validated_data)
-        with schema_context('public'):
-            group_objs = [Group.objects.get(name=group_name) for group_name in groups if Group.objects.filter(name=group_name).exists()]
-            new_user.groups.add(*group_objs)
+
+        access_group_right_user = [AccessGroupRightUser(
+            access_code = code,
+            user_id = tenant_user.user_id
+        ) for code in access_codes]
+
+        results = AccessGroupRightUser.objects.bulk_create(access_group_right_user)
         return tenant_user
 
     @transaction.atomic
@@ -347,11 +363,16 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         if validated_data.get("signature_image", None) is not None:
             tenant_user.signature = convert_to_base64(validated_data["signature_image"])
         
-        if validated_data.get("groups", None) is not None:
-            groups = validated_data.pop("groups")
-            with schema_context('public'):
-                group_objs = [Group.objects.get(name=group_name) for group_name in groups if Group.objects.filter(name=group_name).exists()]
-                user.groups.set(group_objs)
+        if validated_data.get("access_codes", None) is not None:
+            access_codes = validated_data.pop("access_codes")
+
+            access_group_right_user = [AccessGroupRightUser(
+            access_code = code,
+            user_id = tenant_user.user_id
+            ) for code in access_codes]
+
+            AccessGroupRightUser.objects.filter(user_id=tenant_user.user_id).delete()
+            results = AccessGroupRightUser.objects.bulk_create(access_group_right_user)
         
         tenant_user.save()
         with schema_context('public'):
@@ -406,9 +427,9 @@ class AccessGroupRightSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AccessGroupRight
-        fields = ["access_code", "group_name", "application", 
+        fields = ["id", "access_code", "group_name", "application", 
                   "application_module", "access_rights", "access_right", "date_updated", "date_created"]
-        read_only_fields = ["access_right", "access_code"]
+        read_only_fields = ["id", "access_right", "access_code"]
 
     def validate_access_rights(self, value):
         for item in value:

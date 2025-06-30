@@ -37,18 +37,36 @@ def convert_to_base64(signature_file, max_size=5 * 1024 * 1024):
 
 
 def generate_access_code_for_access_group(app_name, group_name):
-    app_abv = app_name.upper()[:3]
-    group_abv = group_name.upper()[:3]
-    access_code = f"{app_abv}-{group_abv}-"    
+    try:
+        # Validate input types and values
+        if not app_name or not isinstance(app_name, str):
+            raise ValueError("Application name must be a non-empty string.")
+        if not group_name or not isinstance(group_name, str):
+            raise ValueError("Group name must be a non-empty string.")
 
-    max_num = AccessGroupRight.get_next_id()
-    if max_num is not None and max_num != 0:
-        max_num += 1
-        last_digits = str(max_num).zfill(4)        
+        app_abv = ''.join(app_name.upper().strip().split())[:3]
+        group_abv = ''.join(group_name.upper().strip().split())[:3]
+        access_code = f"{app_abv}-{group_abv}-"
+
+        try:
+            max_num = AccessGroupRight.get_next_id()
+        except Exception as e:
+            raise RuntimeError(f"Error fetching next ID: {str(e)}")
+
+        if max_num is not None and max_num != 0:
+            max_num += 1
+            last_digits = str(max_num).zfill(4)
+        else:
+            last_digits = "0001"
+
         access_code = f"{app_abv}-{group_abv}-{last_digits}"
         return access_code
-    access_code = f"{app_abv}-{group_abv}-0001"
-    return access_code
+
+    except Exception as e:
+        # Optionally log the error
+        # logger.error(f"Access code generation failed: {str(e)}")
+        return f"Error creating an access_code"
+
 
 
 if __name__ == "__main__":
