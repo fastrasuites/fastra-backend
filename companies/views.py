@@ -1,3 +1,4 @@
+import json
 import jwt
 from urllib.parse import urlparse
 
@@ -375,7 +376,14 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
                     fail_silently=False,
                 )"""
 
-                Util.send_email(email_data)
+                #Util.send_email(email_data)
+                try:
+                    Util.send_email(email_data)
+                except Exception as e:
+                    import traceback
+                    print("Failed to send email")
+                    print(traceback.format_exc())
+                    return Response({'error': 'Error sending email, please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                 request.session['forgotten_password_email'] = email  # Store email in session
                 return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
             except User.DoesNotExist:
@@ -388,11 +396,12 @@ class VerifyOTPView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        email = request.session.get('forgotten_password_email')
+        email = request.data.get('email')
         if not email:
             return Response(
-                {'error': 'No email found in session. Please initiate the forgotten password process again.'},
-                status=status.HTTP_400_BAD_REQUEST)
+                {'error': 'Email is required for OTP verification.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
@@ -402,7 +411,8 @@ class VerifyOTPView(generics.GenericAPIView):
                 otp = OTP.objects.filter(user=user, code=otp_code).order_by('-created_at').first()
 
                 if otp and otp.is_valid():
-                    request.session['otp_verified'] = True 
+                    otp.is_used = True
+                    otp.save()
                     return Response({'detail': 'OTP verified successfully.'}, status=status.HTTP_200_OK)
                 else:
                     return Response({'error': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -416,10 +426,16 @@ class ResetPasswordView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        email = request.session.get('forgotten_password_email')
-        otp_verified = request.session.get('otp_verified')
+        email = request.data.get('email')
+        if not email:
+            return Response(
+                {'error': 'Email is required for OTP verification.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        otp = OTP.objects.filter(user__email=email, is_used=True).order_by('-created_at').first()
         print("i got here")
-        if not email or not otp_verified:
+        if not otp:
             print("i got here 2")
             return Response({'error': 'OTP verification required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -451,8 +467,6 @@ class ResetPasswordView(generics.GenericAPIView):
                             return Response({'error': 'Unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
                 OTP.objects.filter(user=user).delete()
-                del request.session['forgotten_password_email']
-                del request.session['otp_verified']
 
                 return Response({'detail': 'Password has been updated successfully.'}, status=status.HTTP_200_OK)
 
@@ -544,16 +558,39 @@ class UpdateCompanyProfileView(generics.RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         print("Incoming data:", request.data)
+
+        data = request.data.copy()
+        data._mutable = True  # allow mutation
+
+        roles_raw = data.get('roles')
+        if roles_raw:
+            if isinstance(roles_raw, list):
+                roles_raw = roles_raw[0]  # extract JSON string from list
+            try:
+                parsed_roles = json.loads(roles_raw)
+                data.setlist('roles', parsed_roles)
+            except json.JSONDecodeError:
+                return Response({"error": "Invalid JSON in roles"}, status=400)
+            
+     #we try to extract roles from the list, and make sure it remains  a list but then extract all other that are aready a list
+     #and  convert it to a simple dictionary most especially keys that have only one value
+        fields_to_keep_as_list = {'roles'}
+        data = {
+            k: v if k in fields_to_keep_as_list else v[0] if isinstance(v, list) and len(v) == 1 else v
+            for k, v in data.lists()
+        }
+        print("Clean dict data:", data)
+
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
-
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer = self.get_serializer(instance, data=data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
 
         if getattr(instance, '_prefetched_objects_cache', None):
             instance._prefetched_objects_cache = {}
 
+        print(serializer.data.get("logo"))
         return Response(serializer.data)
 
     def handle_exception(self, exc):

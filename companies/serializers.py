@@ -8,7 +8,7 @@ from users.utils import convert_to_base64
 from django.db import transaction
 
 from .models import CompanyRole, Tenant, CompanyProfile
-
+import json
 # Verify Email
 class VerifyEmailSerializer(serializers.Serializer):
     token = serializers.CharField(required=True)
@@ -62,6 +62,16 @@ class CompanyRoleSerializer(serializers.ModelSerializer):
         fields = ['id', 'name']
 
 
+class CompanyRoleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanyRole
+        fields = ['id', 'name']
+
+    def validate_roles(self, value):
+        print("✅ validate_roles received:", value)
+        return value
+
+
 class CompanyProfileSerializer(serializers.ModelSerializer):
     roles = CompanyRoleSerializer(many=True, required=False)
     logo_image = serializers.ImageField(write_only=True, required=False)
@@ -77,6 +87,7 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        print(validated_data)
         roles_data = validated_data.pop('roles', [])
         validated_data["logo"] = convert_to_base64(validated_data["logo_image"])
         validated_data.pop("logo_image")
@@ -93,4 +104,6 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
             if name and name.lower() not in [r.lower() for r in existing_names]:
                 CompanyRole.objects.create(company=instance, name=name)
 
-        return instance
+        return instance 
+
+
