@@ -119,11 +119,12 @@ class ExcelUploadSerializer(serializers.Serializer):
 
 class VendorSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='vendor-detail')
-    profile_picture = serializers.ImageField(required=False)
+    profile_picture_image = serializers.ImageField(required=False, write_only=True)
 
     class Meta:
         model = Vendor
-        fields = ['url', 'id', 'company_name', 'profile_picture', 'email', 'address', 'phone_number', 'is_hidden']
+        fields = ['url', 'id', 'company_name', 'profile_picture', 'profile_picture_image', 'email', 'address', 'phone_number', 'is_hidden']
+        extra_kwargs = {'profile_picture': {'read_only': True}}
 
     def validate(self, data):
         if Vendor.objects.filter(company_name=data['company_name']).exclude(

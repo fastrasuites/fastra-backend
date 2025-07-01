@@ -26,6 +26,7 @@ from companies.permissions import HasTenantAccess
 from core.utils import enforce_tenant_schema
 from inventory.models import IncomingProduct, Location, IncomingProductItem
 from users.models import TenantUser
+from users.utils import convert_to_base64
 from .models import (PurchaseRequest, PurchaseRequestItem, Department, Vendor,
                      Product, RequestForQuotation, RequestForQuotationItem, UnitOfMeasure, PurchaseOrder, PurchaseOrderItem, PRODUCT_CATEGORY, Currency)
 from .serializers import (PurchaseRequestSerializer, DepartmentSerializer,
@@ -310,6 +311,9 @@ class VendorViewSet(SearchDeleteViewSet):
     def create(self, request, *args, **kwargs):
         serializer = VendorSerializer(data=request.data)
         if serializer.is_valid():
+            serializer.validated_data["profile_picture"] = convert_to_base64(serializer.validated_data["profile_picture_image"])
+            serializer.validated_data.pop("profile_picture_image")
+
             vendor = serializer.save()
             return Response({
                 "message": "Vendor created successfully",
@@ -318,8 +322,7 @@ class VendorViewSet(SearchDeleteViewSet):
                     "company_name": vendor.company_name,
                     "email": vendor.email,
                     "address": vendor.address,
-                    "profile_picture": request.build_absolute_uri(
-                        vendor.profile_picture.url) if vendor.profile_picture else None,
+                    "profile_picture": vendor.profile_picture
                 }
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
