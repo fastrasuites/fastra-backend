@@ -235,13 +235,14 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(write_only=True)
     temp_password = serializers.CharField(read_only=True)
     signature_image = serializers.ImageField(write_only=True, required=False)
+    role_details = GroupSerializer(source='role', read_only=True)
 
     class Meta:
         model = TenantUser
-        fields = ['id', 'user_id', 'name', 'email', 'role', 'phone_number', 'language', 'timezone',
+        fields = ['id', 'user_id', 'name', 'email', 'role', 'role_details', 'phone_number', 'language', 'timezone',
                   'in_app_notifications', 'email_notifications', 'access_codes', 'temp_password', 'date_created',
                   'signature', 'signature_image']
-        extra_kwargs = {'signature': {'read_only': True}}
+        extra_kwargs = {'signature': {'read_only': True}, 'role_details': {'read_only': True}}
 
 
     def get_user(self, obj):

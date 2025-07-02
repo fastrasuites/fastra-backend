@@ -311,8 +311,9 @@ class VendorViewSet(SearchDeleteViewSet):
     def create(self, request, *args, **kwargs):
         serializer = VendorSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.validated_data["profile_picture"] = convert_to_base64(serializer.validated_data["profile_picture_image"])
-            serializer.validated_data.pop("profile_picture_image")
+            if serializer.validated_data.get("profile_picture_image", None) is not None:
+                serializer.validated_data["profile_picture"] = convert_to_base64(serializer.validated_data["profile_picture_image"])
+                serializer.validated_data.pop("profile_picture_image")
 
             vendor = serializer.save()
             return Response({
