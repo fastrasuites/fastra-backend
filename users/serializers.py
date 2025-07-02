@@ -35,12 +35,11 @@ class PermissionSerializer(serializers.HyperlinkedModelSerializer):
         return instance
 
 
-class GroupSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='group-detail')
+class GroupSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Group
-        fields = ['url', 'id', 'name']
+        fields = ['id', 'name']
 
     def create(self, validated_data):
         return Group.objects.create(**validated_data)
@@ -229,7 +228,7 @@ class PasswordChangeSerializer(serializers.Serializer):
 
 
 # START THE VIEWS FOR THE NEW TENANT USER ACCOUNT
-class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
+class NewTenantUserSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(read_only=True) 
     access_codes = serializers.ListField(required=False, write_only=True)
     name = serializers.CharField(write_only=True)

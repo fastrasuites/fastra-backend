@@ -252,7 +252,7 @@ class Vendor(models.Model):
     email = models.EmailField(max_length=100)
     address = models.CharField(max_length=300, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
-    profile_picture = models.ImageField(upload_to='vendor_profiles/', blank=True, null=True)
+    profile_picture = models.TextField(blank=True, null=True)
     is_hidden = models.BooleanField(default=False)
 
     objects = models.Manager()

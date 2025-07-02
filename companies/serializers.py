@@ -4,6 +4,9 @@ from django.utils.text import slugify
 
 from rest_framework import serializers
 
+from users.utils import convert_to_base64
+from django.db import transaction
+
 from .models import CompanyRole, Tenant, CompanyProfile
 import json
 # Verify Email
@@ -71,27 +74,24 @@ class CompanyRoleSerializer(serializers.ModelSerializer):
 
 class CompanyProfileSerializer(serializers.ModelSerializer):
     roles = CompanyRoleSerializer(many=True, required=False)
-    logo_url = serializers.SerializerMethodField()
+    logo_image = serializers.ImageField(write_only=True, required=False)
 
     class Meta:
         model = CompanyProfile
         fields = [
-            'logo', 'logo_url', 'phone', 'street_address', 'city', 'state', 'country',
+            'logo', 'logo_image', 'phone', 'street_address', 'city', 'state', 'country',
             'registration_number', 'tax_id', 'industry', 'language',
             'company_size', 'website', 'roles'
         ]
+        extra_kwargs = {'logo': {'read_only': True}}
 
-
-    def get_logo_url(self, obj):
-        request = self.context.get('request')
-        if obj.logo and hasattr(obj.logo, 'url'):
-            return request.build_absolute_uri(obj.logo.url)
-        return None
-    
+    @transaction.atomic
     def update(self, instance, validated_data):
         print(validated_data)
         roles_data = validated_data.pop('roles', [])
-
+        validated_data["logo"] = convert_to_base64(validated_data["logo_image"])
+        validated_data.pop("logo_image")
+        
         # Update other profile fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
