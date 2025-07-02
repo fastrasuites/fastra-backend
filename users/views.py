@@ -297,12 +297,14 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
             data = serializer.data
             data["application_accesses"] = access_groups
 
-            with schema_context("public"):
-                user = User.objects.get(pk=access_group_user[0].user_id)
-                data["email"] = user.email
-                data["first_name"] = user.first_name
-                data["last_name"] = user.last_name
-                data["last_login"] = user.last_login
+            if access_group_user:
+                with schema_context("public"):
+                    user = User.objects.get(pk=access_group_user[0].user_id)
+                    data["email"] = user.email
+                    data["first_name"] = user.first_name
+                    data["last_name"] = user.last_name
+                    data["last_login"] = user.last_login
+                return Response(data)
             return Response(data)
 
         except ObjectDoesNotExist:
