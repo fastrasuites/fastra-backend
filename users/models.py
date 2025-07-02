@@ -3,6 +3,7 @@ from django.contrib.auth.hashers import make_password, check_password
 from django.contrib.auth.models import User, Group
 from django_tenants.utils import schema_context
 
+from companies.models import CompanyRole
 from registration.models import AccessRight, Tenant
 import pytz
 from django.db import connection
@@ -27,9 +28,8 @@ ROLE_CHOICES = [
 ]
 
 class TenantUser(models.Model):
-    # role = models.CharField(max_length=50, null=True, default=None)
     role = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, related_name='role', default=None)
-    # user = models.ForeignKey(User, on_delete=models.CASCADE, default=None, related_name='tenant_users')
+    company_role = models.ForeignKey(CompanyRole, on_delete=models.SET_NULL, null=True, default=None, related_name='company_tenant_user_role')
     user_id = models.IntegerField(null=False, unique=True, default=None)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='tenant_users', default=None)
     phone_number = models.CharField(max_length=20, blank=True)
