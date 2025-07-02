@@ -11,6 +11,8 @@ from decimal import Decimal
 
 from users.models import TenantUser
 from purchase.models import Product, Vendor, PurchaseOrder
+from decimal import Decimal, ROUND_HALF_UP
+
 
 LOCATION_TYPES = (
     ('internal', 'Internal'),
@@ -893,12 +895,18 @@ class DeliveryOrderItem(models.Model):
     delivery_order = models.ForeignKey(DeliveryOrder, on_delete=models.CASCADE, related_name='delivery_order_items')
     product_item = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='product_items')
     quantity_to_deliver = models.PositiveIntegerField()
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='Product Unit Price', default=0)
     is_available = models.BooleanField(default=False)
     is_hidden = models.BooleanField(default=False)
     date_created = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.product_item.product_name} ({self.quantity_to_deliver} {self.product_item.unit_of_measure})"
+    
+    @property
+    def total_price(self):
+        return "{:.2f}".format(self.unit_price * self.quantity_to_deliver)
+    
     
     def save(self, *args, **kwargs):
         for field in self._meta.fields:
