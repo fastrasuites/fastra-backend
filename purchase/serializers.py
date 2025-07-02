@@ -119,11 +119,14 @@ class ExcelUploadSerializer(serializers.Serializer):
 
 class VendorSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='vendor-detail')
-    profile_picture_image = serializers.ImageField(required=False, write_only=True)
+    profile_picture_image = serializers.ImageField(required=False, write_only=True, allow_null=True)
 
     class Meta:
         model = Vendor
-        fields = ['url', 'id', 'company_name', 'profile_picture', 'profile_picture_image', 'email', 'address', 'phone_number', 'is_hidden']
+        fields = [
+            'url', 'id', 'company_name', 'profile_picture', 'profile_picture_image', 'email', 'address',
+            'phone_number', 'is_hidden'
+        ]
         extra_kwargs = {'profile_picture': {'read_only': True}}
 
     def validate(self, data):
@@ -233,7 +236,6 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
         # instance.date_updated = validated_data.get('date_updated', instance.date_updated)
         instance.expiry_date = validated_data.get('expiry_date', instance.expiry_date)
         instance.vendor = validated_data.get('vendor', instance.vendor)
-        instance.vendor_category = validated_data.get('vendor_category', instance.vendor_category)
         instance.purchase_request = validated_data.get('purchase_request', instance.purchase_request)
         instance.currency = validated_data.get('currency', instance.currency)
         instance.status = validated_data.get('status', instance.status)
