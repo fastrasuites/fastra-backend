@@ -6,6 +6,7 @@ from django.utils.translation import gettext as _
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.contrib.auth.password_validation import validate_password
 
+from companies.serializers import CompanyRoleSerializer
 from core.errors.exceptions import TenantNotFoundException
 from registration.models import AccessRight, Tenant
 from users.models import AccessGroupRight, AccessGroupRightUser, TenantUser
@@ -235,14 +236,14 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(write_only=True)
     temp_password = serializers.CharField(read_only=True)
     signature_image = serializers.ImageField(write_only=True, required=False)
-    role_details = GroupSerializer(source='role', read_only=True)
+    company_role_details = CompanyRoleSerializer(source='company_role', read_only=True)
 
     class Meta:
         model = TenantUser
-        fields = ['id', 'user_id', 'name', 'email', 'role', 'role_details', 'phone_number', 'language', 'timezone',
+        fields = ['id', 'user_id', 'name', 'email', 'company_role', 'company_role_details', 'phone_number', 'language', 'timezone',
                   'in_app_notifications', 'email_notifications', 'access_codes', 'temp_password', 'date_created',
                   'signature', 'signature_image']
-        extra_kwargs = {'signature': {'read_only': True}, 'role_details': {'read_only': True}}
+        extra_kwargs = {'signature': {'read_only': True}, 'company_role_details': {'read_only': True}}
 
 
     def get_user(self, obj):
