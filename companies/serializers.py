@@ -89,8 +89,10 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         print(validated_data)
         roles_data = validated_data.pop('roles', [])
-        validated_data["logo"] = convert_to_base64(validated_data["logo_image"])
-        validated_data.pop("logo_image")
+        # Handle logo_image properly
+        logo_image = validated_data.pop('logo_image', None)
+        if logo_image is not None:
+            validated_data["logo"] = convert_to_base64(logo_image)
         
         # Update other profile fields
         for attr, value in validated_data.items():
