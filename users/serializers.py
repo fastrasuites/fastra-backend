@@ -235,7 +235,7 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
     name = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
     temp_password = serializers.CharField(read_only=True)
-    signature_image = serializers.ImageField(write_only=True, required=False)
+    signature_image = serializers.ImageField(write_only=True, required=False,  allow_null=True)
     company_role_details = CompanyRoleSerializer(source='company_role', read_only=True)
 
     class Meta:

@@ -74,7 +74,7 @@ class CompanyRoleSerializer(serializers.ModelSerializer):
 
 class CompanyProfileSerializer(serializers.ModelSerializer):
     roles = CompanyRoleSerializer(many=True, required=False)
-    logo_image = serializers.ImageField(write_only=True, required=False)
+    logo_image = serializers.ImageField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = CompanyProfile
