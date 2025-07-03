@@ -23,55 +23,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import NotFound
 from django.core.exceptions import ObjectDoesNotExist
 
-class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
-    def get_queryset(self):
-        return super().get_queryset()
-
-    def perform_destroy(self, instance):
-        instance.is_hidden = True
-        instance.save()
-
-    @action(detail=True, methods=['get', 'post'])
-    def toggle_hidden(self, request, pk=None, *args, **kwargs):
-        instance = self.get_object()
-        instance.is_hidden = not instance.is_hidden
-        instance.save()
-        return Response({'status': f'Hidden status set to {instance.is_hidden}'}, status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False)
-    def hidden(self, request, *args, **kwargs):
-        hidden_instances = self.queryset.filter(is_hidden=True)
-        page = self.paginate_queryset(hidden_instances)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(hidden_instances, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False)
-    def active(self, request, *args, **kwargs):
-        active_instances = self.queryset.filter(is_hidden=False)
-        page = self.paginate_queryset(active_instances)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(active_instances, many=True)
-        return Response(serializer.data)
-
-
-class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    search_fields = []
-
-    @action(detail=False)
-    def search(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset()).filter(is_hidden=False)
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet
 
 
 class UserViewSet(viewsets.ModelViewSet):
