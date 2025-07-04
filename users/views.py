@@ -225,13 +225,21 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
         try:
             instance = self.get_object()
             serializer = self.get_serializer(instance)
+            data = serializer.data
             
-            access_group_user = AccessGroupRightUser.objects.filter(user_id=pk)
+            access_group_user = AccessGroupRightUser.objects.filter(user_id=instance.user_id)
             access_codes = None
             if not access_group_user.exists():
                 access_codes = []
-            else:
-                access_codes = [code.access_code for code in access_group_user]
+                with schema_context("public"):
+                    user = User.objects.get(pk=instance.user_id)
+                    data["email"] = user.email
+                    data["first_name"] = user.first_name
+                    data["last_name"] = user.last_name
+                    data["last_login"] = user.last_login
+                return Response(data)
+
+            access_codes = [code.access_code for code in access_group_user]
 
             access_group = AccessGroupRight.objects.filter(
                 access_code__in=access_codes
@@ -246,17 +254,14 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
                 }
                 access_groups.append(access_dict)
 
-            data = serializer.data
             data["application_accesses"] = access_groups
 
-            if access_group_user:
-                with schema_context("public"):
-                    user = User.objects.get(pk=access_group_user[0].user_id)
-                    data["email"] = user.email
-                    data["first_name"] = user.first_name
-                    data["last_name"] = user.last_name
-                    data["last_login"] = user.last_login
-                return Response(data)
+            with schema_context("public"):
+                user = User.objects.get(pk=access_group_user[0].user_id)
+                data["email"] = user.email
+                data["first_name"] = user.first_name
+                data["last_name"] = user.last_name
+                data["last_login"] = user.last_login
             return Response(data)
 
         except ObjectDoesNotExist:
