@@ -311,7 +311,8 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
 
         validated_data["temp_password"] = password
         validated_data["password"] = new_user.password  
-        validated_data["user_image"] = convert_to_base64(validated_data.get("user_image_image", None))      
+        if 'user_image_image' in validated_data:
+            validated_data["user_image"] = convert_to_base64(validated_data.get("user_image_image", None))      
         
         access_codes = validated_data.pop('access_codes', [])
         validated_data.pop('name')
@@ -327,7 +328,7 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
         ) for code in access_codes]
 
         results = AccessGroupRightUser.objects.bulk_create(access_group_right_user)
-        return tenant_user
+        return tenant_user, new_user.email
 
     @transaction.atomic
     def update_user_information(self, instance, validated_data):
@@ -429,13 +430,18 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 # START THE ACCESSGROUP RIGHT SERIALIZER
 class AccessGroupRightSerializer(serializers.ModelSerializer):
+    from registration.serializers import AccessRightSerializer
+
     group_name = serializers.CharField(max_length=20, required=True)
     access_rights = serializers.ListField(child=serializers.DictField(), required=True, write_only=True)
+    access_right_details = AccessRightSerializer(source='access_right', read_only=True)
+    access_right = serializers.PrimaryKeyRelatedField(queryset=AccessRight.objects.filter(is_hidden=False), required=False, allow_null=True)
+
 
     class Meta:
         model = AccessGroupRight
         fields = ["id", "access_code", "group_name", "application", 
-                  "application_module", "access_rights", "access_right", "date_updated", "date_created"]
+                  "application_module", "access_rights", "access_right", "access_right_details", "date_updated", "date_created"]
         read_only_fields = ["id", "access_right", "access_code"]
 
     def validate_access_rights(self, value):

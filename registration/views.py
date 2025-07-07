@@ -10,6 +10,8 @@ from django.core.management import call_command
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
 from registration.config import DESIRED_INVENTORY_MODELS, DESIRED_PURCHASE_MODELS
+from users.models import AccessGroupRight, AccessGroupRightUser
+from users.serializers import AccessGroupRightSerializer
 from .models import Tenant, Domain
 from .serializers import AccessRightSerializer, TenantRegistrationSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -105,6 +107,41 @@ class LoginView(APIView):
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
 
+    def get_access_groups(self, tenant_schema_name, user):
+        data = []
+        # Get their accesses
+        with schema_context(tenant_schema_name):
+            user_access_codes = AccessGroupRightUser.objects.filter(user_id=user.id).values('access_code').distinct()
+            user_access_codes = [item['access_code'] for item in user_access_codes]
+
+            applications = AccessGroupRight.objects.filter(access_code__in=user_access_codes).values('application').distinct()
+            applications = [item["application"] for item in applications]
+
+            if not applications:
+                return Response({"detail": "No applications found."}, status=status.HTTP_404_NOT_FOUND)
+
+            exclude_fields = {'date_created', 'date_updated', 'application', "id"}
+
+            for app in applications:
+                access_groups = AccessGroupRight.objects.filter(application=app).distinct('access_code', 'group_name')
+                
+                if not access_groups.exists():
+                    continue  # Skip applications with no access groups
+
+                serialized = AccessGroupRightSerializer(access_groups, many=True)
+
+                cleaned_data = [
+                    {k: v for k, v in item.items() if k not in exclude_fields}
+                    for item in serialized.data
+                ]
+
+                data.append({
+                    "application": app,
+                    "access_groups": cleaned_data
+                })
+            return data
+
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
@@ -149,6 +186,8 @@ class LoginView(APIView):
         refresh['tenant_id'] = tenant_id
         refresh['schema_name'] = tenant_schema_name
 
+        data = self.get_access_groups(tenant_schema_name, user)        
+
         return Response({
             'refresh_token': str(refresh),
             'access_token': str(refresh.access_token),
@@ -159,7 +198,8 @@ class LoginView(APIView):
             },
             "tenant_id": tenant_id,
             "tenant_schema_name": tenant_schema_name,
-            "tenant_company_name": tenant_company_name
+            "tenant_company_name": tenant_company_name,
+            "user_accesses": data
         }, status=status.HTTP_200_OK)
 
 

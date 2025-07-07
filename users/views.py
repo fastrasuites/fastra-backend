@@ -1,3 +1,4 @@
+from django.core.mail import EmailMessage
 from django.shortcuts import get_object_or_404, render
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, status, generics, filters
@@ -283,24 +284,17 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
         else:
             raise ValueError("No email address available for verification")
 
-    def send_verification_email(self, tenant_user):
+    def send_account_email(self, tenant_user, email):
         try:
             email = self.get_user_email(tenant_user)
         except ValueError as e:
             print(f"Error: {str(e)}")
             return
-
-        token = RefreshToken.for_user(tenant_user)
-        token['email'] = email
-
-        current_site = get_current_site(self.request).domain
-        verification_url = f'https://{current_site}/email-verify?token={str(token.access_token)}'
-
-        email_body = f'Hi {tenant_user.user.username},\n\nUse the link below to verify your email:\n{verification_url}'
+        email_body = f'Your account has been created Successfully, Below are your login credentials\n\n Email: {email} \n Password: {tenant_user.temp_password}'
         email_data = {
             'email_body': email_body,
             'to_email': email,
-            'email_subject': 'Verify Your Email'
+            'email_subject': 'Account Created Successfully'
         }
         Util.send_email(email_data)
 
@@ -312,10 +306,11 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
         serializer.validated_data["tenant_schema_name"] = tenant_schema_name
         if 'signature_image' in serializer.validated_data:
             serializer.validated_data["signature"] = convert_to_base64(serializer.validated_data["signature_image"])
-        tenant_user = self.perform_create(serializer)
+        tenant_user, email = serializer.create(serializer.validated_data)
+        self.send_account_email(tenant_user, email)
         headers = self.get_success_headers(serializer.validated_data)
         return Response({
-            'detail': 'Tenant user created successfully. If an email was provided, a verification link has been sent.',
+            'detail': 'Tenant user created successfully. If an email was provided, account login credentials has been sent.',
             'user': serializer.data
         }, status=status.HTTP_201_CREATED, headers=headers)
 
@@ -337,11 +332,17 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
                 tenant_user.save()
                 with schema_context('public'):
                     user.save()
+            email_data = {
+                    'email_body': f"Password reset successful, your new password is {new_password}",
+                    'to_email': email,
+                    'email_subject': 'Passord Reset Successful'
+                }
+            Util.send_email(email_data)
 
             return Response({'detail': f'Password reset successfully. New Password is {new_password}'}, status=status.HTTP_200_OK)
         except Exception as ex:
             return Response({"detail": str(ex)}, status=status.HTTP_400_BAD_REQUEST)
-
+        
 
 class NewTenantPasswordViewSet(SearchDeleteViewSet):
     serializer_class = ChangePasswordSerializer
@@ -443,7 +444,7 @@ class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
                 {"detail": "Invalid data provided."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        except serializers.SerializerError as e:
+        except serializers.ValidationError as e:
             return Response(
                 {"detail": "An error occurred while serializing the data."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
