@@ -431,7 +431,12 @@ class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
                     "access_groups": cleaned_data
                 })
 
-            return Response(data, status=status.HTTP_200_OK)
+            payload = {
+                "tenant_company_name": request.tenant.company_name,
+                "data": data
+             }
+
+            return Response(payload, status=status.HTTP_200_OK)
 
         except ValidationError as e:
             return Response(
