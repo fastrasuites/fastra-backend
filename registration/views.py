@@ -111,7 +111,7 @@ class LoginView(APIView):
         data = []
         # Get their accesses
         with schema_context(tenant_schema_name):
-            if user.is_staff is True or user.is_superuser is True:
+            if user.is_staff is True and user.is_superuser is True:
                 data.append({
                     "application": "all_apps",
                     "access_groups": "all_access_groups"
