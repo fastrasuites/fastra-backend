@@ -19,12 +19,14 @@ class RequestForgottenPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
 class OTPVerificationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
     otp = serializers.CharField(required=True, max_length=4, min_length=4)
 
 class ForgottenPasswordSerializer(serializers.Serializer):
     #otp = serializers.CharField(required=True, max_length=4, min_length=4)
     new_password = serializers.CharField(write_only=True, required=True)
     confirm_password = serializers.CharField(write_only=True, required=True)
+    email = serializers.EmailField()
 
     def validate(self, attrs):
         if attrs['new_password'] != attrs['confirm_password']:
@@ -106,4 +108,8 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
 
         return instance 
 
+
+class ChangeAdminPasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True, write_only=True)
+    new_password = serializers.CharField(required=True, write_only=True)
 

@@ -25,6 +25,7 @@ class Tenant(TenantMixin):
     otp_requested_at = models.DateTimeField(null=False, default=timezone.now)
     otp_verified_at = models.DateTimeField(null=True)
     is_verified = models.BooleanField(default=False)
+    is_onboarded = models.BooleanField(default=False)
 
 
 class Domain(DomainMixin):

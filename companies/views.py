@@ -35,10 +35,13 @@ from users.models import TenantUser
 
 from .models import CompanyProfile
 from registration.models import OTP
-from .serializers import OTPVerificationSerializer, TenantSerializer, VerifyEmailSerializer, RequestForgottenPasswordSerializer, \
+from .serializers import ChangeAdminPasswordSerializer, OTPVerificationSerializer, TenantSerializer, VerifyEmailSerializer, RequestForgottenPasswordSerializer, \
     ForgottenPasswordSerializer, CompanyProfileSerializer, ResendVerificationEmailSerializer
 from .utils import Util
 from .permissions import IsAdminUser
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework import  permissions
+
 
 
 class VerifyEmail(generics.GenericAPIView):
@@ -335,59 +338,99 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data['email']
-            try:
+            #try:
                 #user = User.objects.get(email=email)
-                user = User.objects.get(email=email, is_superuser=True, is_staff=True)
-                if not user.profile.is_verified:
-                    return Response({'error': 'Email is not verified.'}, status=status.HTTP_400_BAD_REQUEST)
-                
-                #otp = OTP.objects.create(user=user)
+                #user = User.objects.get(email=email, is_superuser=True, is_staff=True)
 
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
+
+            if not (user.is_superuser and user.is_staff):
+            # Notify tenant admin
+                schema_name = connection.schema_name
                 try:
-                    otp = OTP.objects.create(user=user)
-                    print(f"OTP created: {otp.code}")  # Confirm the object and code
-                except Exception as e:
-                    import traceback
-                    print("Failed to create OTP")
-                    print(traceback.format_exc())  # Full error stack trace
-                    return Response({'error': 'Internal error creating OTP'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    tenant_details = Tenant.objects.get(schema_name=schema_name)
+                except Tenant.DoesNotExist:
+                    return Response({'error': 'Tenant not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+                tenant_user_profile = tenant_details.created_by
 
                 email_body = (
-                    f"Hi {user.username},\n\n"
-                    f"We received a request to reset your password. Use the OTP (One-Time Password) below to proceed:\n\n"
-                    f"OTP: {otp.code}\n\n"
-                    f"This OTP is valid for the next 10 minutes.\n\n"
-                    f"If you did not request a password reset, please ignore this email or contact support.\n\n"
-                    f"Thanks,\n"
-                    f"The fastrasuite Team"
+                    f"Hi {tenant_details.company_name},\n\n"
+                    f"We received a request from your employee ({user.email}) for a password reset. "
+                    f"Please login to your dashboard to reset the user's password.\n\n"
+                    f"If you did not approve this, please ignore this email or contact support.\n\n"
+                    f"Thanks,\nThe fastrasuite Team"
                 )
 
                 email_data = {
                     'email_body': email_body,
-                    'to_email': user.email,
-                    'email_subject': 'Your Password Reset OTP'
+                    'to_email': tenant_user_profile.email,
+                    'email_subject': 'Employee Password Reset Request'
                 }
 
-                """Util.send_email(
-                    'Forgotten Password OTP',
-                    f'Your OTP for forgotten password is: {otp.code}',
-                    settings.DEFAULT_FROM_EMAIL,
-                    [email],
-                    fail_silently=False,
-                )"""
-
-                #Util.send_email(email_data)
                 try:
                     Util.send_email(email_data)
-                except Exception as e:
+                except Exception:
                     import traceback
-                    print("Failed to send email")
+                    print("Failed to send email to tenant admin")
                     print(traceback.format_exc())
-                    return Response({'error': 'Error sending email, please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                request.session['forgotten_password_email'] = email  # Store email in session
-                return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
-            except User.DoesNotExist:
-                return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
+                    return Response({'error': 'Error sending email to tenant admin.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+                return Response({'detail': 'Request sent to tenant admin for approval.'}, status=status.HTTP_200_OK)
+            
+            if not user.profile.is_verified:
+                return Response({'error': 'Email is not verified.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            #otp = OTP.objects.create(user=user)
+
+            try:
+                otp = OTP.objects.create(user=user)
+                print(f"OTP created: {otp.code}")  # Confirm the object and code
+            except Exception as e:
+                import traceback
+                print("Failed to create OTP")
+                print(traceback.format_exc())  # Full error stack trace
+                return Response({'error': 'Internal error creating OTP'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            email_body = (
+                f"Hi {user.username},\n\n"
+                f"We received a request to reset your password. Use the OTP (One-Time Password) below to proceed:\n\n"
+                f"OTP: {otp.code}\n\n"
+                f"This OTP is valid for the next 10 minutes.\n\n"
+                f"If you did not request a password reset, please ignore this email or contact support.\n\n"
+                f"Thanks,\n"
+                f"The fastrasuite Team"
+            )
+
+            email_data = {
+                'email_body': email_body,
+                'to_email': user.email,
+                'email_subject': 'Your Password Reset OTP'
+            }
+
+            """Util.send_email(
+                'Forgotten Password OTP',
+                f'Your OTP for forgotten password is: {otp.code}',
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+                fail_silently=False,
+            )"""
+
+            #Util.send_email(email_data)
+            try:
+                Util.send_email(email_data)
+            except Exception as e:
+                import traceback
+                print("Failed to send email")
+                print(traceback.format_exc())
+                return Response({'error': 'Error sending email, please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            request.session['forgotten_password_email'] = email  # Store email in session
+            return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
+            #except User.DoesNotExist:
+                #return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -434,7 +477,7 @@ class ResetPasswordView(generics.GenericAPIView):
             )
 
         otp = OTP.objects.filter(user__email=email, is_used=True).order_by('-created_at').first()
-        print("i got here")
+        print("i got here", otp)
         if not otp:
             print("i got here 2")
             return Response({'error': 'OTP verification required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -453,6 +496,8 @@ class ResetPasswordView(generics.GenericAPIView):
                 user.save()
 
                 tenant = user.tenants.first()
+                #tenant = user.tenants.filter(schema_name=connection.schema_name).first()
+                print("tenant: ",tenant)
                 if tenant:
                     with tenant_context(tenant):
                         try:
@@ -637,6 +682,57 @@ class UpdateCompanyProfileView(generics.RetrieveUpdateAPIView):
                             status=status.HTTP_403_FORBIDDEN)
         return super().handle_exception(exc)
 """
+
+class ChangeAdminPassword(generics.GenericAPIView):
+    serializer_class = ChangeAdminPasswordSerializer 
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            new_password = serializer.validated_data['new_password']
+            old_password = serializer.validated_data['old_password']
+
+            user = request.user  # ✅ Use authenticated user
+            print("schema_name:", connection.schema_name)
+
+            # Retrieve tenant
+            tenant = user.tenants.filter(schema_name=connection.schema_name).first()
+            print("The Tenant ", tenant)
+            if tenant:
+                with tenant_context(tenant):
+                    try:
+                        tenant_user = TenantUser.objects.get(user_id=user.id, tenant=tenant)
+
+                        if not tenant_user.check_tenant_password(old_password):
+                            return Response({'error': 'Incorrect old password.'}, status=status.HTTP_400_BAD_REQUEST)
+
+                        # Update TenantUser password
+                        tenant_user.set_tenant_password(new_password)
+                        tenant_user.save()
+
+                    except TenantUser.DoesNotExist:
+                        return Response({'error': 'Tenant user record not found.'}, status=status.HTTP_404_NOT_FOUND)
+                    except Exception as e:
+                        import traceback
+                        print(traceback.format_exc())
+                        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                return Response({'error': 'Tenant not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            # Update User password in public schema
+            with schema_context('public'):
+                print("I am in here 2")
+                if not user.check_password(old_password):
+                    return Response({'error': 'Incorrect old password (public).'}, status=status.HTTP_400_BAD_REQUEST)
+                user.set_password(new_password)
+                user.save()
+
+            return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 class ProtectedView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
