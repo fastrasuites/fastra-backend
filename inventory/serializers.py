@@ -397,8 +397,8 @@ class DeliveryOrderItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DeliveryOrderItem
-        fields = ["product_item", "product_details", "quantity_to_deliver", "date_created", "delivery_order"]
-        read_only_fields = ["product_details", "delivery_order"]
+        fields = ["product_item", "unit_price", "total_price", "product_details", "quantity_to_deliver", "date_created", "delivery_order"]
+        read_only_fields = ["product_details", "delivery_order", "total_price"]
 
 
 class DeliveryOrderSerializer(serializers.ModelSerializer):

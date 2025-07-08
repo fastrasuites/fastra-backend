@@ -3,6 +3,7 @@ from django.contrib.auth.hashers import make_password, check_password
 from django.contrib.auth.models import User, Group
 from django_tenants.utils import schema_context
 
+from companies.models import CompanyRole
 from registration.models import AccessRight, Tenant
 import pytz
 from django.db import connection
@@ -28,7 +29,7 @@ ROLE_CHOICES = [
 
 class TenantUser(models.Model):
     role = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, related_name='role', default=None)
-    # user = models.ForeignKey(User, on_delete=models.CASCADE, default=None, related_name='tenant_users')
+    company_role = models.ForeignKey(CompanyRole, on_delete=models.SET_NULL, null=True, default=None, related_name='company_tenant_user_role')
     user_id = models.IntegerField(null=False, unique=True, default=None)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='tenant_users', default=None)
     phone_number = models.CharField(max_length=20, blank=True)
@@ -93,11 +94,11 @@ class AccessGroupRight(models.Model):
 
 
 class AccessGroupRightUser(models.Model):
-    access_group_right = models.ForeignKey(AccessGroupRight, on_delete=models.CASCADE)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    access_code = models.CharField(max_length=20, null=True, blank=True)
+    user_id = models.BigIntegerField(null=True, blank=True)
     is_hidden =  models.BooleanField(default=False)
     date_updated = models.DateTimeField(auto_now=True, null=True, blank=True)
     date_created = models.DateTimeField(auto_now_add=True, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.access_group_right.group_name} - {self.user.email}"
+        return f"{self.access_code} - {self.user_id}"

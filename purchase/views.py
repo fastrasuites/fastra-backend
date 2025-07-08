@@ -26,6 +26,8 @@ from companies.permissions import HasTenantAccess
 from core.utils import enforce_tenant_schema
 from inventory.models import IncomingProduct, Location, IncomingProductItem
 from users.models import TenantUser
+from users.module_permissions import HasModulePermission
+from users.utils import convert_to_base64
 from .models import (PurchaseRequest, PurchaseRequestItem, Department, Vendor,
                      Product, RequestForQuotation, RequestForQuotationItem, UnitOfMeasure, PurchaseOrder, PurchaseOrderItem, PRODUCT_CATEGORY, Currency)
 from .serializers import (PurchaseRequestSerializer, DepartmentSerializer,
@@ -35,6 +37,7 @@ from .serializers import (PurchaseRequestSerializer, DepartmentSerializer,
                           PurchaseOrderSerializer, PurchaseOrderItemSerializer,
                           ExcelUploadSerializer, CurrencySerializer)
 from .utils import generate_model_pdf
+from users.config import basic_action_permission_map
 
 
 class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin, mixins.CreateModelMixin,
@@ -119,8 +122,24 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
 class PurchaseRequestViewSet(SearchDeleteViewSet):
     queryset = PurchaseRequest.objects.all()
     serializer_class = PurchaseRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    # Required by permission class
+    app_label = "purchase"
+    model_name = "purchaserequest"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['id', 'requester__username', 'suggested_vendor__name']
+    # Map DRF actions to your permission names
+    action_permission_map = {
+        **basic_action_permission_map,
+        "draft_list": "view",
+        "pending_list": "view",
+        "approved_list": "view",
+        "rejected_list": "view",
+        "convert_to_rfq": "create",
+        "submit": "edit",
+        "approve": "approve",      
+        "reject": "reject",        
+    }
+    
 
     def perform_create(self, serializer):
         # # Ensure the user is a TenantUser
@@ -303,13 +322,20 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
 class VendorViewSet(SearchDeleteViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "purchase"
+    model_name = "vendor"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = basic_action_permission_map
     parser_classes = (MultiPartParser, FormParser)
     search_fields = ['company_name', 'email']
 
     def create(self, request, *args, **kwargs):
         serializer = VendorSerializer(data=request.data)
         if serializer.is_valid():
+            if serializer.validated_data.get("profile_picture_image", None) is not None:
+                serializer.validated_data["profile_picture"] = convert_to_base64(serializer.validated_data["profile_picture_image"])
+                serializer.validated_data.pop("profile_picture_image")
+
             vendor = serializer.save()
             return Response({
                 "message": "Vendor created successfully",
@@ -318,8 +344,7 @@ class VendorViewSet(SearchDeleteViewSet):
                     "company_name": vendor.company_name,
                     "email": vendor.email,
                     "address": vendor.address,
-                    "profile_picture": request.build_absolute_uri(
-                        vendor.profile_picture.url) if vendor.profile_picture else None,
+                    "profile_picture": vendor.profile_picture
                 }
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

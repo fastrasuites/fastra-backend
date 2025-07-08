@@ -19,6 +19,9 @@ urlpatterns = [
     path('tenant-users/change-password', NewTenantPasswordViewSet.as_view({'post': 'change_password'}), name='change-password'),
     path('tenant-users/reset-password', NewTenantUserViewSet.as_view({'post': 'reset_password'}), name='reset-password'),
     path('tenant-users/edit/<int:id>/', NewTenantProfileViewSet.as_view({'patch': 'update_user_information'}), name='update-user-information'),
+
+    path('access-group-rights/access-groups/', AccessGroupRightViewSet.as_view({'get': 'get_restructured'}), name='get-restructured'),
+
 ]
 
 # urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
