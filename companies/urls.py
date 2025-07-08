@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import TenantViewSet, VerifyEmail, RequestForgottenPasswordView,\
+from .views import ChangeAdminPassword, TenantViewSet, VerifyEmail, RequestForgottenPasswordView,\
     ResendVerificationEmail, UpdateCompanyProfileView, ResendOTPView, ProtectedView
 
 from rest_framework_simplejwt.views import (
@@ -24,6 +24,7 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     path('update-company-profile/', UpdateCompanyProfileView.as_view(), name='update-company-profile'),
+    path('change-admin-password/', ChangeAdminPassword.as_view(), name='change-admin-password'),
 
     path('test/', ProtectedView.as_view())
 
