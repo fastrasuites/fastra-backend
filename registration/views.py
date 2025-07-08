@@ -206,6 +206,7 @@ class LoginView(APIView):
             "tenant_id": tenant_id,
             "tenant_schema_name": tenant_schema_name,
             "tenant_company_name": tenant_company_name,
+            "isOnboarded": tenant.is_onboarded,
             "user_accesses": data
         }, status=status.HTTP_200_OK)
 
