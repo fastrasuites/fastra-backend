@@ -39,7 +39,7 @@ from .serializers import ChangeAdminPasswordSerializer, OTPVerificationSerialize
     ForgottenPasswordSerializer, CompanyProfileSerializer, ResendVerificationEmailSerializer
 from .utils import Util
 from .permissions import IsAdminUser
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import  permissions
 
 
