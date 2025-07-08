@@ -111,6 +111,13 @@ class LoginView(APIView):
         data = []
         # Get their accesses
         with schema_context(tenant_schema_name):
+            if user.is_staff is True and user.is_superuser is True:
+                data.append({
+                    "application": "all_apps",
+                    "access_groups": "all_access_groups"
+                })
+                return data
+
             user_access_codes = AccessGroupRightUser.objects.filter(user_id=user.id).values('access_code').distinct()
             user_access_codes = [item['access_code'] for item in user_access_codes]
 
@@ -118,7 +125,7 @@ class LoginView(APIView):
             applications = [item["application"] for item in applications]
 
             if not applications:
-                return Response({"detail": "No applications found."}, status=status.HTTP_404_NOT_FOUND)
+                return []
 
             exclude_fields = {'date_created', 'date_updated', 'application', "id"}
 
