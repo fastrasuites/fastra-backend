@@ -300,8 +300,11 @@ class CurrencyViewSet(SearchDeleteViewSet):
 class UnitOfMeasureViewSet(SearchDeleteViewSet):
     queryset = UnitOfMeasure.objects.all()
     serializer_class = UnitOfMeasureSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['unit_name', 'unit_category']
+    app_label = "purchase"
+    model_name = "unitofmeasure"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    search_fields = ['unit_name', 'unit_category']    
+    action_permission_map = basic_action_permission_map
 
 
 # class VendorCategoryViewSet(SearchDeleteViewSet):
@@ -325,9 +328,13 @@ class VendorViewSet(SearchDeleteViewSet):
     app_label = "purchase"
     model_name = "vendor"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    action_permission_map = basic_action_permission_map
     parser_classes = (MultiPartParser, FormParser)
     search_fields = ['company_name', 'email']
+    action_permission_map = {
+        **basic_action_permission_map,
+        "upload_excel" : "create",
+        "upload_profile_picture": "create"
+        }
 
     def create(self, request, *args, **kwargs):
         serializer = VendorSerializer(data=request.data)
@@ -430,8 +437,15 @@ class VendorViewSet(SearchDeleteViewSet):
 class ProductViewSet(SearchDeleteViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "purchase"
+    model_name = "product"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['product_name', 'product_category', 'unit_of_measure__name', ]
+    action_permission_map = {
+        **basic_action_permission_map,
+        "upload_excel": "create",
+        "delete_all_products": "delete"
+    }
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
     def upload_excel(self, request):
@@ -536,8 +550,24 @@ class ProductViewSet(SearchDeleteViewSet):
 class RequestForQuotationViewSet(SearchDeleteViewSet):
     queryset = RequestForQuotation.objects.all()
     serializer_class = RequestForQuotationSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "purchase"
+    model_name = "requestforquotation"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['vendor__company_name', 'status', 'purchase_request__id']
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_rfq_editable": "view",
+        "check_rfq_mailable": "view",
+        "submit": "edit",
+        "approve": "approve",
+        "reject": "reject",
+        "draft_list": "view",
+        "pending_list": "view",
+        "approved_list": "view",
+        "rejected_list": "view",
+        "convert_to_po": "create",
+    }
+
 
     @action(detail=True, methods=['get'])
     def check_rfq_editable(self, rfq):
@@ -762,10 +792,24 @@ class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
 class PurchaseOrderViewSet(SearchDeleteViewSet):
     queryset = PurchaseOrder.objects.all()
     serializer_class = PurchaseOrderSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "purchase"
+    model_name = "purchaseorder"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['status', 'vendor__company_name']
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
+    action_permission_map = {
+        **basic_action_permission_map,
+        "convert_to_incoming_product": "create",
+        "submit": "edit",
+        "complete": "edit",
+        "cancel": "edit",
+        "draft_list": "view",
+        "awaiting_list": "view",
+        "cancelled_list": "view",
+        "completed_list": "view"
+    }
+
 
     @action(detail=True, methods=['get'])
     def check_po_editable(self, po):
