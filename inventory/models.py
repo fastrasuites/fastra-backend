@@ -234,12 +234,6 @@ class Location(models.Model):
     def get_active_locations(cls):
         return cls.objects.exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
 
-    # def save(self, *args, **kwargs):
-    #    self.id = f"{self.location_code}{self.id_number:05d}"
-    #    if not MultiLocation.objects.filter(is_activated=True).exists() and Location.objects.filter(is_hidden=False).count() >= 3:
-    #        raise Exception("Maximum number of locations reached")
-    #    super().save(*args, **kwargs)
-
     def save(self, *args, **kwargs):
         # Ensure the location code and location name are unique
         if Location.objects.filter(location_code=self.location_code).exists() or Location.objects.filter(location_name=self.location_name).exists():
@@ -703,6 +697,7 @@ class IncomingProductItem(models.Model):
                 raise ValidationError("Quantity cannot be negative")
             if self.incoming_product.is_validated:
                 self.product.available_product_quantity += self.expected_quantity
+                self.product.save()
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
