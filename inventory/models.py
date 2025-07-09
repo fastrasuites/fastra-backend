@@ -695,9 +695,6 @@ class IncomingProductItem(models.Model):
                     raise ValidationError("Expected quantity is required if there is no related purchase order.")
             if self.expected_quantity < 0 or self.quantity_received < 0:
                 raise ValidationError("Quantity cannot be negative")
-            if self.incoming_product.is_validated:
-                self.product.available_product_quantity += self.expected_quantity
-                self.product.save()
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
