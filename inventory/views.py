@@ -381,7 +381,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
     action_permission_map = {
         **basic_action_permission_map,
         "check_availability": "edit",
-        "confirm_delivery": "edit"
+        "confirm_delivery": "approve"
     }
 
     def create(self, request, *args, **kwargs):
@@ -447,7 +447,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
             return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-
+    @transaction.atomic
     def confirm_delivery(self, request, *args, **kwargs):
         serializer = self.get_serializer
         """This is to confirm the delivery order. Append the delievery order id(pk) to the request"""
@@ -460,6 +460,14 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         try:
             delivery_order.status = "done"
             delivery_order.save()
+
+            """This is to update by deducting the Quantity to deliver from the available quantity of the Product"""
+            delivery_order_items = DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id)
+            for item in delivery_order_items:
+                product_item = item.product_item
+                product_item.available_product_quantity -= item.quantity_to_deliver
+                product_item.save()
+
             serialized_order = DeliveryOrderSerializer(delivery_order, context={'request': request})
             return Response(serialized_order.data, status=status.HTTP_200_OK)
         except Exception as e:
