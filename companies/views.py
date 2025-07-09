@@ -726,6 +726,7 @@ class ChangeAdminPassword(generics.GenericAPIView):
 
                         # Update TenantUser password
                         tenant_user.set_tenant_password(new_password)
+                        tenant_user.temp_password = None
                         tenant_user.save()
 
                     except TenantUser.DoesNotExist:

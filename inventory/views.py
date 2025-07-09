@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet
 from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
+from users.module_permissions import HasModulePermission
 
 from .models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
     IncomingProductItem, StockMove
@@ -20,6 +21,8 @@ from rest_framework import mixins, viewsets
 from .filters import StockMoveFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.core.exceptions import ObjectDoesNotExist
+from users.config import basic_action_permission_map
+
 
 class LocationViewSet(SearchDeleteViewSet):
     queryset = Location.objects.all()
@@ -50,10 +53,18 @@ class LocationViewSet(SearchDeleteViewSet):
 class StockAdjustmentViewSet(SearchDeleteViewSet):
     queryset = StockAdjustment.objects.all()
     serializer_class = StockAdjustmentSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "inventory"
+    model_name = "stockadjustment"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
-    search_fields = ['date_created', 'status', 'warehouse_location']
+    search_fields = ['date_created', 'status', 'warehouse_location']    
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_editable": "view",
+        "draft_list": "view",
+        "done_list": "view",          
+    }
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -121,10 +132,17 @@ class StockAdjustmentItemViewSet(viewsets.ModelViewSet):
 class ScrapViewSet(SearchDeleteViewSet):
     queryset = Scrap.objects.all()
     serializer_class = ScrapSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "inventory"
+    model_name = "scrap"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['date_created', 'status', 'warehouse_location']
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_editable": "view"
+    }
+
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -182,10 +200,17 @@ class ScrapItemViewSet(viewsets.ModelViewSet):
 class IncomingProductViewSet(SearchDeleteViewSet):
     queryset = IncomingProduct.objects.all()
     serializer_class = IncomingProductSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "inventory"
+    model_name = "stockmove"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['date_created', 'status', 'destination_location']
     lookup_field = 'incoming_product_id'
     lookup_url_kwarg = 'incoming_product_id'
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_editable": "view",
+        "list_backorders": "view"
+    }
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -349,8 +374,15 @@ class MultiLocationViewSet(viewsets.GenericViewSet):
 # START FOR THE DELIVERY ORDER
 class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrder.objects.filter(is_hidden=False)
-    permission_classes = [permissions.IsAuthenticated]
     serializer_class = DeliveryOrderSerializer
+    app_label = "inventory"
+    model_name = "deliveryorder"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_availability": "edit",
+        "confirm_delivery": "edit"
+    }
 
     def create(self, request, *args, **kwargs):
         """This is to create a new Delivery Order."""
@@ -496,8 +528,11 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
 # START FOR THE DELIVERY ORDER RETURN 
 class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrderReturn.objects.filter(is_hidden=False)
-    permission_classes = [permissions.IsAuthenticated]
     serializer_class = DeliveryOrderReturnSerializer
+    app_label = "inventory"
+    model_name = "deliveryorderreturn"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = basic_action_permission_map
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -555,8 +590,14 @@ class DeliveryOrderReturnItemViewSet(SoftDeleteWithModelViewSet):
 # START RETURN INCOMING PRODUCTS
 class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
     queryset = ReturnIncomingProduct.objects.filter(is_hidden=False)
-    permission_classes = [permissions.IsAuthenticated]
     serializer_class = ReturnIncomingProductSerializer
+    app_label = "inventory"
+    model_name = "returnincomingproduct"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = {
+        **basic_action_permission_map,
+        "approve": "approve"
+    }
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -607,8 +648,12 @@ class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
 # START STOCK MOVES
 class StockMoveViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
     queryset = StockMove.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
     serializer_class = StockMoveSerializer
+    app_label = "inventory"
+    model_name = "stockmove"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     filter_backends = [DjangoFilterBackend]
     filterset_class = StockMoveFilter
+    action_permission_map = basic_action_permission_map
+
 # END STOCK MOVES
