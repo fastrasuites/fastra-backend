@@ -1,11 +1,10 @@
 from rest_framework.views import APIView
 from django.shortcuts import render, redirect
-from django.urls import reverse
 from rest_framework.response import Response
-from rest_framework import viewsets, generics
+from rest_framework import viewsets
 from rest_framework import status
 from django.utils.text import slugify
-from django.contrib.auth import login, authenticate, get_user_model
+from django.contrib.auth import authenticate
 from django.core.management import call_command
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
@@ -14,14 +13,12 @@ from .models import Tenant, Domain
 from .serializers import AccessRightSerializer, TenantRegistrationSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .utils import Util, set_tenant_schema
-from django.contrib.sites.shortcuts import get_current_site
-import jwt
 from django.conf import settings
 from django.db import transaction
 from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
 from rest_framework import permissions
-from django.contrib.auth.models import Group
+from shared.utils.email_service import EmailService
 from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
 from .models import AccessRight
 from django.contrib.contenttypes.models import ContentType
@@ -45,6 +42,7 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
     @transaction.atomic
     def create(self, request):
         serializer = self.serializer_class(data=request.data)
+        email_service = EmailService()
 
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -69,23 +67,48 @@ class TenantRegistrationViewSet(viewsets.ViewSet):
             #     f"Thank you for registering. Your OTP for email verification is: {otp}\n\n"
             #     f"Please use this OTP to verify your email address and complete your registration."
             # )
-            email_body = (
-                f"Hi {tenant.company_name},\n\n"
-                f"Thank you for registering. To complete your registration, please verify your email by clicking the "
-                f"link below:\n\n"
-                f"{verification_url}\n\n"
-                f"If you did not register for an account, please ignore this email."
-            )
-            email_data = {
-                'email_body': email_body,
-                'to_email': tenant.created_by.email,
-                'email_subject': 'Verify Your Email'
+
+            context = {
+                'company': tenant,
+                'company_name': tenant.company_name,
+                'activation_link': verification_url
             }
-            Util.send_email(email_data)
-            return Response({
-                'detail': 'Tenant created successfully. Please verify your email with the OTP sent.',
-                'tenant_url': f"https://{domain.domain}"
-            }, status=status.HTTP_201_CREATED)
+
+            success = email_service.send_email(
+                subject='Verify Your Email',
+                template_name='email/company_welcome.html',
+                context=context,
+                recipient_list=[tenant.created_by.email]
+            )
+
+            if success:
+                return Response({
+                    'detail': 'Tenant created successfully. Please verify your email with the OTP sent.',
+                    'tenant_url': f"https://{domain.domain}"
+                }, status=status.HTTP_201_CREATED)
+            else:
+                return Response(
+                    {
+                        'detail': f'An error occurred during registration. Please try again'
+                    }, status=status.HTTP_400_BAD_REQUEST
+                )
+            # email_body = (
+            #     f"Hi {tenant.company_name},\n\n"
+            #     f"Thank you for registering. To complete your registration, please verify your email by clicking the "
+            #     f"link below:\n\n"
+            #     f"{verification_url}\n\n"
+            #     f"If you did not register for an account, please ignore this email."
+            # )
+            # email_data = {
+            #     'email_body': email_body,
+            #     'to_email': tenant.created_by.email,
+            #     'email_subject': 'Verify Your Email'
+            # }
+            # Util.send_email(email_data)
+            # return Response({
+            #     'detail': 'Tenant created successfully. Please verify your email with the OTP sent.',
+            #     'tenant_url': f"https://{domain.domain}"
+            # }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             print(e)
