@@ -381,7 +381,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
     action_permission_map = {
         **basic_action_permission_map,
         "check_availability": "edit",
-        "confirm_delivery": "edit"
+        "confirm_delivery": "approve"
     }
 
     def create(self, request, *args, **kwargs):
