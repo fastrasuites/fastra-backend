@@ -5,7 +5,7 @@ from django.core.mail import EmailMessage
 import mimetypes
 from rest_framework.exceptions import APIException
 
-from users.models import AccessGroupRight
+from users.models import AccessGroupRight, AccessGroupRightUser
 from django.db.models import Max
 from django.db import connection
 
@@ -16,7 +16,7 @@ class Util:
         email.send(fail_silently=False)
 
 
-def generate_random_password(length=8):
+def generate_random_password(length=16):
     characters = string.ascii_letters + string.digits 
     password = ''.join(random.choice(characters) for _ in range(length))
     return password
@@ -66,6 +66,28 @@ def generate_access_code_for_access_group(app_name, group_name):
         # Optionally log the error
         # logger.error(f"Access code generation failed: {str(e)}")
         return f"Error creating an access_code"
+
+
+
+def user_has_permission(user, app, model, action):
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser and user.is_staff:
+        return True
+
+    access_codes = AccessGroupRightUser.objects.filter(
+        user_id=user.id,
+        is_hidden=False
+    ).values_list("access_code", flat=True)
+
+    return AccessGroupRight.objects.filter(
+        access_code__in=access_codes,
+        application=app,
+        application_module=model,
+        access_right__name=action,
+        is_hidden=False
+    ).exists()
+
 
 
 

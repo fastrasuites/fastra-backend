@@ -236,14 +236,15 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(write_only=True)
     temp_password = serializers.CharField(read_only=True)
     signature_image = serializers.ImageField(write_only=True, required=False,  allow_null=True)
+    user_image_image = serializers.ImageField(write_only=True, required=False,  allow_null=True)
     company_role_details = CompanyRoleSerializer(source='company_role', read_only=True)
 
     class Meta:
         model = TenantUser
         fields = ['id', 'user_id', 'name', 'email', 'company_role', 'company_role_details', 'phone_number', 'language', 'timezone',
                   'in_app_notifications', 'email_notifications', 'access_codes', 'temp_password', 'date_created',
-                  'signature', 'signature_image']
-        extra_kwargs = {'signature': {'read_only': True}, 'company_role_details': {'read_only': True}}
+                  'signature', 'signature_image', 'user_image_image', 'user_image']
+        extra_kwargs = {'signature': {'read_only': True}, 'user_image': {'read_only': True}, 'company_role_details': {'read_only': True}}
 
 
     def get_user(self, obj):
@@ -292,9 +293,9 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
             raise TenantNotFoundException()
         
         password = generate_random_password()
-        name_list = validated_data["name"].strip().split(' ')
-        first_name = validated_data["name"]
-        last_name = None
+        name_list = validated_data.get("name", None).strip().split(' ')
+        first_name = name_list[0]
+        last_name = ""
         if len(name_list) > 1:
             first_name = name_list[0]
             last_name = name_list[1]
@@ -303,18 +304,21 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
         username = f"{first_name[:4]}_{uuid.uuid4().hex[:8]}"
 
         with schema_context('public'):
-            new_user = User.objects.create(email=validated_data["email"], password=password, username=username,
+            new_user = User.objects.create(email=validated_data.get("email", None), password=password, username=username,
                                            first_name=first_name, last_name=last_name)
             new_user.set_password(password)
             new_user.save()
 
         validated_data["temp_password"] = password
-        validated_data["password"] = new_user.password
+        validated_data["password"] = new_user.password  
+        if 'user_image_image' in validated_data:
+            validated_data["user_image"] = convert_to_base64(validated_data.get("user_image_image", None))      
         
         access_codes = validated_data.pop('access_codes', [])
         validated_data.pop('name')
         validated_data.pop('email')
         validated_data.pop('signature_image', None)
+        validated_data.pop('user_image_image', None)
         
         tenant_user = TenantUser.objects.create(user_id=new_user.id, tenant=tenant, **validated_data)
 
@@ -324,7 +328,7 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
         ) for code in access_codes]
 
         results = AccessGroupRightUser.objects.bulk_create(access_group_right_user)
-        return tenant_user
+        return tenant_user, new_user.email
 
     @transaction.atomic
     def update_user_information(self, instance, validated_data):
@@ -363,6 +367,9 @@ class NewTenantUserSerializer(serializers.ModelSerializer):
         
         if validated_data.get("signature_image", None) is not None:
             tenant_user.signature = convert_to_base64(validated_data["signature_image"])
+        
+        if validated_data.get("user_image_image", None) is not None:
+            tenant_user.user_image = convert_to_base64(validated_data["user_image_image"])
         
         if validated_data.get("access_codes", None) is not None:
             access_codes = validated_data.pop("access_codes")
@@ -423,13 +430,18 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 # START THE ACCESSGROUP RIGHT SERIALIZER
 class AccessGroupRightSerializer(serializers.ModelSerializer):
+    from registration.serializers import AccessRightSerializer
+
     group_name = serializers.CharField(max_length=20, required=True)
     access_rights = serializers.ListField(child=serializers.DictField(), required=True, write_only=True)
+    access_right_details = AccessRightSerializer(source='access_right', read_only=True)
+    access_right = serializers.PrimaryKeyRelatedField(queryset=AccessRight.objects.filter(is_hidden=False), required=False, allow_null=True)
+
 
     class Meta:
         model = AccessGroupRight
         fields = ["id", "access_code", "group_name", "application", 
-                  "application_module", "access_rights", "access_right", "date_updated", "date_created"]
+                  "application_module", "access_rights", "access_right", "access_right_details", "date_updated", "date_created"]
         read_only_fields = ["id", "access_right", "access_code"]
 
     def validate_access_rights(self, value):
