@@ -5,6 +5,7 @@ from purchase.models import Product, PurchaseOrder
 from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOrderSerializer
 
 from users.models import TenantUser
+from users.serializers import TenantUserSerializer
 
 
 from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, ReturnIncomingProductItem, StockAdjustment, StockAdjustmentItem,
@@ -12,21 +13,20 @@ from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, Deli
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='location-detail', lookup_field='id')
-    location_manager = serializers.HyperlinkedRelatedField(queryset=TenantUser.objects.filter(is_hidden=False),
-                                                           view_name='tenant-user-detail', allow_null=True)
-    store_keeper = serializers.HyperlinkedRelatedField(queryset=TenantUser.objects.filter(is_hidden=False),
-                                                       view_name='tenant-user-detail', allow_null=True)
+    location_manager = serializers.PrimaryKeyRelatedField(
+                        queryset=TenantUser.objects.filter(is_hidden=False), allow_null=True)
+    store_keeper = serializers.PrimaryKeyRelatedField(
+                        queryset=TenantUser.objects.filter(is_hidden=False), allow_null=True)
     id = serializers.CharField(required=False)  # Make the id field read-only
+    location_manager_details = TenantUserSerializer(source='location_manager', read_only=True)
+    store_keeper_details = TenantUserSerializer(source='store_keeper', read_only=True)
 
     class Meta:
         model = Location
-        fields = ['url', 'id', 'location_code', 'location_name', 'location_type', 'address', 'location_manager',
-                  'store_keeper', 'contact_information', 'is_hidden']
+        fields = ['id', 'location_code', 'location_name', 'location_type', 'address', 'location_manager', 'location_manager_details',
+                  'store_keeper', 'store_keeper_details', 'contact_information', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated', ]
-        extra_kwargs = {
-            'url': {'view_name': 'location-detail', 'lookup_field': 'id'}  # Ensure this matches the `lookup_field`
-        }
+        
 
     def create(self, validated_data):
         if MultiLocation.objects.exists():
