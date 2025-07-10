@@ -210,15 +210,43 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
         queryset = self.filter_queryset(self.get_queryset())
         serializer = self.get_serializer(queryset, many=True)
         tenant_users = serializer.data
+        basic = request.query_params.get("basic") == "true"
 
+        basic_users_data = []
+        if basic:
+            for data in tenant_users:
+                with schema_context("public"):
+                    """If there is a query parameter with ?basic=true from the frontend, then this block of code triggers
+                    and this is to return simply the id, first_name and the last_name, 
+                    without the other unneccesary fields"""
+                    try:
+                        user = User.objects.get(pk=data["user_id"])
+                        basic_users_data.append({
+                            "id": data["id"],
+                            "first_name": user.first_name,
+                            "last_name": user.last_name
+                        })
+                    except User.DoesNotExist:
+                        basic_users_data.append({
+                            "id": data["id"],
+                            "first_name": "",
+                            "last_name": ""
+                        })
+            return Response(basic_users_data)
+        
         for data in tenant_users:
             with schema_context("public"):
-                user = User.objects.get(pk=data["user_id"])
-                data["email"] = user.email
-                data["first_name"] = user.first_name
-                data["last_name"] = user.last_name
-                data["last_login"] = user.last_login
-
+                try:
+                    user = User.objects.get(pk=data["user_id"])
+                    data["email"] = user.email
+                    data["first_name"] = user.first_name
+                    data["last_name"] = user.last_name
+                    data["last_login"] = user.last_login
+                except User.DoesNotExist:
+                    data["email"] = ""
+                    data["first_name"] = ""
+                    data["last_name"] = ""
+                    data["last_login"] = None
         return Response(tenant_users)
 
 
