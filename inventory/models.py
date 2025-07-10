@@ -905,6 +905,9 @@ class DeliveryOrderItem(models.Model):
             value = getattr(self, field.name)
             if isinstance(value, str):
                 setattr(self, field.name, value.strip())
+        if self.delivery_order.status == "done":
+            self.product_item -= self.quantity_to_deliver
+            self.product_item.save()
         super().save(*args, **kwargs)
 # END DELIVERY ORDERS
 
@@ -948,6 +951,9 @@ class DeliveryOrderReturnItem(models.Model):
             value = getattr(self, field.name)
             if isinstance(value, str):
                 setattr(self, field.name, value.strip())
+        if self.delivery_order_return and self.delivery_order_return.source_document:
+            self.returned_product_item.available_product_quantity += self.returned_quantity
+            self.returned_product_item.save()
         super().save(*args, **kwargs)
 # END RETURNED PRODUCTS
 
@@ -977,5 +983,15 @@ class ReturnIncomingProductItem(models.Model):
 
     def __str__(self):
         return f"{self.return_incoming_product.unique_id} {self.product.product_name}"
+
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        if self.return_incoming_product and self.return_incoming_product.source_document:
+            self.product.available_product_quantity += self.quantity_to_be_returned
+            self.product.save()
+        super(self, ReturnIncomingProductItem).save()
 # END RETURN OF INCOMING PRODUCTS
 
