@@ -510,6 +510,11 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
                                 {"error": f"Missing field in delivery order item: {str(ke)}"},
                                 status=status.HTTP_400_BAD_REQUEST
                             )
+                        except ObjectDoesNotExist:
+                            return Response(
+                                {"error": f"One or all of the Products does not exist"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
                         except Exception as e:
                             return Response(
                                 {"error": f"Error processing delivery order item: {str(e)}"},

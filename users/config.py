@@ -5,5 +5,5 @@ basic_action_permission_map = {
         "create": "create",
         "update": "edit",
         "partial_update": "edit",
-        "destroy": "delete",
+        "soft_delete": "delete",
     }
