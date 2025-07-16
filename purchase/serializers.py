@@ -2,6 +2,7 @@ from django.contrib.auth.models import User
 from django.utils.text import slugify
 from rest_framework import serializers
 
+from inventory.serializers import LocationSerializer
 from users.models import TenantUser
 from inventory.models import Location, MultiLocation
 from users.serializers import TenantUserSerializer
@@ -129,10 +130,11 @@ class PurchaseRequestItemSerializer(serializers.ModelSerializer):
         allow_empty=True
     )
     total_price = serializers.ReadOnlyField()
+    product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = PurchaseRequestItem
-        fields = ['id', 'purchase_request', 'product', 'description', 'qty', 'unit_of_measure',
+        fields = ['id', 'purchase_request', 'product', 'product_details', 'description', 'qty', 'unit_of_measure',
                   'estimated_unit_price', 'total_price']
 
     def validate(self, data):
@@ -174,6 +176,9 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
     requesting_location = serializers.PrimaryKeyRelatedField(
         queryset=Location.get_active_locations().filter(is_hidden=False)
     )
+    currency_details = CurrencySerializer(source='currency', read_only=True)
+    requesting_location_details = LocationSerializer(source='requesting_location', read_only=True)
+    vendor_details = VendorSerializer(source='vendor', read_only=True)
     items = PurchaseRequestItemSerializer(many=True, allow_empty=False)
     requester_details = TenantUserSerializer(source='requester', read_only=True)
     total_price = serializers.ReadOnlyField()
@@ -183,7 +188,7 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             'url', 'id', 'status', 'date_created', 'date_updated', 'currency', 'requester', 'requester_details',
             'requesting_location', 'purpose', 'vendor', 'items', 'total_price', 'can_edit',
-            'is_submitted', 'is_hidden'
+            'is_submitted', 'is_hidden', 'requesting_location_details', 'currency_details', 'vendor_details'
         ]
 
     def to_internal_value(self, data):
@@ -334,10 +339,11 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
     )
     # This field is a custom property on the model, not a serializer field.
     get_total_price = serializers.ReadOnlyField()
+    product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = RequestForQuotationItem
-        fields = ['id', 'url', 'request_for_quotation', 'product', 'description',
+        fields = ['id', 'url', 'request_for_quotation', 'product', 'product_details', 'description',
                   'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
 
     def validate(self, data):
@@ -379,11 +385,14 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
     )
     rfq_total_price = serializers.ReadOnlyField()
     items = RequestForQuotationItemSerializer(many=True)
+    currency_details = CurrencySerializer(source='currency', read_only=True)
+    vendor_details = VendorSerializer(source='vendor', read_only=True)
 
     class Meta:
         model = RequestForQuotation
         fields = ['url', 'id', 'expiry_date', 'vendor', 'purchase_request', 'currency',
-                  'status', 'rfq_total_price', 'items', 'is_hidden', 'is_expired', 'is_submitted', 'can_edit']
+                  'status', 'rfq_total_price', 'items', 'is_hidden', 'is_expired', 'is_submitted',
+                  'can_edit', 'vendor_details', 'currency_details']
         read_only_fields = ['date_created', 'date_updated', 'rfq_total_price']
 
     def validate_create(self, data):
@@ -528,10 +537,11 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
     )
     # This field is a custom property on the model, not a serializer field.
     get_total_price = serializers.ReadOnlyField()
+    product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = PurchaseOrderItem
-        fields = ['id', 'url', 'purchase_order', 'product', 'description',
+        fields = ['id', 'url', 'purchase_order', 'product', 'description', 'product_details',
                   'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
 
     def validate(self, data):
@@ -585,13 +595,16 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     created_by_details = TenantUserSerializer(source='created_by', read_only=True)
     # This field is a custom property on the model, not a serializer field.
     po_total_price = serializers.ReadOnlyField()
+    currency_details = CurrencySerializer(source='currency', read_only=True)
+    destination_location_details = LocationSerializer(source='requesting_location', read_only=True)
+    vendor_details = VendorSerializer(source='vendor', read_only=True)
 
     class Meta:
         model = PurchaseOrder
         fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'related_rfq', 'created_by',
                   'vendor', 'currency', 'payment_terms', 'destination_location', 'created_by_details',
-                  'purchase_policy', 'delivery_terms', 'items', 'po_total_price',
-                  'is_hidden', 'is_submitted', 'can_edit']
+                  'purchase_policy', 'delivery_terms', 'items', 'po_total_price', 'vendor_details',
+                  'is_hidden', 'is_submitted', 'can_edit', 'currency_details', 'destination_location_details',]
 
     def to_internal_value(self, data):
         data = data.copy()
