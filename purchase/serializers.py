@@ -253,7 +253,8 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
             else:
                 existing_product_ids = []
             all_product_ids = incoming_product_ids + existing_product_ids
-            if len(all_product_ids) != len(set(all_product_ids)):
+            # Only check for duplicates within the incoming items for partial update
+            if len(incoming_product_ids) != len(set(incoming_product_ids)):
                 raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
         required_fields = ['requesting_location', 'requester', 'currency', 'vendor']
         for field in required_fields:
@@ -309,6 +310,10 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                         # Optionally, do not delete items for partial update
             else:
                 existing_items = {item.id: item for item in instance.items.all()}
+                incoming_item_ids = set(item_data.get('id') for item_data in items_data if item_data.get('id'))
+                # Delete items not present in the update
+                for item_id in set(existing_items.keys()) - incoming_item_ids:
+                    existing_items[item_id].delete()
                 for item_data in items_data:
                     item_id = item_data.get('id')
                     if item_id and item_id in existing_items:
@@ -318,7 +323,6 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                         existing_items[item_id].save()
                     else:
                         PurchaseRequestItem.objects.create(purchase_request=instance, **item_data)
-                        # Do not delete items not present in the update
         return instance
 
 
