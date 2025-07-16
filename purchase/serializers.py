@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from django.utils.text import slugify
 from rest_framework import serializers
 
-from inventory.serializers import LocationSerializer
+from shared.serializers import LocationSerializer
 from users.models import TenantUser
 from inventory.models import Location, MultiLocation
 from users.serializers import TenantUserSerializer
@@ -596,7 +596,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     # This field is a custom property on the model, not a serializer field.
     po_total_price = serializers.ReadOnlyField()
     currency_details = CurrencySerializer(source='currency', read_only=True)
-    destination_location_details = LocationSerializer(source='requesting_location', read_only=True)
+    destination_location_details = LocationSerializer(source='destination_location', read_only=True)
     vendor_details = VendorSerializer(source='vendor', read_only=True)
 
     class Meta:
