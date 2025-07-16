@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.db import IntegrityError, transaction
+from datetime import datetime
 
 from purchase.models import Product, PurchaseOrder
 from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOrderSerializer
@@ -8,8 +9,11 @@ from users.models import TenantUser
 from users.serializers import TenantUserSerializer
 
 
-from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, ReturnIncomingProductItem, StockAdjustment, StockAdjustmentItem,
-                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES, StockMove)
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location,
+                     MultiLocation, ReturnIncomingProduct, ReturnIncomingProductItem, StockAdjustment,
+                     StockAdjustmentItem,
+                     Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES, StockMove,
+                     LocationStock)
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
@@ -109,8 +113,20 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a Stock Adjustment.")
         stock_adjustment = StockAdjustment.objects.create(**validated_data)
+        warehouse_location = stock_adjustment.warehouse_location
+
         for item_data in items_data:
+            product = item_data['product']
+            adjusted_quantity = item_data['adjusted_quantity']
             StockAdjustmentItem.objects.create(stock_adjustment=stock_adjustment, **item_data)
+            # Update per-location stock
+            # Update product quantity if done
+            if stock_adjustment.status == "done":
+                location_stock, created = LocationStock.objects.filter(
+                    location=warehouse_location, product=product,
+                ).first()
+                location_stock.quantity = adjusted_quantity
+                location_stock.save()
         return stock_adjustment
 
     def update(self, instance, validated_data):
@@ -118,13 +134,23 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         Update an existing instance with validated data.
         """
         items_data = validated_data.pop('stock_adjustment_items', None)
+        warehouse_location = validated_data.get('warehouse_location', instance.warehouse_location)
         if items_data:
-            # Clear existing items and add new ones
             instance.stock_adjustment_items.all().delete()
             for item_data in items_data:
+                product = item_data['product']
+                adjusted_quantity = item_data['adjusted_quantity']
                 StockAdjustmentItem.objects.create(stock_adjustment=instance, **item_data)
-
-        # Update the instance fields
+                # Update per-location stock
+                # Only update stock if the status is being changed to done in this update
+                was_validated = getattr(instance, 'status', None) == 'done'
+                is_now_validated = validated_data.get('status', None) == 'done'
+                if not was_validated and is_now_validated:
+                    location_stock = LocationStock.objects.filter(
+                        location=warehouse_location, product=product
+                    ).first()
+                    location_stock.quantity = adjusted_quantity
+                    location_stock.save()
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -171,16 +197,44 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
             # Ensure this matches the `lookup_field`
         }
 
+    def validate(self, data):
+        """
+        Validate the Scrap data.
+        """
+        items_data = data.get('scrap_items', [])
+        if not items_data:
+            raise serializers.ValidationError("At least one item is required to create a Scrap.")
+        for item in items_data:
+            product = item.get('product')
+            scrap_quantity = item.get('scrap_quantity', 0)
+            adjusted_quantity = item.get('adjusted_quantity', 0)
+            if adjusted_quantity < 0:
+                raise serializers.ValidationError("Adjusted quantity cannot be negative.")
+            if scrap_quantity <= 0:
+                raise serializers.ValidationError("Scrap quantity cannot be zero or negative.")
+            if not Product.objects.filter(id=product.id, is_hidden=False).exists():
+                raise serializers.ValidationError("Invalid Product")
+        return data
+
     def create(self, validated_data):
         """
         Create a new Scrap with its associated items.
         """
         items_data = validated_data.pop('scrap_items')
-        if not items_data:
-            raise serializers.ValidationError("At least one item is required to create a Scrap.")
         scrap = Scrap.objects.create(**validated_data)
+        warehouse_location = scrap.warehouse_location
         for item_data in items_data:
+            product = item_data['product']
+            scrap_quantity = item_data['scrap_quantity']
             ScrapItem.objects.create(scrap=scrap, **item_data)
+            # Update per-location stock
+            # Update product quantity if done
+            if scrap.status == "done":
+                location_stock, created = LocationStock.objects.filter(
+                    location=warehouse_location, product=product,
+                ).first()
+                location_stock.quantity -= scrap_quantity
+                location_stock.save()
         return scrap
 
     def update(self, instance, validated_data):
@@ -188,13 +242,27 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
         Update an existing instance with validated data.
         """
         items_data = validated_data.pop('scrap_items', None)
+        warehouse_location = validated_data.get('warehouse_location', instance.warehouse_location)
         if items_data:
-            # Clear existing items and add new ones
             instance.scrap_items.all().delete()
             for item_data in items_data:
+                product = item_data['product']
+                scrap_quantity = item_data['scrap_quantity']
                 ScrapItem.objects.create(scrap=instance, **item_data)
-
-        # Update the instance fields
+                # Update per-location stock
+                # Only update stock if the status is being changed to done in this update
+                was_validated = getattr(instance, 'status', None) == 'done'
+                is_now_validated = validated_data.get('status', None) == 'done'
+                if not was_validated and is_now_validated:
+                    location_stock = LocationStock.objects.filter(
+                        location=warehouse_location, product=product
+                    ).first()
+                    if not location_stock:
+                        raise serializers.ValidationError("Location stock not found for the product.")
+                    if location_stock.quantity < scrap_quantity:
+                        raise serializers.ValidationError("Insufficient stock to scrap this quantity.")
+                    location_stock.quantity -= scrap_quantity
+                    location_stock.save()
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -328,7 +396,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         related_po = validated_data.get('related_po', None)
         incoming_product = IncomingProduct.objects.create(**validated_data)
         backorder = incoming_product.process_receipt(items_data, user_choice)
-
+        location = validated_data['destination_location']
         for item_data in items_data:
             product = item_data.get('product')
             expected_quantity = item_data.get('expected_quantity', None)
@@ -344,9 +412,13 @@ class IncomingProductSerializer(serializers.ModelSerializer):
             if not ip_item:
                 raise serializers.ValidationError("Failed to create Incoming Product Item.")
             # Update product quantity if validated
-            if incoming_product.is_validated:
-                product.available_product_quantity += item_data['expected_quantity']
-                product.save()
+            if incoming_product.status == "validated":
+                location_stock, created = LocationStock.objects.get_or_create(
+                    location=location, product=product,
+                    defaults={'quantity': 0}
+                )
+                location_stock.quantity += quantity_received
+                location_stock.save()
             if backorder:
                 return {"incoming_product": incoming_product, "backorder": backorder}
         # If no backorder, just return the incoming product
@@ -359,6 +431,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop('incoming_product_items', None)
         user_choice = validated_data.pop('user_choice', {})
         related_po = validated_data.get('related_po', getattr(instance, 'related_po', None))
+        destination_location = validated_data.get('destination_location', instance.destination_location)
         if items_data:
             # Clear existing items and add new ones
             instance.incoming_product_items.all().delete()
@@ -379,9 +452,15 @@ class IncomingProductSerializer(serializers.ModelSerializer):
                 if not ip_item:
                     raise serializers.ValidationError("Failed to create Incoming Product Item.")
                 # Update product quantity if validated
-                if instance.is_validated:
-                    product.available_product_quantity += item_data['expected_quantity']
-                    product.save()
+                # Only update stock if the status is being changed to validated in this update
+                was_validated = getattr(instance, 'status', None) == 'validated'
+                is_now_validated = validated_data.get('status', None) == 'validated'
+                if not was_validated and is_now_validated:
+                    location_stock = LocationStock.objects.filter(
+                        location=destination_location, product=product
+                    ).first()
+                    location_stock.quantity += quantity_received
+                    location_stock.save()
 
         # Update the instance fields
         for attr, value in validated_data.items():
@@ -414,15 +493,44 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
                   'delivery_address', 'delivery_date', 'shipping_policy', 
                   'return_policy', 'assigned_to', 'delivery_order_items', 'status', 'date_created']
 
+    def validate(self, attrs):
+        # Ensure that the delivery order has at least one item
+        if not attrs.get('delivery_order_items'):
+            raise serializers.ValidationError("At least one delivery order item is required.")
+        if not attrs.get('source_location'):
+            raise serializers.ValidationError("Source location is required.")
+        if attrs.get('delivery_date') < datetime.now().date():
+            raise serializers.ValidationError("Delivery date cannot be in the past.")
+        # Validate each delivery order item
+        for item in attrs['delivery_order_items']:
+            product = item.get('product_item')
+            quantity = item.get('quantity_to_deliver', 0)
+            if not product or not Product.objects.filter(id=product.id, is_hidden=False).exists():
+                raise serializers.ValidationError("Invalid Product")
+            if quantity <= 0:
+                raise serializers.ValidationError("Quantity to deliver must be greater than zero.")
+
+        return attrs
+
     @transaction.atomic
     def create(self, validated_data):
         products_data = validated_data.pop('delivery_order_items')
         try:
             delivery_order = DeliveryOrder.objects.create(**validated_data)
             delivery_order_items = []
+            source_location = delivery_order.source_location
             for product_data in products_data:
+                product = product_data.get('product_item')
+                quantity_to_deliver = product_data.get('quantity_to_deliver', 0)
                 one_item = DeliveryOrderItem(delivery_order=delivery_order, **product_data)
                 delivery_order_items.append(one_item)
+                # Update product quantity if done
+                if delivery_order.status == "done":
+                    location_stock, created = LocationStock.objects.filter(
+                        location=source_location, product=product,
+                    ).first()
+                    location_stock.quantity -= quantity_to_deliver
+                    location_stock.save()
             DeliveryOrderItem.objects.bulk_create(delivery_order_items)
             return delivery_order
         except IntegrityError as e:
@@ -436,11 +544,14 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
 
-        existing_products = {prod.id: prod for prod in instance.products.all()}
+        existing_products = {prod.id: prod for prod in instance.delivery_order_items.all()}
         sent_product_ids = []
+        source_location = validated_data.get('source_location', instance.source_location)
         try:
             for prod_data in products_data:
                 prod_id = prod_data.get('id', None)
+                product = prod_data.get('product_item')
+                quantity_to_deliver = prod_data.get('quantity_to_deliver', 0)
                 if prod_id and prod_id in existing_products:
                     # Update existing product
                     product = existing_products[prod_id]
@@ -451,7 +562,15 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
                 else:
                     # Create new product related to this delivery order
                     DeliveryOrderItem.objects.create(delivery_order=instance, **prod_data)
-
+                # Only update stock if the status is being changed to validated in this update
+                was_validated = getattr(instance, 'status', None) == 'done'
+                is_now_validated = validated_data.get('status', None) == 'done'
+                if not was_validated and is_now_validated:
+                    location_stock = LocationStock.objects.filter(
+                        location=instance.source_location, product=product
+                    ).first()
+                    location_stock.quantity -= quantity_to_deliver
+                    location_stock.save()
             # Delete products not in the update list
             for prod_id, product in existing_products.items():
                 if prod_id not in sent_product_ids:

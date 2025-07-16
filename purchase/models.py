@@ -205,13 +205,27 @@ class Product(models.Model):
     product_name = models.CharField(max_length=100)
     product_description = CKEditor5Field(null=True, blank=True)
     product_category = models.CharField(max_length=64, choices=PRODUCT_CATEGORY)
-    available_product_quantity = models.PositiveIntegerField(verbose_name="Available Product Quantity", default=0)
     total_quantity_purchased = models.PositiveIntegerField(verbose_name="Total Quantity Purchased", default=0)
     unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True)
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
 
     is_hidden = models.BooleanField(default=False)
+
+    @property
+    def available_product_quantity(self):
+        from inventory.models import Location, LocationStock, MultiLocation
+        if MultiLocation.objects.filter(is_activated=True).exists():
+            return LocationStock.objects.filter(
+                location__in=Location.get_active_locations(),
+                product=self
+            ).aggregate(total=models.Sum('quantity'))['total'] or 0
+        else:
+            location = Location.get_active_locations().first()
+            if location:
+                stock = LocationStock.objects.filter(location=location, product=self).first()
+                return stock.quantity if stock else 0
+            return 0
 
     objects = models.Manager()
 
