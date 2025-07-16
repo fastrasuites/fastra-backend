@@ -246,7 +246,14 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                 item['product'].id if hasattr(item['product'], 'id') else int(item['product'])
                 for item in items if 'product' in item
             ]
-            # Only check for duplicates in incoming items, not combined with existing
+            if self.instance:
+                existing_product_ids = [
+                    item.product.id for item in self.instance.items.all()
+                ]
+            else:
+                existing_product_ids = []
+            all_product_ids = incoming_product_ids + existing_product_ids
+            # Only check for duplicates within the incoming items for partial update
             if len(incoming_product_ids) != len(set(incoming_product_ids)):
                 raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
         required_fields = ['requesting_location', 'requester', 'currency', 'vendor']
@@ -286,16 +293,12 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
         if items_data is not None:
             # If partial, handle only provided fields
             if partial:
-                # Only use incoming items for duplicate check
-                incoming_product_ids = [
-                    item_data['product'].id if hasattr(item_data['product'], 'id') else int(item_data['product'])
-                    for item_data in items_data if 'product' in item_data
-                ]
-                if len(incoming_product_ids) != len(set(incoming_product_ids)):
-                    raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
+                # custom partial update logic here
                 existing_items = {item.product.id: item for item in instance.items.all()}
+                new_product_ids = set()
                 for item_data in items_data:
                     product_id = item_data['product'].id if hasattr(item_data['product'], 'id') else int(item_data['product'])
+                    new_product_ids.add(product_id)
                     if product_id in existing_items:
                         pr_item = existing_items[product_id]
                         for attr, value in item_data.items():
@@ -304,8 +307,13 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                         pr_item.save()
                     else:
                         PurchaseRequestItem.objects.create(purchase_request=instance, **item_data)
+                        # Optionally, do not delete items for partial update
             else:
                 existing_items = {item.id: item for item in instance.items.all()}
+                incoming_item_ids = set(item_data.get('id') for item_data in items_data if item_data.get('id'))
+                # Delete items not present in the update
+                for item_id in set(existing_items.keys()) - incoming_item_ids:
+                    existing_items[item_id].delete()
                 for item_data in items_data:
                     item_id = item_data.get('id')
                     if item_id and item_id in existing_items:
@@ -581,6 +589,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     )
     destination_location = serializers.PrimaryKeyRelatedField(
         queryset=Location.get_active_locations().filter(is_hidden=False),
+        required=False
     )
     vendor = serializers.PrimaryKeyRelatedField(
         queryset=Vendor.objects.filter(is_hidden=False),
@@ -614,8 +623,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         return super().to_internal_value(data)
 
     def validate_create(self, data):
-        required_fields = ['items', 'created_by', 'currency', 'vendor',  'related_rfq', 'created_by',
-                           'destination_location']
+        required_fields = ['items', 'created_by', 'currency', 'vendor',  'related_rfq', 'created_by']
         if data.get('related_rfq') and data['related_rfq'].status != "approved":
             raise serializers.ValidationError("RFQ must be approved before creating a Purchase Order.")
         for field in required_fields:
@@ -623,7 +631,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
                 raise serializers.ValidationError(
                     f"{field.replace('_', ' ').capitalize()} is required to create a purchase request."
                 )
-        if data.get('destination_location') is None and not MultiLocation.objects.filter(is_activated=False).exists():
+        if data['destination_location'] and data.get('destination_location') is None and not MultiLocation.objects.filter(is_activated=False).exists():
             raise serializers.ValidationError("Destination location is required when multi-location is activated.")
         if PurchaseOrder.objects.filter(
             created_by=data.get('created_by'),
@@ -691,6 +699,8 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         return data
 
     def create(self, validated_data):
+        if not validated_data.get('destination_location') and MultiLocation.objects.filter(is_activated=False).exists():
+            validated_data['destination_location'] = Location.get_active_locations().first()
         items_data = validated_data.pop('items')
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a purchase order.")
