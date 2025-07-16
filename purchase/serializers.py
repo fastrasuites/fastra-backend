@@ -246,14 +246,8 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                 item['product'].id if hasattr(item['product'], 'id') else int(item['product'])
                 for item in items if 'product' in item
             ]
-            if self.instance:
-                existing_product_ids = [
-                    item.product.id for item in self.instance.items.all()
-                ]
-            else:
-                existing_product_ids = []
-            all_product_ids = incoming_product_ids + existing_product_ids
-            if len(all_product_ids) != len(set(all_product_ids)):
+            # Only check for duplicates in incoming items, not combined with existing
+            if len(incoming_product_ids) != len(set(incoming_product_ids)):
                 raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
         required_fields = ['requesting_location', 'requester', 'currency', 'vendor']
         for field in required_fields:
@@ -292,12 +286,16 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
         if items_data is not None:
             # If partial, handle only provided fields
             if partial:
-                # custom partial update logic here
+                # Only use incoming items for duplicate check
+                incoming_product_ids = [
+                    item_data['product'].id if hasattr(item_data['product'], 'id') else int(item_data['product'])
+                    for item_data in items_data if 'product' in item_data
+                ]
+                if len(incoming_product_ids) != len(set(incoming_product_ids)):
+                    raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
                 existing_items = {item.product.id: item for item in instance.items.all()}
-                new_product_ids = set()
                 for item_data in items_data:
                     product_id = item_data['product'].id if hasattr(item_data['product'], 'id') else int(item_data['product'])
-                    new_product_ids.add(product_id)
                     if product_id in existing_items:
                         pr_item = existing_items[product_id]
                         for attr, value in item_data.items():
@@ -306,7 +304,6 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                         pr_item.save()
                     else:
                         PurchaseRequestItem.objects.create(purchase_request=instance, **item_data)
-                        # Optionally, do not delete items for partial update
             else:
                 existing_items = {item.id: item for item in instance.items.all()}
                 for item_data in items_data:
@@ -318,7 +315,6 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
                         existing_items[item_id].save()
                     else:
                         PurchaseRequestItem.objects.create(purchase_request=instance, **item_data)
-                        # Do not delete items not present in the update
         return instance
 
 

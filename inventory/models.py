@@ -234,76 +234,83 @@ class Location(models.Model):
     def get_active_locations(cls):
         return cls.objects.exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
 
-    # def products_from_ip_add(self):
-    #     return IncomingProductItem.objects.filter(incoming_product__destination_location=self).count()
-
-    def incoming_product_quantities_add(self):
-        """
-        Returns a dictionary mapping product IDs to the total quantity received
-        at this location via IncomingProductItems.
-        """
-        from inventory.models import IncomingProductItem  # avoid circular import
-        qs = IncomingProductItem.objects.filter(
-            incoming_product__destination_location=self
-        ).values('product').annotate(total_received=models.Sum('quantity_received'))
-        return {entry['product']: entry['total_received'] for entry in qs}
-
-    def delivery_order_quantities_subtract(self):
-        """
-        Returns a dictionary mapping product IDs to the total quantity delivered
-        from this location via DeliveryOrderItems.
-        """
-        from inventory.models import DeliveryOrderItem  # Avoid circular import
-        qs = DeliveryOrderItem.objects.filter(
-            delivery_order__source_location=self
-        ).values('product_item').annotate(total_delivered=models.Sum('quantity_to_deliver'))
-        return {entry['product_item']: entry['total_delivered'] for entry in qs}
-
-    def stock_adjustment_quantities_replace(self):
-        """
-        Returns a dictionary mapping product IDs to the total quantity delivered
-        from this location via StockAdjustmentItems.
-        """
-        from inventory.models import StockAdjustmentItem  # Avoid circular import
-        qs = StockAdjustmentItem.objects.filter(
-            stock_adjustment__warehouse_location=self
-        ).values('product').annotate(total_adjusted=models.Sum('adjusted_quantity'))
-        return {entry['product']: entry['total_adjusted'] for entry in qs}
-
-    def scrap_quantities_subtract(self):
-        """
-        Returns a dictionary mapping product IDs to the total quantity delivered
-        from this location via ScrapItems.
-        """
-        from inventory.models import ScrapItem  # Avoid circular import
-        qs = ScrapItem.objects.filter(
-            scrap__warehouse_location=self
-        ).values('product').annotate(total_scrapped=models.Sum('scrap_quantity'))
-        return {entry['product']: entry['total_scrapped'] for entry in qs}
+    # def incoming_product_quantities_add(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total quantity received
+    #     at this location via IncomingProductItems.
+    #     """
+    #     from inventory.models import IncomingProductItem  # avoid circular import
+    #     qs = IncomingProductItem.objects.filter(
+    #         incoming_product__destination_location=self
+    #     ).values('product').annotate(total_received=models.Sum('quantity_received'))
+    #     return {entry['product']: entry['total_received'] for entry in qs}
+    #
+    # def delivery_order_quantities_subtract(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total quantity delivered
+    #     from this location via DeliveryOrderItems.
+    #     """
+    #     from inventory.models import DeliveryOrderItem  # Avoid circular import
+    #     qs = DeliveryOrderItem.objects.filter(
+    #         delivery_order__source_location=self
+    #     ).values('product_item').annotate(total_delivered=models.Sum('quantity_to_deliver'))
+    #     return {entry['product_item']: entry['total_delivered'] for entry in qs}
+    #
+    # def stock_adjustment_quantities_replace(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total quantity delivered
+    #     from this location via StockAdjustmentItems.
+    #     """
+    #     from inventory.models import StockAdjustmentItem  # Avoid circular import
+    #     qs = StockAdjustmentItem.objects.filter(
+    #         stock_adjustment__warehouse_location=self
+    #     ).values('product').annotate(total_adjusted=models.Sum('adjusted_quantity'))
+    #     return {entry['product']: entry['total_adjusted'] for entry in qs}
+    #
+    # def scrap_quantities_subtract(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total quantity delivered
+    #     from this location via ScrapItems.
+    #     """
+    #     from inventory.models import ScrapItem  # Avoid circular import
+    #     qs = ScrapItem.objects.filter(
+    #         scrap__warehouse_location=self
+    #     ).values('product').annotate(total_scrapped=models.Sum('scrap_quantity'))
+    #     return {entry['product']: entry['total_scrapped'] for entry in qs}
+    #
+    # def get_stock_levels(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total stock level
+    #     at this location, considering incoming products, delivery orders,
+    #     stock adjustments, and scrapped items.
+    #     """
+    #     incoming_quantities = self.incoming_product_quantities_add()
+    #     delivery_quantities = self.delivery_order_quantities_subtract()
+    #     adjustment_quantities = self.stock_adjustment_quantities_replace()
+    #     scrap_quantities = self.scrap_quantities_subtract()
+    #
+    #     stock_levels = {}
+    #
+    #     for product_id in set(incoming_quantities.keys()).union(
+    #         delivery_quantities.keys(), adjustment_quantities.keys(), scrap_quantities.keys()):
+    #         stock_levels[product_id] = (
+    #             incoming_quantities.get(product_id, Decimal('0')) -
+    #             delivery_quantities.get(product_id, Decimal('0')) +
+    #             adjustment_quantities.get(product_id, Decimal('0')) -
+    #             scrap_quantities.get(product_id, Decimal('0'))
+    #         )
+    #
+    #     return stock_levels
 
     def get_stock_levels(self):
-        """
-        Returns a dictionary mapping product IDs to the total stock level
-        at this location, considering incoming products, delivery orders,
-        stock adjustments, and scrapped items.
-        """
-        incoming_quantities = self.incoming_product_quantities_add()
-        delivery_quantities = self.delivery_order_quantities_subtract()
-        adjustment_quantities = self.stock_adjustment_quantities_replace()
-        scrap_quantities = self.scrap_quantities_subtract()
-
-        stock_levels = {}
-
-        for product_id in set(incoming_quantities.keys()).union(
-            delivery_quantities.keys(), adjustment_quantities.keys(), scrap_quantities.keys()):
-            stock_levels[product_id] = (
-                incoming_quantities.get(product_id, Decimal('0')) -
-                delivery_quantities.get(product_id, Decimal('0')) +
-                adjustment_quantities.get(product_id, Decimal('0')) -
-                scrap_quantities.get(product_id, Decimal('0'))
-            )
-
-        return stock_levels
+        return [
+            {
+                'product_id': stock.product.id,
+                'product_name': stock.product.name,
+                'quantity': stock.quantity
+            }
+            for stock in self.stocks.select_related('product').all()
+        ]
 
     def save(self, *args, **kwargs):
         # Ensure the location code and location name are unique
@@ -327,6 +334,15 @@ class Location(models.Model):
         if not MultiLocation.objects.filter(is_activated=True).exists() and Location.objects.filter(is_hidden=False).count() >= 3:
             raise Exception("Maximum number of locations reached")
         super().save(*args, **kwargs)
+
+
+class LocationStock(models.Model):
+    location = models.ForeignKey('Location', on_delete=models.CASCADE, related_name='stocks')
+    product = models.ForeignKey('purchase.Product', on_delete=models.CASCADE, related_name='location_stocks')
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        unique_together = ('location', 'product')
 
 
 # The multi-location option
