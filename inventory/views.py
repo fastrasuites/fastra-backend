@@ -6,14 +6,16 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from purchase.models import Product
-from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet
-from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
+from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet
 from users.module_permissions import HasModulePermission
 
-from .models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
-    IncomingProductItem, StockMove
-from .serializers import DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer, DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, ReturnIncomingProductSerializer, StockAdjustmentSerializer, \
-    StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer, IncomingProductSerializer, IPItemSerializer, StockMoveSerializer
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location,
+                     MultiLocation, ReturnIncomingProduct, StockAdjustment, Scrap, IncomingProduct,
+                     IncomingProductItem, StockMove)
+from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer,
+                          DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer,
+                          ReturnIncomingProductSerializer, StockAdjustmentSerializer,
+                          ScrapSerializer, IncomingProductSerializer, StockMoveSerializer)
 
 from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id, generate_returned_incoming_product_unique_id
 from django.db import transaction
@@ -35,6 +37,22 @@ class LocationViewSet(SearchDeleteViewSet):
     def get_active_locations(self, request):
         queryset = Location.get_active_locations()
         return Response(queryset.values())
+
+    @action(detail=True, methods=['GET'])
+    def location_stock_levels(self, request, *args, **kwargs):
+        """
+        Returns the stock levels for all products in a specific location.
+        """
+        try:
+            location = self.get_object()
+            if location.is_hidden:
+                return Response({"error": "Location is archived."}, status=status.HTTP_404_NOT_FOUND)
+            stock_levels = location.get_stock_levels()
+            return Response(stock_levels, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist:
+            return Response({"error": "Location not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def create(self, request, *args, **kwargs):
         try:
@@ -123,12 +141,6 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
         return Response(serializer.data)
 
 
-class StockAdjustmentItemViewSet(viewsets.ModelViewSet):
-    queryset = StockAdjustmentItem.objects.all()
-    serializer_class = StockAdjustmentItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-
 class ScrapViewSet(SearchDeleteViewSet):
     queryset = Scrap.objects.all()
     serializer_class = ScrapSerializer
@@ -189,12 +201,6 @@ class ScrapViewSet(SearchDeleteViewSet):
     #
     #     scrap.final_submit()
     #     return Response({'status': 'done'})
-
-
-class ScrapItemViewSet(viewsets.ModelViewSet):
-    queryset = ScrapItem.objects.all()
-    serializer_class = ScrapItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
 
 class IncomingProductViewSet(SearchDeleteViewSet):
@@ -331,8 +337,8 @@ class MultiLocationViewSet(viewsets.GenericViewSet):
         try:
             instance = self.get_queryset().first()
             if instance.is_activated:
-                # Deactivating: check if locations > 3
-                if Location.get_active_locations().count() > 1:
+                # Deactivating: check if active locations > 1
+                if Location.get_active_locations().filter(is_hidden=False).count() > 1:
                     return Response({
                         'status': 'error',
                         'message': 'Reduce number of locations to three before deactivating'

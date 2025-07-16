@@ -23,15 +23,17 @@ class LocationSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Location
-        fields = ['id', 'location_code', 'location_name', 'location_type', 'address', 'location_manager', 'location_manager_details',
-                  'store_keeper', 'store_keeper_details', 'contact_information', 'is_hidden']
+        fields = ['id', 'location_code', 'location_name', 'location_type', 'address', 'location_manager',
+                  'location_manager_details', 'store_keeper', 'store_keeper_details', 'contact_information',
+                  'is_hidden']
         read_only_fields = ['date_created', 'date_updated', ]
         
 
     def create(self, validated_data):
         if MultiLocation.objects.exists():
             multilocation = MultiLocation.objects.first()  # Adjust as needed
-            if not multilocation.is_activated and Location.objects.count() >= 3:
+            if (not multilocation.is_activated
+                    and Location.get_active_locations().filter(is_hidden=False).count() >= 1):
                 raise serializers.ValidationError("max numbers of locations reached")
         else:
             MultiLocation.objects.create(is_activated=False)
@@ -51,10 +53,10 @@ class MultiLocationSerializer(serializers.HyperlinkedModelSerializer):
         is_activated = data.get('is_activated', getattr(instance, 'is_activated', None))
 
         # You may need to adjust this depending on your model's relationship
-        locations_count = Location.objects.count()  # Or filter by tenant/org if needed
+        locations_count = Location.get_active_locations().filter(is_hidden=False).count()  # Or filter by tenant/org if needed
 
-        if not is_activated and locations_count > 3:
-            raise serializers.ValidationError("reduce number of locations to three before deactivating")
+        if not is_activated and locations_count > 1:
+            raise serializers.ValidationError("reduce number of locations to one before deactivating")
 
         return data
 

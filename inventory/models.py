@@ -234,17 +234,89 @@ class Location(models.Model):
     def get_active_locations(cls):
         return cls.objects.exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
 
+    # def products_from_ip_add(self):
+    #     return IncomingProductItem.objects.filter(incoming_product__destination_location=self).count()
+
+    def incoming_product_quantities_add(self):
+        """
+        Returns a dictionary mapping product IDs to the total quantity received
+        at this location via IncomingProductItems.
+        """
+        from inventory.models import IncomingProductItem  # avoid circular import
+        qs = IncomingProductItem.objects.filter(
+            incoming_product__destination_location=self
+        ).values('product').annotate(total_received=models.Sum('quantity_received'))
+        return {entry['product']: entry['total_received'] for entry in qs}
+
+    def delivery_order_quantities_subtract(self):
+        """
+        Returns a dictionary mapping product IDs to the total quantity delivered
+        from this location via DeliveryOrderItems.
+        """
+        from inventory.models import DeliveryOrderItem  # Avoid circular import
+        qs = DeliveryOrderItem.objects.filter(
+            delivery_order__source_location=self
+        ).values('product_item').annotate(total_delivered=models.Sum('quantity_to_deliver'))
+        return {entry['product_item']: entry['total_delivered'] for entry in qs}
+
+    def stock_adjustment_quantities_replace(self):
+        """
+        Returns a dictionary mapping product IDs to the total quantity delivered
+        from this location via StockAdjustmentItems.
+        """
+        from inventory.models import StockAdjustmentItem  # Avoid circular import
+        qs = StockAdjustmentItem.objects.filter(
+            stock_adjustment__warehouse_location=self
+        ).values('product').annotate(total_adjusted=models.Sum('adjusted_quantity'))
+        return {entry['product']: entry['total_adjusted'] for entry in qs}
+
+    def scrap_quantities_subtract(self):
+        """
+        Returns a dictionary mapping product IDs to the total quantity delivered
+        from this location via ScrapItems.
+        """
+        from inventory.models import ScrapItem  # Avoid circular import
+        qs = ScrapItem.objects.filter(
+            scrap__warehouse_location=self
+        ).values('product').annotate(total_scrapped=models.Sum('scrap_quantity'))
+        return {entry['product']: entry['total_scrapped'] for entry in qs}
+
+    def get_stock_levels(self):
+        """
+        Returns a dictionary mapping product IDs to the total stock level
+        at this location, considering incoming products, delivery orders,
+        stock adjustments, and scrapped items.
+        """
+        incoming_quantities = self.incoming_product_quantities_add()
+        delivery_quantities = self.delivery_order_quantities_subtract()
+        adjustment_quantities = self.stock_adjustment_quantities_replace()
+        scrap_quantities = self.scrap_quantities_subtract()
+
+        stock_levels = {}
+
+        for product_id in set(incoming_quantities.keys()).union(
+            delivery_quantities.keys(), adjustment_quantities.keys(), scrap_quantities.keys()):
+            stock_levels[product_id] = (
+                incoming_quantities.get(product_id, Decimal('0')) -
+                delivery_quantities.get(product_id, Decimal('0')) +
+                adjustment_quantities.get(product_id, Decimal('0')) -
+                scrap_quantities.get(product_id, Decimal('0'))
+            )
+
+        return stock_levels
+
     def save(self, *args, **kwargs):
         # Ensure the location code and location name are unique
-        if Location.objects.filter(location_code=self.location_code).exists() or Location.objects.filter(location_name=self.location_name).exists():
-            raise ValidationError(f"Location code '{self.location_code}' or Location name '{self.location_name}' "
+        if not self.pk:
+            if Location.objects.filter(location_code=self.location_code).exists() or Location.objects.filter(location_name=self.location_name).exists():
+                raise ValidationError(f"Location code '{self.location_code}' or Location name '{self.location_name}' "
                                   f"already exists.")
+            # Ensure the id is unique
+            if self.id and Location.objects.filter(id=self.id).exists():
+                raise ValidationError(f"ID '{self.id}' already exists.")
         # Ensure the location type is valid
         if self.location_type not in dict(LOCATION_TYPES).keys():
             raise ValidationError(f"Invalid location type '{self.location_type}'.")
-        # Ensure the id is unique
-        if self.id and Location.objects.filter(id=self.id).exists():
-            raise ValidationError(f"ID '{self.id}' already exists.")
         # Ensure the id_number is auto-incremented based on location_code
         if not self.id_number:
             last_location = Location.objects.filter(location_code=self.location_code).order_by('-id_number').first()
@@ -279,8 +351,8 @@ class MultiLocation(models.Model):
         if self.pk:  # Only on update
             old = MultiLocation.objects.get(pk=self.pk)
             if old.is_activated and not self.is_activated:
-                if Location.objects.filter(is_hidden=False).count() > 3:
-                    raise ValidationError("Reduce number of locations to three before deactivating MultiLocation.")
+                if Location.get_active_locations().filter(is_hidden=False).count() > 1:
+                    raise ValidationError("Reduce number of active locations to one before deactivating MultiLocation.")
         return super(MultiLocation, self).save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
@@ -500,7 +572,8 @@ class ScrapItem(models.Model):
     def save(self, *args, **kwargs):
         if self.product:
             if not self.scrap_quantity:
-                self.scrap_quantity = self.product.available_product_quantity
+                raise ValidationError("Scrap quantity is required")
+            self.adjusted_quantity = self.product.available_product_quantity - self.scrap_quantity
             if self.adjusted_quantity < 0:
                 raise ValidationError("Adjusted quantity cannot be negative")
             if self.scrap.is_done:
@@ -547,7 +620,7 @@ class IncomingProduct(models.Model):
     destination_location = models.ForeignKey(
         'Location',
         on_delete=models.PROTECT,
-        related_name='incoming_products_from_destination',
+        related_name='incoming_products_to_destination',
     )
     status = models.CharField(choices=INCOMING_PRODUCT_STATUS, max_length=15, default='draft')
     is_validated = models.BooleanField(default=False)

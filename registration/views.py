@@ -24,7 +24,7 @@ from django_tenants.utils import schema_context, tenant_context
 from rest_framework.permissions import AllowAny
 from rest_framework import permissions
 from django.contrib.auth.models import Group
-from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
+from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet
 from .models import AccessRight
 from django.contrib.contenttypes.models import ContentType
 

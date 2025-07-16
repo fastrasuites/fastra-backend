@@ -3,7 +3,8 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from users.models import TenantUser
-from inventory.models import Location
+from inventory.models import Location, MultiLocation
+from users.serializers import TenantUserSerializer
 from .models import (PurchaseRequest, PurchaseRequestItem, Department, Vendor,
                      Product, RequestForQuotation, RequestForQuotationItem, UnitOfMeasure,
                      PurchaseOrder, PurchaseOrderItem, PRODUCT_CATEGORY, Currency)
@@ -12,92 +13,9 @@ from .models import (PurchaseRequest, PurchaseRequestItem, Department, Vendor,
 # Switched to HyperlinkedIdentityField, HyperlinkedRelatedField for hyperlink support
 # Switched to HyperlinkedModelSerializer for dynamic field selection
 # The url field is used to link to the detail view of the model in the API response
-
-class UserSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='user-detail')
-
-    class Meta:
-        model = User
-        fields = ['id', 'url', 'username', 'email', 'first_name', 'last_name']
-
-
-class DepartmentSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name="department-detail")
-
-    class Meta:
-        model = Department
-        fields = ['url', 'name', 'is_hidden']
-
-
-class PurchaseRequestItemSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='purchase-request-item-detail')
-    purchase_request = serializers.HyperlinkedRelatedField(
-        # queryset=PurchaseRequest.objects.filter(is_hidden=False),
-        view_name='purchase-request-detail', read_only=True)
-    product = serializers.HyperlinkedRelatedField(
-        queryset=Product.objects.filter(is_hidden=False),
-        view_name='product-detail')
-    unit_of_measure = serializers.HyperlinkedRelatedField(
-        queryset=UnitOfMeasure.objects.filter(is_hidden=False),
-        view_name='unit-of-measure-detail'
-    )
-    total_price = serializers.ReadOnlyField()
-
-    class Meta:
-        model = PurchaseRequestItem
-        fields = ['id', 'url', 'purchase_request', 'product', 'description', 'qty', 'unit_of_measure',
-                  'estimated_unit_price', 'total_price']
-
-
-class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='purchase-request-detail')
-    # requester = serializers.HyperlinkedRelatedField(view_name='user-detail', read_only=True)
-    currency = serializers.HyperlinkedRelatedField(queryset=Currency.objects.filter(is_hidden=False),
-                                                   view_name='currency-detail')
-    vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
-                                                 view_name='vendor-detail')
-    requesting_location = serializers.PrimaryKeyRelatedField(
-        many=False,
-        queryset=Location.objects.filter(is_hidden=False),
-        allow_null=True
-    )
-    items = PurchaseRequestItemSerializer(many=True, allow_empty=False)
-    total_price = serializers.ReadOnlyField()
-
-    class Meta:
-        model = PurchaseRequest
-        fields = ['url', 'id', 'status', 'date_created', 'date_updated', 'currency', 'requesting_location',
-                  'purpose', 'vendor', 'items', 'total_price', 'can_edit', 'is_submitted', 'is_hidden']
-
-    def create(self, validated_data):
-        items_data = validated_data.pop('items', [])
-        if not items_data:
-            raise serializers.ValidationError("At least one item is required to create a purchase request.")
-        purchase_request = PurchaseRequest.objects.create(**validated_data)
-        for item_data in items_data:
-            PurchaseRequestItem.objects.create(purchase_request=purchase_request, **item_data)
-        return purchase_request
-
-    def update(self, instance, validated_data):
-        items_data = validated_data.pop('items', None)
-        # instance.date_updated = validated_data.get('date_updated', instance.date_updated)
-        instance.currency = validated_data.get('currency', instance.currency)
-        instance.purpose = validated_data.get('purpose', instance.purpose)
-        instance.vendor = validated_data.get('vendor', instance.vendor)
-        instance.status = validated_data.get('status', instance.status)
-        instance.save()
-
-        if items_data is not None:
-            instance.items.all().delete()
-            for item_data in items_data:
-                PurchaseRequestItem.objects.update_or_create(id=item_data.get('id'),
-                                                             purchase_request=instance,
-                                                             defaults=item_data)
-        return instance
-
-
 class UnitOfMeasureSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='unit-of-measure-detail')
+    unit_symbol = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = UnitOfMeasure
@@ -106,6 +24,7 @@ class UnitOfMeasureSerializer(serializers.HyperlinkedModelSerializer):
 
 class CurrencySerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='currency-detail')
+    currency_symbol = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = Currency
@@ -143,10 +62,11 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
     check_for_duplicates = serializers.BooleanField(write_only=True, required=False,
                                                     help_text="Mark if you want to update existing products.\n It "
                                                               "will check by name and category.  ")
-    unit_of_measure = serializers.HyperlinkedRelatedField(
+    unit_of_measure = serializers.PrimaryKeyRelatedField(
         queryset=UnitOfMeasure.objects.filter(is_hidden=False),
-        view_name='unit-of-measure-detail')
+    )
     unit_of_measure_details = UnitOfMeasureSerializer(read_only=True, source='unit_of_measure')
+
     class Meta:
         model = Product
         fields = ['url', 'id', 'product_name', 'product_description', 'product_category',
@@ -160,6 +80,19 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
             raise serializers.ValidationError(
                 f"Invalid category '{value}'. Valid categories are: {', '.join(valid_categories)}.")
         return value
+
+    def validate(self, attrs):
+        if attrs['product_category'] is not None:
+            self.validate_product_category(attrs.get('product_category'))
+        # Check if product_name and product_category combination already exists
+        if Product.objects.filter(
+            product_name__iexact=attrs['product_name'],
+            product_category__iexact=slugify(attrs['product_category'])
+        ).exclude(
+            pk=self.instance.pk if self.instance else None
+        ).exists():
+            raise serializers.ValidationError('A product with this name and category already exists.')
+        return attrs
 
     def create(self, validated_data):
         check_for_duplicates = validated_data.pop('check_for_duplicates', False)
@@ -184,14 +117,221 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
         return super().create(validated_data)
 
 
+class PurchaseRequestItemSerializer(serializers.ModelSerializer):
+    purchase_request = serializers.PrimaryKeyRelatedField(read_only=True)
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.filter(is_hidden=False),
+    )
+    unit_of_measure = serializers.PrimaryKeyRelatedField(
+        queryset=UnitOfMeasure.objects.filter(is_hidden=False),
+        required=False,
+        allow_null=True,
+        allow_empty=True
+    )
+    total_price = serializers.ReadOnlyField()
+
+    class Meta:
+        model = PurchaseRequestItem
+        fields = ['id', 'purchase_request', 'product', 'description', 'qty', 'unit_of_measure',
+                  'estimated_unit_price', 'total_price']
+
+    def validate(self, data):
+        if data.get('qty') is None or data['qty'] <= 0:
+            raise serializers.ValidationError("Quantity must be greater than zero.")
+        return data
+
+    def create(self, validated_data):
+        if not validated_data.get('description'):
+            validated_data['description'] = validated_data['product'].product_description
+        if not validated_data.get('unit_of_measure'):
+            validated_data['unit_of_measure'] = validated_data['product'].unit_of_measure
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            if attr != 'id':
+                setattr(instance, attr, value)
+        if not instance.description:
+            instance.description = instance.product.product_description
+        if not instance.unit_of_measure:
+            instance.unit_of_measure = instance.product.unit_of_measure
+        instance.save()
+        return instance
+
+
+class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
+    url = serializers.HyperlinkedIdentityField(view_name='purchase-request-detail')
+    requester = serializers.PrimaryKeyRelatedField(
+        required=False,
+        queryset=TenantUser.objects.filter(is_hidden=False)
+    )
+    currency = serializers.PrimaryKeyRelatedField(
+        queryset=Currency.objects.filter(is_hidden=False)
+    )
+    vendor = serializers.PrimaryKeyRelatedField(
+        queryset=Vendor.objects.filter(is_hidden=False)
+    )
+    requesting_location = serializers.PrimaryKeyRelatedField(
+        queryset=Location.get_active_locations().filter(is_hidden=False)
+    )
+    items = PurchaseRequestItemSerializer(many=True, allow_empty=False)
+    requester_details = TenantUserSerializer(source='requester', read_only=True)
+    total_price = serializers.ReadOnlyField()
+
+    class Meta:
+        model = PurchaseRequest
+        fields = [
+            'url', 'id', 'status', 'date_created', 'date_updated', 'currency', 'requester', 'requester_details',
+            'requesting_location', 'purpose', 'vendor', 'items', 'total_price', 'can_edit',
+            'is_submitted', 'is_hidden'
+        ]
+
+    def to_internal_value(self, data):
+        data = data.copy()
+        if 'requester' not in data or not data.get('requester'):
+            user = self.context['request'].user
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
+                data['requester'] = tenant_user.pk
+            except TenantUser.DoesNotExist:
+                raise serializers.ValidationError({'requester': 'Logged in user is not a valid tenant member.'})
+        return super().to_internal_value(data)
+
+    def validate_create(self, data):
+        required_fields = ['items', 'requester', 'currency', 'vendor']
+        for field in required_fields:
+            if not data.get(field):
+                raise serializers.ValidationError(f"{field.replace('_', ' ').capitalize()} is required to create a purchase request.")
+        if data.get('requesting_location') is None and not MultiLocation.objects.filter(is_activated=False).exists():
+            raise serializers.ValidationError("Requesting location is required when multi-location is activated.")
+        if PurchaseRequest.objects.filter(
+                requester=data.get('requester'),
+                requesting_location=data.get('requesting_location'),
+                purpose=data.get('purpose'),
+                vendor=data.get('vendor'),
+                status__in=['draft', 'pending'],
+                currency=data.get('currency'),
+                items__product__in=[item['product'] for item in data.get('items', [])],
+                is_hidden=False
+        ).exists():
+            raise serializers.ValidationError("A purchase request with these details already exists.")
+        items_data = data.get('items', [])
+        # avoid duplicate products in items
+        incoming_product_ids = [
+            item['product'].id if hasattr(item['product'], 'id') else int(item['product'])
+            for item in items_data if 'product' in item
+        ]
+        if self.instance:
+            existing_product_ids = [
+                item.product.id for item in self.instance.items.all()
+            ]
+        else:
+            existing_product_ids = []
+        all_product_ids = incoming_product_ids + existing_product_ids
+        if len(all_product_ids) != len(set(all_product_ids)):
+            raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
+        return data
+
+    def validate_update(self, data):
+        if 'items' in data:
+            items = data['items']
+            if not items:
+                raise serializers.ValidationError("At least one item is required for a partial update.")
+            incoming_product_ids = [
+                item['product'].id if hasattr(item['product'], 'id') else int(item['product'])
+                for item in items if 'product' in item
+            ]
+            if self.instance:
+                existing_product_ids = [
+                    item.product.id for item in self.instance.items.all()
+                ]
+            else:
+                existing_product_ids = []
+            all_product_ids = incoming_product_ids + existing_product_ids
+            if len(all_product_ids) != len(set(all_product_ids)):
+                raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
+        required_fields = ['requesting_location', 'requester', 'currency', 'vendor']
+        for field in required_fields:
+            if field in data and data[field] is None:
+                raise serializers.ValidationError(f"{field.replace('_', ' ').capitalize()} is required.")
+        if 'requesting_location' in data and data['requesting_location'] is None and not MultiLocation.objects.filter(is_activated=False).exists():
+            raise serializers.ValidationError("Requesting location is required when multi-location is activated.")
+        return data
+
+    def validate(self, data):
+        if self.instance is None:
+            self.validate_create(data)
+        else:
+            self.validate_update(data)
+        return data
+
+    def create(self, validated_data):
+        if not validated_data.get('requesting_location') and MultiLocation.objects.filter(is_activated=False).exists():
+            validated_data['requesting_location'] = Location.get_active_locations().first()
+        items_data = validated_data.pop('items', [])
+        purchase_request = PurchaseRequest.objects.create(**validated_data)
+        # use bulk_create for efficiency
+        PurchaseRequestItem.objects.bulk_create(
+            [PurchaseRequestItem(
+                purchase_request=purchase_request,
+                **item_data
+            ) for item_data in items_data])
+        return purchase_request
+
+    def update(self, instance, validated_data):
+        partial = self.context.get('partial', False)
+        items_data = validated_data.pop('items', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if items_data is not None:
+            # If partial, handle only provided fields
+            if partial:
+                # custom partial update logic here
+                existing_items = {item.product.id: item for item in instance.items.all()}
+                new_product_ids = set()
+                for item_data in items_data:
+                    product_id = item_data['product'].id if hasattr(item_data['product'], 'id') else int(item_data['product'])
+                    new_product_ids.add(product_id)
+                    if product_id in existing_items:
+                        pr_item = existing_items[product_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id' and attr != 'product':
+                                setattr(pr_item, attr, value)
+                        pr_item.save()
+                    else:
+                        PurchaseRequestItem.objects.create(purchase_request=instance, **item_data)
+                        # Optionally, do not delete items for partial update
+            else:
+                existing_items = {item.id: item for item in instance.items.all()}
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(existing_items[item_id], attr, value)
+                        existing_items[item_id].save()
+                    else:
+                        PurchaseRequestItem.objects.create(purchase_request=instance, **item_data)
+                        # Do not delete items not present in the update
+        return instance
+
+
+
 class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='request-for-quotation-item-detail')
-    product = serializers.HyperlinkedRelatedField(queryset=Product.objects.filter(is_hidden=False),
-                                                  view_name='product-detail')
-    unit_of_measure = serializers.HyperlinkedRelatedField(queryset=UnitOfMeasure.objects.filter(is_hidden=False),
-                                                          view_name='unit-of-measure-detail')
-    request_for_quotation = serializers.HyperlinkedRelatedField(view_name='request-for-quotation-detail',
-                                                                read_only=True)
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.filter(is_hidden=False),
+    )
+    unit_of_measure = serializers.PrimaryKeyRelatedField(
+        queryset=UnitOfMeasure.objects.filter(is_hidden=False),
+        required=False,
+        allow_null=True,
+        allow_empty=True
+    )
+    request_for_quotation = serializers.PrimaryKeyRelatedField(
+        read_only=True
+    )
     # This field is a custom property on the model, not a serializer field.
     get_total_price = serializers.ReadOnlyField()
 
@@ -200,17 +340,43 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
         fields = ['id', 'url', 'request_for_quotation', 'product', 'description',
                   'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
 
+    def validate(self, data):
+        if data.get('qty') is None or data['qty'] <= 0:
+            raise serializers.ValidationError("Quantity must be greater than zero.")
+        return data
+
+    def create(self, validated_data):
+        if not validated_data.get('description'):
+            validated_data['description'] = validated_data['product'].product_description
+        if not validated_data.get('unit_of_measure'):
+            validated_data['unit_of_measure'] = validated_data['product'].unit_of_measure
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            if attr != 'id':
+                setattr(instance, attr, value)
+        if not instance.description:
+            instance.description = instance.product.product_description
+        if not instance.unit_of_measure:
+            instance.unit_of_measure = instance.product.unit_of_measure
+        instance.save()
+        return instance
 
 class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='request-for-quotation-detail')
     purchase_request = serializers.PrimaryKeyRelatedField(
-        many=False,
-        queryset=PurchaseRequest.objects.filter(is_hidden=False, status='approved')
+        required=False,
+        allow_null=True,
+        allow_empty=True,
+        queryset=PurchaseRequest.objects.filter(is_hidden=False)
     )
-    currency = serializers.HyperlinkedRelatedField(queryset=Currency.objects.filter(is_hidden=False),
-                                                   view_name='currency-detail')
-    vendor = serializers.HyperlinkedRelatedField(queryset=Vendor.objects.filter(is_hidden=False),
-                                                 view_name='vendor-detail')
+    currency = serializers.PrimaryKeyRelatedField(
+        queryset=Currency.objects.filter(is_hidden=False),
+    )
+    vendor = serializers.PrimaryKeyRelatedField(
+        queryset=Vendor.objects.filter(is_hidden=False),
+    )
     rfq_total_price = serializers.ReadOnlyField()
     items = RequestForQuotationItemSerializer(many=True)
 
@@ -220,102 +386,146 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
                   'status', 'rfq_total_price', 'items', 'is_hidden', 'is_expired', 'is_submitted', 'can_edit']
         read_only_fields = ['date_created', 'date_updated', 'rfq_total_price']
 
+    def validate_create(self, data):
+        if data['purchase_request'] is None:
+            raise serializers.ValidationError("Purchase request is required.")
+        if data.get('purchase_request') and data['purchase_request'].status != "approved":
+            raise serializers.ValidationError("Purchase request must be approved before creating a RFQ.")
+        if data['vendor'] is None:
+            raise serializers.ValidationError("Vendor is required.")
+        if data['currency'] is None:
+            raise serializers.ValidationError("Currency is required.")
+        if data['expiry_date'] < data['purchase_request'].date_created:
+            raise serializers.ValidationError("Expiry date cannot be earlier than the purchase request creation date.")
+        if not data['items']:
+            raise serializers.ValidationError("At least one item is required to create a RFQ.")
+        items_data = data.get('items', [])
+        incoming_product_ids = [
+            item['product'].id if hasattr(item['product'], 'id') else int(item['product'])
+            for item in items_data if 'product' in item
+        ]
+        if self.instance:
+            existing_product_ids = [
+                item.product.id for item in self.instance.items.all()
+            ]
+        else:
+            existing_product_ids = []
+        all_product_ids = incoming_product_ids + existing_product_ids
+        if len(all_product_ids) != len(set(all_product_ids)):
+            raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
+
+        # Prevent duplicate RFQ creation
+        if RequestForQuotation.objects.filter(
+            purchase_request=data['purchase_request'],
+            expiry_date=data['expiry_date'],
+            vendor=data['vendor'],
+            status__in=['draft', 'pending'],  # Exclude approved and rejected RFQs
+            currency=data['currency'],
+            items__product__in=[item['product'] for item in data.get('items', [])],
+            is_hidden=False
+        ).exists():
+            raise serializers.ValidationError("A RFQ with these details already exists.")
+        return data
+
+    def validate_update(self, data):
+        if 'items' in data:
+            items = data['items']
+            if not items:
+                raise serializers.ValidationError("At least one item is required for a partial update.")
+            incoming_product_ids = [
+                item['product'].id if hasattr(item['product'], 'id') else int(item['product'])
+                for item in items if 'product' in item
+            ]
+            if self.instance:
+                existing_product_ids = [
+                    item.product.id for item in self.instance.items.all()
+                ]
+            else:
+                existing_product_ids = []
+            all_product_ids = incoming_product_ids + existing_product_ids
+            if len(all_product_ids) != len(set(all_product_ids)):
+                raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
+        required_fields = ['purchase_request', 'currency', 'vendor', 'expiry_date']
+        if data.get('purchase_request') and data['purchase_request'].status != 'approved':
+            raise serializers.ValidationError("The purchase request must be approved before creating a RFQ.")
+        for field in required_fields:
+            if field in data and data[field] is None:
+                raise serializers.ValidationError(f"{field.replace('_', ' ').capitalize()} is required.")
+        return data
+
+    def validate(self, data):
+        if self.instance is None:
+            self.validate_create(data)
+        else:
+            self.validate_update(data)
+        return data
+
+
     def create(self, validated_data):
         items_data = validated_data.pop('items')
-        if not items_data:
-            raise serializers.ValidationError("At least one item is required to create a RFQ.")
-        if validated_data['purchase_request'].status != 'approved':
-            raise serializers.ValidationError("The purchase request must be approved before creating a RFQ.")
         rfq = RequestForQuotation.objects.create(**validated_data)
-        for item_data in items_data:
-            RequestForQuotationItem.objects.create(request_for_quotation=rfq, **item_data)
+        # use bulk_create for efficiency
+        RequestForQuotationItem.objects.bulk_create(
+            [RequestForQuotationItem(
+                request_for_quotation=rfq,
+                **item_data
+            ) for item_data in items_data])
         return rfq
 
     def update(self, instance, validated_data):
+        partial = self.context.get('partial', False)
         items_data = validated_data.pop('items', None)
-        # instance.date_updated = validated_data.get('date_updated', instance.date_updated)
-        instance.expiry_date = validated_data.get('expiry_date', instance.expiry_date)
-        instance.vendor = validated_data.get('vendor', instance.vendor)
-        instance.purchase_request = validated_data.get('purchase_request', instance.purchase_request)
-        instance.currency = validated_data.get('currency', instance.currency)
-        instance.status = validated_data.get('status', instance.status)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
         instance.save()
-
         if items_data is not None:
-            instance.items.all().delete()
-            for item_data in items_data:
-                RequestForQuotationItem.objects.update_or_create(id=item_data.get('id'),
-                                                                 request_for_quotation=instance,
-                                                                 defaults=item_data)
+            # If partial, handle only provided fields
+            if partial:
+                # custom partial update logic here
+                existing_items = {item.product.id: item for item in instance.items.all()}
+                incoming_product_ids = set()
+                for item_data in items_data:
+                    product_id = item_data['product'].id if hasattr(item_data['product'], 'id') else int(item_data['product'])
+                    incoming_product_ids.add(product_id)
+                    if product_id in existing_items:
+                        rfq_item = existing_items[product_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id' and attr != 'product':
+                                setattr(rfq_item, attr, value)
+                        rfq_item.save()
+                    else:
+                        RequestForQuotationItem.objects.create(request_for_quotation=instance, **item_data)
+                        # Do not delete items not present in the update
+            else:
+                # full update logic here
+                existing_items = {item.id: item for item in instance.items.all()}
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(existing_items[item_id], attr, value)
+                        existing_items[item_id].save()
+                    else:
+                        RequestForQuotationItem.objects.create(request_for_quotation=instance, **item_data)
+                        # Do not delete items not present in the update
         return instance
-
-
-# class RFQVendorQuoteItemSerializer(serializers.HyperlinkedModelSerializer):
-#     url = serializers.HyperlinkedIdentityField(view_name='rfq-vendor-quote-item-detail')
-#     rfq_vendor_quote = serializers.HyperlinkedRelatedField(
-#         view_name='rfq-vendor-quote-detail', read_only=True)
-#     product = serializers.HyperlinkedRelatedField(
-#         queryset=Product.objects.filter(is_hidden=False),
-#         view_name='product-detail')
-#     # This field is a custom property on the model, not a serializer field.
-#     get_total_price = serializers.ReadOnlyField()
-#
-#     class Meta:
-#         model = RFQVendorQuoteItem
-#         fields = ['id', 'url', 'rfq_vendor_quote', 'product', 'description', 'qty',
-#                   'estimated_unit_price', 'get_total_price']
-#
-#
-# class RFQVendorQuoteSerializer(serializers.HyperlinkedModelSerializer):
-#     url = serializers.HyperlinkedIdentityField(view_name='rfq-vendor-quote-detail')
-#     items = RFQVendorQuoteItemSerializer(many=True)
-#     rfq = serializers.HyperlinkedRelatedField(
-#         queryset=RequestForQuotation.objects.filter(is_hidden=False),
-#         view_name='request-for-quotation-detail')
-#     vendor = serializers.HyperlinkedRelatedField(
-#         queryset=Vendor.objects.filter(is_hidden=False),
-#         view_name='vendor-detail')
-#     quote_total_price = serializers.ReadOnlyField()
-#
-#     class Meta:
-#         model = RFQVendorQuote
-#         fields = ['url', 'id', 'rfq', 'vendor', 'quote_total_price', 'items', 'is_hidden']
-#         read_only_fields = ['id', 'quote_total_price']
-#
-#     def create(self, validated_data):
-#         items_data = validated_data.pop('items')
-#         if not items_data:
-#             raise serializers.ValidationError("At least one item is required to create a RFQ vendor quote.")
-#         rfq_vendor_quote = RFQVendorQuote.objects.create(**validated_data)
-#         for item_data in items_data:
-#             RFQVendorQuoteItem.objects.create(rfq_vendor_quote=rfq_vendor_quote, **item_data)
-#         return rfq_vendor_quote
-#
-#     def update(self, instance, validated_data):
-#         items_data = validated_data.pop('items', None)
-#         instance.rfq = validated_data.get('rfq', instance.rfq)
-#         instance.vendor = validated_data.get('vendor', instance.vendor)
-#         instance.save()
-#
-#         if items_data is not None:
-#             instance.items.all().delete()
-#             for item_data in items_data:
-#                 RFQVendorQuoteItem.objects.update_or_create(id=item_data.get('id'),
-#                                                             rfq_vendor_quote=instance,
-#                                                             defaults=item_data)
-#         return instance
 
 
 class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-order-item-detail')
-    product = serializers.HyperlinkedRelatedField(
+    product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.filter(is_hidden=False),
-        view_name='product-detail')
-    purchase_order = serializers.HyperlinkedRelatedField(
-        view_name='purchase-order-detail', read_only=True, lookup_field='id')
-    unit_of_measure = serializers.HyperlinkedRelatedField(
+    )
+    purchase_order = serializers.PrimaryKeyRelatedField(
+        read_only=True
+    )
+    unit_of_measure = serializers.PrimaryKeyRelatedField(
         queryset=UnitOfMeasure.objects.filter(is_hidden=False),
-        view_name='unit-of-measure-detail')
+        required=False,
+        allow_null=True,
+        allow_empty=True
+    )
     # This field is a custom property on the model, not a serializer field.
     get_total_price = serializers.ReadOnlyField()
 
@@ -324,122 +534,198 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
         fields = ['id', 'url', 'purchase_order', 'product', 'description',
                   'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
 
+    def validate(self, data):
+        if data.get('qty') is None or data['qty'] <= 0:
+            raise serializers.ValidationError("Quantity must be greater than zero.")
+        return data
+
+    def create(self, validated_data):
+        if not validated_data.get('description'):
+            validated_data['description'] = validated_data['product'].product_description
+        if not validated_data.get('unit_of_measure'):
+            validated_data['unit_of_measure'] = validated_data['product'].unit_of_measure
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            if attr != 'id':
+                setattr(instance, attr, value)
+        if not instance.description:
+            instance.description = instance.product.product_description
+        if not instance.unit_of_measure:
+            instance.unit_of_measure = instance.product.unit_of_measure
+        instance.save()
+        return instance
+
 
 class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='purchase-order-detail', lookup_field='id',
                                                lookup_url_kwarg='id')
-    # created_by = serializers.HyperlinkedRelatedField(
-    #     queryset=User.objects.filter(username__icontains='admin'),
-    #     view_name='user-detail')
+    created_by = serializers.PrimaryKeyRelatedField(
+        queryset=TenantUser.objects.filter(is_hidden=False),
+        required=False
+    )
     items = PurchaseOrderItemSerializer(many=True)
     # add a one-to-one serializer field
     related_rfq = serializers.PrimaryKeyRelatedField(
-        many=False,
-        queryset=RequestForQuotation.objects.filter(is_hidden=False, status='approved'),
-        allow_null=True
+        required=False,
+        allow_null=True,
+        allow_empty=True,
+        queryset=RequestForQuotation.objects.filter(is_hidden=False)
     )
     destination_location = serializers.PrimaryKeyRelatedField(
-        many=False,
-        queryset=Location.objects.filter(is_hidden=False),
-        allow_null=True
+        queryset=Location.get_active_locations().filter(is_hidden=False),
     )
-    vendor = serializers.HyperlinkedRelatedField(
+    vendor = serializers.PrimaryKeyRelatedField(
         queryset=Vendor.objects.filter(is_hidden=False),
-        view_name='vendor-detail')
-    currency = serializers.HyperlinkedRelatedField(
+    )
+    currency = serializers.PrimaryKeyRelatedField(
         queryset=Currency.objects.filter(is_hidden=False),
-        view_name='currency-detail')
+    )
+    created_by_details = TenantUserSerializer(source='created_by', read_only=True)
     # This field is a custom property on the model, not a serializer field.
     po_total_price = serializers.ReadOnlyField()
 
     class Meta:
         model = PurchaseOrder
-        fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'related_rfq', 'vendor', 'currency',
-                  'payment_terms', 'destination_location', 'purchase_policy', 'delivery_terms',
-                  'items', 'po_total_price', 'is_hidden', 'is_submitted', 'can_edit']
+        fields = ['id', 'url', 'status', 'date_created', 'date_updated', 'related_rfq', 'created_by',
+                  'vendor', 'currency', 'payment_terms', 'destination_location', 'created_by_details',
+                  'purchase_policy', 'delivery_terms', 'items', 'po_total_price',
+                  'is_hidden', 'is_submitted', 'can_edit']
+
+    def to_internal_value(self, data):
+        data = data.copy()
+        if 'created_by' not in data or not data.get('created_by'):
+            user = self.context['request'].user
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
+                data['created_by'] = tenant_user.pk
+            except TenantUser.DoesNotExist:
+                raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
+        return super().to_internal_value(data)
+
+    def validate_create(self, data):
+        required_fields = ['items', 'created_by', 'currency', 'vendor',  'related_rfq', 'created_by',
+                           'destination_location']
+        if data.get('related_rfq') and data['related_rfq'].status != "approved":
+            raise serializers.ValidationError("RFQ must be approved before creating a Purchase Order.")
+        for field in required_fields:
+            if not data.get(field):
+                raise serializers.ValidationError(
+                    f"{field.replace('_', ' ').capitalize()} is required to create a purchase request."
+                )
+        if data.get('destination_location') is None and not MultiLocation.objects.filter(is_activated=False).exists():
+            raise serializers.ValidationError("Destination location is required when multi-location is activated.")
+        if PurchaseOrder.objects.filter(
+            created_by=data.get('created_by'),
+            related_rfq=data.get('related_rfq'),
+            destination_location=data.get('destination_location'),
+            vendor=data.get('vendor'),
+            status__in=['draft', 'pending'],
+            currency=data.get('currency'),
+            items__product__in=[item['product'] for item in data.get('items', [])],
+            is_hidden=False
+        ).exists():
+            raise serializers.ValidationError("A purchase order with these details already exists.")
+        items_data = data.get('items', [])
+        if not items_data:
+            raise serializers.ValidationError("At least one item is required to create a purchase order.")
+        incoming_product_ids = [
+            item['product'].id if hasattr(item['product'], 'id') else int(item['product'])
+            for item in items_data if 'product' in item
+        ]
+        if self.instance:
+            existing_product_ids = [
+                item.product.id for item in self.instance.items.all()
+            ]
+        else:
+            existing_product_ids = []
+        all_product_ids = incoming_product_ids + existing_product_ids
+        if len(all_product_ids) != len(set(all_product_ids)):
+            raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
+        return data
+
+    def validate_update(self, data):
+        if 'items' in data:
+            items = data['items']
+            if not items:
+                raise serializers.ValidationError("At least one item is required for a partial update.")
+            incoming_product_ids = [
+                item['product'].id if hasattr(item['product'], 'id') else int(item['product'])
+                for item in items if 'product' in item
+            ]
+            if self.instance:
+                existing_product_ids = [
+                    item.product.id for item in self.instance.items.all()
+                ]
+            else:
+                existing_product_ids = []
+            all_product_ids = incoming_product_ids + existing_product_ids
+            if len(all_product_ids) != len(set(all_product_ids)):
+                raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
+        required_fields = ['destination_location', 'created_by', 'currency', 'vendor', 'related_rfq']
+        if data.get('related_rfq') and data['related_rfq'].status != "approved":
+            raise serializers.ValidationError("RFQ must be approved before creating a Purchase Order.")
+        for field in required_fields:
+            if field in data and data[field] is None:
+                raise serializers.ValidationError(f"{field.replace('_', ' ').capitalize()} is required.")
+        if 'destination_location' in data and data['destination_location'] is None and not MultiLocation.objects.filter(is_activated=False).exists():
+            raise serializers.ValidationError("Destination location is required when multi-location is activated.")
+
+        return data
+
+    def validate(self, data):
+        if self.instance is None:
+            self.validate_create(data)
+        else:
+            self.validate_update(data)
+        return data
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a purchase order.")
         po = PurchaseOrder.objects.create(**validated_data)
-        for item_data in items_data:
-            PurchaseOrderItem.objects.create(purchase_order=po, **item_data)
+        PurchaseOrderItem.objects.bulk_create(
+            [PurchaseOrderItem(
+                purchase_order=po,
+                **item_data
+            ) for item_data in items_data]
+        )
         return po
 
     def update(self, instance, validated_data):
+        partial = self.context.get('partial', False)
         items_data = validated_data.pop('items', None)
-        # instance.date_updated = validated_data.get('date_updated', instance.date_updated)
-        # instance.created_by = validated_data.get('created_by', instance.created_by)
-        instance.vendor = validated_data.get('vendor', instance.vendor)
-        instance.destination_location = validated_data.get('destination_location', instance.destination_location)
-        instance.payment_terms = validated_data.get('payment_terms', instance.payment_terms)
-        instance.purchase_policy = validated_data.get('purchase_policy', instance.purchase_policy)
-        instance.delivery_terms = validated_data.get('delivery_terms', instance.delivery_terms)
-        instance.currency = validated_data.get('currency', instance.currency)
-        instance.status = validated_data.get('status', instance.status)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
         instance.save()
-
         if items_data is not None:
-            instance.items.all().delete()
-            for item_data in items_data:
-                PurchaseOrderItem.objects.update_or_create(id=item_data.get('id'),
-                                                           purchase_order=instance,
-                                                           defaults=item_data)
+            # If partial, handle only provided fields
+            if partial:
+                # custom partial update logic here
+                existing_items = {item.product.id: item for item in instance.items.all()}
+                incoming_product_ids = set()
+                for item_data in items_data:
+                    product_id = item_data['product'].id if hasattr(item_data['product'], 'id') else int(item_data['product'])
+                    incoming_product_ids.add(product_id)
+                    if product_id in existing_items:
+                        po_item = existing_items[product_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id' and attr != 'product':
+                                setattr(po_item, attr, value)
+                        po_item.save()
+                    else:
+                        PurchaseOrderItem.objects.create(purchase_order=instance, **item_data)
+            else:
+                existing_items = {item.id: item for item in instance.items.all()}
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(existing_items[item_id], attr, value)
+                        existing_items[item_id].save()
+                    else:
+                        PurchaseOrderItem.objects.create(purchase_order=instance, **item_data)
         return instance
-
-
-# class POVendorQuoteItemSerializer(serializers.HyperlinkedModelSerializer):
-#     url = serializers.HyperlinkedIdentityField(view_name='po-vendor-quote-item-detail')
-#     po_vendor_quote = serializers.HyperlinkedRelatedField(
-#         view_name='po-vendor-quote-detail', read_only=True)
-#     product = serializers.HyperlinkedRelatedField(
-#         queryset=Product.objects.filter(is_hidden=False),
-#         view_name='product-detail')
-#     # This field is a custom property on the model, not a serializer field.
-#     get_total_price = serializers.ReadOnlyField()
-#
-#     class Meta:
-#         model = POVendorQuoteItem
-#         fields = ['id', 'url', 'po_vendor_quote', 'product', 'description', 'qty',
-#                   'estimated_unit_price', 'get_total_price']
-#
-#
-# class POVendorQuoteSerializer(serializers.HyperlinkedModelSerializer):
-#     url = serializers.HyperlinkedIdentityField(view_name='po-vendor-quote-detail')
-#     vendor = serializers.HyperlinkedRelatedField(
-#         queryset=Vendor.objects.filter(is_hidden=False),
-#         view_name='vendor-detail')
-#     purchase_order = serializers.HyperlinkedRelatedField(
-#         queryset=PurchaseOrder.objects.filter(is_hidden=False),
-#         view_name='purchase-order-detail')
-#     items = POVendorQuoteItemSerializer(many=True)
-#     # This field is a custom property on the model, not a serializer field.
-#     quote_total_price = serializers.ReadOnlyField()
-#
-#     class Meta:
-#         model = POVendorQuote
-#         fields = ['url', 'id', 'purchase_order', 'vendor', 'quote_total_price', 'items', 'is_hidden']
-#
-#     def create(self, validated_data):
-#         items_data = validated_data.pop('items')
-#         if not items_data:
-#             raise serializers.ValidationError("At least one item is required to create a PO vendor quote.")
-#         po_vendor_quote = POVendorQuote.objects.create(**validated_data)
-#         for item_data in items_data:
-#             POVendorQuoteItem.objects.create(po_vendor_quote=po_vendor_quote, **item_data)
-#         return po_vendor_quote
-#
-#     def update(self, instance, validated_data):
-#         items_data = validated_data.pop('items', None)
-#         instance.purchase_order = validated_data.get('purchase_order', instance.purchase_order)
-#         instance.vendor = validated_data.get('vendor', instance.vendor)
-#         instance.save()
-#
-#         if items_data is not None:
-#             instance.items.all().delete()
-#             for item_data in items_data:
-#                 POVendorQuoteItem.objects.update_or_create(id=item_data.get('id'),
-#                                                            po_vendor_quote=instance,
-#                                                            defaults=item_data)
-#         return instance
