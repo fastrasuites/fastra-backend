@@ -28,252 +28,16 @@ from inventory.models import IncomingProduct, Location, IncomingProductItem
 from users.models import TenantUser
 from users.module_permissions import HasModulePermission
 from users.utils import convert_to_base64
+from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet, SearchViewSet
 from .models import (PurchaseRequest, PurchaseRequestItem, Department, Vendor,
                      Product, RequestForQuotation, RequestForQuotationItem, UnitOfMeasure, PurchaseOrder, PurchaseOrderItem, PRODUCT_CATEGORY, Currency)
-from .serializers import (PurchaseRequestSerializer, DepartmentSerializer,
-                          VendorSerializer, ProductSerializer,
+from .serializers import (PurchaseRequestSerializer, VendorSerializer, ProductSerializer,
                           RequestForQuotationSerializer, RequestForQuotationItemSerializer,
                           UnitOfMeasureSerializer, PurchaseRequestItemSerializer,
                           PurchaseOrderSerializer, PurchaseOrderItemSerializer,
                           ExcelUploadSerializer, CurrencySerializer)
 from .utils import generate_model_pdf
 from users.config import basic_action_permission_map
-
-
-class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin, mixins.CreateModelMixin,
-                                 mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
-    """
-    A viewset that provides default `list()`, `create()`, `retrieve()`, `update()`, `partial_update()`,
-    and a custom `destroy()` action to hide instances instead of deleting them, a custom action to list
-    hidden instances, a custom action to revert the hidden field back to False.
-    """
-
-    def get_queryset(self):
-        # # Filter out hidden instances by default
-        # return self.queryset.filter(is_hidden=False)
-        return super().get_queryset()
-
-    @action(detail=True, methods=['put', 'patch'])
-    def toggle_hidden_status(self, request, pk=None, *args, **kwargs):
-        # Toggle the hidden status of an instance
-        instance = self.get_object()
-        instance.is_hidden = not instance.is_hidden
-        instance.save()
-        return Response({'status': f'Hidden status set to {instance.is_hidden}'}, status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=True, methods=['delete'])
-    def soft_delete(self, request, pk=None, *args, **kwargs):
-        # Soft delete an instance
-        instance = self.get_object()
-        instance.is_hidden = True
-        instance.save()
-        return Response({'status': 'hidden'}, status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False, methods=['get'])
-    def hidden_list(self, request, *args, **kwargs):
-        # List all hidden instances
-        hidden_instances = self.queryset.filter(is_hidden=True)
-        page = self.paginate_queryset(hidden_instances)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(hidden_instances, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    @action(detail=False, methods=['get'])
-    def active_list(self, request, *args, **kwargs):
-        # List all active instances
-        active_instances = self.queryset.filter(is_hidden=False)
-        page = self.paginate_queryset(active_instances)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(active_instances, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
-    """
-    A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
-    enable searching functionality.
-    The search functionality can be accessed via the DRF API interface.
-    """
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    search_fields = []
-
-    @action(detail=False, methods=['get'])
-    def search(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset()).filter(is_hidden=False)
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-@extend_schema_view(
-    list=extend_schema(tags=['Purchase Requests']),
-    retrieve=extend_schema(tags=['Purchase Requests']),
-    create=extend_schema(tags=['Purchase Requests']),
-    update=extend_schema(tags=['Purchase Requests']),
-    partial_update=extend_schema(tags=['Purchase Requests']),
-    destroy=extend_schema(tags=['Purchase Requests']),
-)
-class PurchaseRequestViewSet(SearchDeleteViewSet):
-    queryset = PurchaseRequest.objects.all()
-    serializer_class = PurchaseRequestSerializer
-    # Required by permission class
-    app_label = "purchase"
-    model_name = "purchaserequest"
-    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    search_fields = ['id', 'requester__username', 'suggested_vendor__name']
-    # Map DRF actions to your permission names
-    action_permission_map = {
-        **basic_action_permission_map,
-        "draft_list": "view",
-        "pending_list": "view",
-        "approved_list": "view",
-        "rejected_list": "view",
-        "convert_to_rfq": "create",
-        "submit": "edit",
-        "approve": "approve",      
-        "reject": "reject",        
-    }
-    
-
-    def perform_create(self, serializer):
-        # # Ensure the user is a TenantUser
-        # user = self.request.user
-        # # Ensure we are operating within the correct tenant schema
-        # tenant = self.request.tenant  # Get the current tenant
-        #
-        # with tenant_context(tenant):  # Switch to the tenant's schema
-        #     try:
-        #         tenant_user = TenantUser.objects.get(user_id=user.id)
-        #     except ObjectDoesNotExist:
-        #         raise serializers.ValidationError("Requester must be a TenantUser within the tenant schema.")
-
-        serializer.save()
-
-    @action(detail=False, methods=['get'])
-    def draft_list(self, request):
-        queryset = PurchaseRequest.pr_draft.all()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'])
-    def pending_list(self, request):
-        queryset = PurchaseRequest.pr_pending.all()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'])
-    def approved_list(self, request):
-        queryset = PurchaseRequest.pr_approved.all()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'])
-    def rejected_list(self, request):
-        queryset = PurchaseRequest.pr_rejected.all()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['put', 'patch'])
-    def submit(self, request, pk=None):
-        purchase_request = self.get_object()
-        purchase_request.submit()
-        return Response({'status': 'submitted'}, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=['put', 'patch'])
-    def approve(self, request, pk=None):
-        purchase_request = self.get_object()
-        if request.user.has_perm('approve_purchase_request'):
-            purchase_request.approve()
-            return Response({'status': 'approved'}, status=status.HTTP_200_OK)
-        return Response({'status': 'permission denied'}, status=status.HTTP_403_FORBIDDEN)
-
-    @action(detail=True, methods=['put', 'patch'])
-    def reject(self, request, pk=None):
-        purchase_request = self.get_object()
-        if request.user.has_perm('reject_purchase_request'):
-            purchase_request.reject()
-            return Response({'status': 'rejected'}, status=status.HTTP_200_OK)
-        return Response({'status': 'permission denied'}, status=status.HTTP_403_FORBIDDEN)
-
-    @action(detail=True, methods=['post'])
-    def convert_to_rfq(self, request, pk=None):
-        try:
-            # Get the approved purchase request
-            purchase_request = self.get_object()
-
-            if purchase_request.status != 'approved':
-                return Response({"detail": "Only approved purchase requests can be converted to RFQs."},
-                                status=status.HTTP_400_BAD_REQUEST)
-
-            # Create the RFQ
-            rfq = RequestForQuotation.objects.create(
-                purchase_request=purchase_request,
-                vendor=purchase_request.vendor,  # Assuming vendor is used
-                expiry_date=None,  # Can be set dynamically or left blank
-                currency=purchase_request.currency,  # Can be set dynamically or left blank
-                status='draft',
-                date_created=timezone.now(),
-                date_updated=timezone.now(),
-                is_hidden=False,
-            )
-
-            # Create RFQ items from the PurchaseRequest items
-            for pr_item in purchase_request.items.all():
-                RequestForQuotationItem.objects.create(
-                    request_for_quotation=rfq,
-                    product=pr_item.product,
-                    description=pr_item.description,
-                    unit_of_measure=pr_item.unit_of_measure,
-                    qty=pr_item.qty,
-                    estimated_unit_price=pr_item.estimated_unit_price,
-                )
-
-            return Response({
-                "detail": "RFQ created successfully",
-                "rfq_id": rfq.id
-            }, status=status.HTTP_201_CREATED)
-
-        except PurchaseRequest.DoesNotExist:
-            return Response({"detail": "Purchase request not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        except Exception as e:
-            return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
-@extend_schema_view(
-    list=extend_schema(tags=['Purchase Request Items']),
-    retrieve=extend_schema(tags=['Purchase Request Items']),
-    create=extend_schema(tags=['Purchase Request Items']),
-    update=extend_schema(tags=['Purchase Request Items']),
-    partial_update=extend_schema(tags=['Purchase Request Items']),
-    destroy=extend_schema(tags=['Purchase Request Items']),
-)
-class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
-    queryset = PurchaseRequestItem.objects.all()
-    serializer_class = PurchaseRequestItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-
-@extend_schema_view(
-    list=extend_schema(tags=['Departments']),
-    retrieve=extend_schema(tags=['Departments']),
-    create=extend_schema(tags=['Departments']),
-    update=extend_schema(tags=['Departments']),
-    partial_update=extend_schema(tags=['Departments']),
-    destroy=extend_schema(tags=['Departments']),
-)
-class DepartmentViewSet(SearchDeleteViewSet):
-    serializer_class = DepartmentSerializer
-    permission_classes = [IsAuthenticated, HasTenantAccess]
-    queryset = Department.objects.all()
-
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
 
 
 @extend_schema_view(
@@ -305,13 +69,6 @@ class UnitOfMeasureViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['unit_name', 'unit_category']    
     action_permission_map = basic_action_permission_map
-
-
-# class VendorCategoryViewSet(SearchDeleteViewSet):
-#     queryset = VendorCategory.objects.all()
-#     serializer_class = VendorCategorySerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     search_fields = ['name',]
 
 
 @extend_schema_view(
@@ -540,6 +297,168 @@ class ProductViewSet(SearchDeleteViewSet):
 
 
 @extend_schema_view(
+    list=extend_schema(tags=['Purchase Requests']),
+    retrieve=extend_schema(tags=['Purchase Requests']),
+    create=extend_schema(tags=['Purchase Requests']),
+    update=extend_schema(tags=['Purchase Requests']),
+    partial_update=extend_schema(tags=['Purchase Requests']),
+    destroy=extend_schema(tags=['Purchase Requests']),
+)
+class PurchaseRequestViewSet(SearchDeleteViewSet):
+    queryset = PurchaseRequest.objects.all()
+    serializer_class = PurchaseRequestSerializer
+    # Required by permission class
+    app_label = "purchase"
+    model_name = "purchaserequest"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    search_fields = ['id', 'requester__username', 'suggested_vendor__name']
+    filterset_fields = ['status']
+    # Map DRF actions to your permission names
+    action_permission_map = {
+        **basic_action_permission_map,
+        "draft_list": "view",
+        "pending_list": "view",
+        "approved_list": "view",
+        "rejected_list": "view",
+        "convert_to_rfq": "create",
+        "submit": "edit",
+        "approve": "approve",
+        "reject": "reject",
+    }
+
+
+    def perform_create(self, serializer):
+        # Ensure the user is a TenantUser
+        user = self.request.user
+        # Ensure we are operating within the correct tenant schema
+        tenant = self.request.tenant  # Get the current tenant
+
+        with tenant_context(tenant):  # Switch to the tenant's schema
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id)
+            except ObjectDoesNotExist:
+                raise serializers.ValidationError("Requester must be a TenantUser within the tenant schema.")
+
+        serializer.save(requester=tenant_user)
+
+    def perform_update(self, serializer):
+        # Ensure the user is a TenantUser
+        user = self.request.user
+        # Ensure we are operating within the correct tenant schema
+        tenant = self.request.tenant
+        with tenant_context(tenant):  # Switch to the tenant's schema
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id)
+            except ObjectDoesNotExist:
+                raise serializers.ValidationError("Requester must be a TenantUser within the tenant schema.")
+        serializer.save(requester=tenant_user)
+
+    @action(detail=False, methods=['get'])
+    def draft_list(self, request):
+        queryset = PurchaseRequest.pr_draft.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def pending_list(self, request):
+        queryset = PurchaseRequest.pr_pending.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def approved_list(self, request):
+        queryset = PurchaseRequest.pr_approved.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def rejected_list(self, request):
+        queryset = PurchaseRequest.pr_rejected.all()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['put', 'patch'])
+    def submit(self, request, pk=None):
+        purchase_request = self.get_object()
+        purchase_request.submit()
+        return Response({'status': 'submitted'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['put', 'patch'])
+    def approve(self, request, pk=None):
+        purchase_request = self.get_object()
+        if request.user.has_perm('approve_purchase_request'):
+            purchase_request.approve()
+            return Response({'status': 'approved'}, status=status.HTTP_200_OK)
+        return Response({'status': 'permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+    @action(detail=True, methods=['put', 'patch'])
+    def reject(self, request, pk=None):
+        purchase_request = self.get_object()
+        if request.user.has_perm('reject_purchase_request'):
+            purchase_request.reject()
+            return Response({'status': 'rejected'}, status=status.HTTP_200_OK)
+        return Response({'status': 'permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+    @action(detail=True, methods=['post'])
+    def convert_to_rfq(self, request, pk=None):
+        try:
+            # Get the approved purchase request
+            purchase_request = self.get_object()
+
+            if purchase_request.status != 'approved':
+                return Response({"detail": "Only approved purchase requests can be converted to RFQs."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Create the RFQ
+            rfq = RequestForQuotation.objects.create(
+                purchase_request=purchase_request,
+                vendor=purchase_request.vendor,  # Assuming vendor is used
+                expiry_date=None,  # Can be set dynamically or left blank
+                currency=purchase_request.currency,  # Can be set dynamically or left blank
+                status='draft',
+                date_created=timezone.now(),
+                date_updated=timezone.now(),
+                is_hidden=False,
+            )
+
+            # Create RFQ items from the PurchaseRequest items
+            for pr_item in purchase_request.items.all():
+                RequestForQuotationItem.objects.create(
+                    request_for_quotation=rfq,
+                    product=pr_item.product,
+                    description=pr_item.description,
+                    unit_of_measure=pr_item.unit_of_measure,
+                    qty=pr_item.qty,
+                    estimated_unit_price=pr_item.estimated_unit_price,
+                )
+
+            return Response({
+                "detail": "RFQ created successfully",
+                "rfq_id": rfq.id
+            }, status=status.HTTP_201_CREATED)
+
+        except PurchaseRequest.DoesNotExist:
+            return Response({"detail": "Purchase request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        except Exception as e:
+            return Response({"detail": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+@extend_schema_view(
+    list=extend_schema(tags=['Purchase Request Items']),
+    retrieve=extend_schema(tags=['Purchase Request Items']),
+    create=extend_schema(tags=['Purchase Request Items']),
+    update=extend_schema(tags=['Purchase Request Items']),
+    partial_update=extend_schema(tags=['Purchase Request Items']),
+    destroy=extend_schema(tags=['Purchase Request Items']),
+)
+class PurchaseRequestItemViewSet(SearchViewSet):
+    queryset = PurchaseRequestItem.objects.all()
+    serializer_class = PurchaseRequestItemSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['purchase_request__id']
+    search_fields = ['product__product_name', 'description', 'unit_of_measure__name', 'purchase_request__id']
+
+@extend_schema_view(
     list=extend_schema(tags=['Request For Quotation']),
     retrieve=extend_schema(tags=['Request For Quotation']),
     create=extend_schema(tags=['Request For Quotation']),
@@ -553,6 +472,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
     app_label = "purchase"
     model_name = "requestforquotation"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    filterset_fields = ['status']
     search_fields = ['vendor__company_name', 'status', 'purchase_request__id']
     action_permission_map = {
         **basic_action_permission_map,
@@ -562,6 +482,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         "approve": "approve",
         "reject": "reject",
         "draft_list": "view",
+        "toggle_hidden_status": "edit",
         "pending_list": "view",
         "approved_list": "view",
         "rejected_list": "view",
@@ -746,40 +667,12 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
     partial_update=extend_schema(tags=['Request For Quotation Items']),
     destroy=extend_schema(tags=['Request For Quotation Items']),
 )
-class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
+class RequestForQuotationItemViewSet(SearchViewSet):
     queryset = RequestForQuotationItem.objects.all()
     serializer_class = RequestForQuotationItemSerializer
     permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['request_for_quotation__id']
 
-#
-# @extend_schema_view(
-#     list=extend_schema(tags=['RFQ Vendor Quote']),
-#     retrieve=extend_schema(tags=['RFQ Vendor Quote']),
-#     create=extend_schema(tags=['RFQ Vendor Quote']),
-#     update=extend_schema(tags=['RFQ Vendor Quote']),
-#     partial_update=extend_schema(tags=['RFQ Vendor Quote']),
-#     destroy=extend_schema(tags=['RFQ Vendor Quote']),
-# )
-# class RFQVendorQuoteViewSet(SearchDeleteViewSet):
-#     queryset = RFQVendorQuote.objects.all()
-#     serializer_class = RFQVendorQuoteSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     search_fields = ['vendor__company_name', ]
-#
-#
-# @extend_schema_view(
-#     list=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     retrieve=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     create=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     update=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     partial_update=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     destroy=extend_schema(tags=['RFQ Vendor Quote Items']),
-# )
-# class RFQVendorQuoteItemViewSet(viewsets.ModelViewSet):
-#     queryset = RFQVendorQuoteItem.objects.all()
-#     serializer_class = RFQVendorQuoteItemSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#
 
 @extend_schema_view(
     list=extend_schema(tags=['Purchase Orders']),
@@ -795,6 +688,7 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     app_label = "purchase"
     model_name = "purchaseorder"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    filterset_fields = ['status']
     search_fields = ['status', 'vendor__company_name']
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
@@ -809,6 +703,20 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
         "cancelled_list": "view",
         "completed_list": "view"
     }
+
+    def perform_create(self, serializer):
+        # Ensure the user is a TenantUser
+        user = self.request.user
+        # Ensure we are operating within the correct tenant schema
+        tenant = self.request.tenant  # Get the current tenant
+
+        with tenant_context(tenant):  # Switch to the tenant's schema
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id)
+            except ObjectDoesNotExist:
+                raise serializers.ValidationError("This user must be a TenantUser within the tenant schema.")
+
+        serializer.save(created_by=tenant_user)
 
 
     @action(detail=True, methods=['get'])
@@ -967,55 +875,8 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     partial_update=extend_schema(tags=['Purchase Order Items']),
     destroy=extend_schema(tags=['Purchase Order Items']),
 )
-class PurchaseOrderItemViewSet(viewsets.ModelViewSet):
+class PurchaseOrderItemViewSet(SearchViewSet):
     queryset = PurchaseOrderItem.objects.all()
     serializer_class = PurchaseOrderItemSerializer
     permission_classes = [permissions.IsAuthenticated]
-
-    @enforce_tenant_schema
-    def get(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-
-#
-# @extend_schema_view(
-#     list=extend_schema(tags=['PO Vendor Quote']),
-#     retrieve=extend_schema(tags=['PO Vendor Quote']),
-#     create=extend_schema(tags=['PO Vendor Quote']),
-#     update=extend_schema(tags=['PO Vendor Quote']),
-#     partial_update=extend_schema(tags=['PO Vendor Quote']),
-#     destroy=extend_schema(tags=['PO Vendor Quote']),
-# )
-# class POVendorQuoteViewSet(SearchDeleteViewSet):
-#     queryset = POVendorQuote.objects.all()
-#     serializer_class = POVendorQuoteSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     search_fields = ['vendor__company_name', ]
-#
-#     @enforce_tenant_schema
-#     def get(self, request, *args, **kwargs):
-#         queryset = self.get_queryset()
-#         serializer = self.get_serializer(queryset, many=True)
-#         return Response(serializer.data)
-#
-#
-# @extend_schema_view(
-#     list=extend_schema(tags=['PO Vendor Quote Items']),
-#     retrieve=extend_schema(tags=['PO Vendor Quote Items']),
-#     create=extend_schema(tags=['PO Vendor Quote Items']),
-#     update=extend_schema(tags=['PO Vendor Quote Items']),
-#     partial_update=extend_schema(tags=['PO Vendor Quote Items']),
-#     destroy=extend_schema(tags=['PO Vendor Quote Items']),
-# )
-# class POVendorQuoteItemViewSet(viewsets.ModelViewSet):
-#     queryset = POVendorQuoteItem.objects.all()
-#     serializer_class = POVendorQuoteItemSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#
-#     @enforce_tenant_schema
-#     def get(self, request, *args, **kwargs):
-#         # Custom logic can be added here
-#         queryset = self.get_queryset()
-#         serializer = self.get_serializer(queryset, many=True)
-#         return Response(serializer.data)
+    filterset_fields = ['purchase_order__id']
