@@ -129,10 +129,11 @@ class PurchaseRequestItemSerializer(serializers.ModelSerializer):
         allow_empty=True
     )
     total_price = serializers.ReadOnlyField()
+    product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = PurchaseRequestItem
-        fields = ['id', 'purchase_request', 'product', 'description', 'qty', 'unit_of_measure',
+        fields = ['id', 'purchase_request', 'product', 'product_details', 'description', 'qty', 'unit_of_measure',
                   'estimated_unit_price', 'total_price']
 
     def validate(self, data):
@@ -334,10 +335,11 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
     )
     # This field is a custom property on the model, not a serializer field.
     get_total_price = serializers.ReadOnlyField()
+    product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = RequestForQuotationItem
-        fields = ['id', 'url', 'request_for_quotation', 'product', 'description',
+        fields = ['id', 'url', 'request_for_quotation', 'product', 'product_details', 'description',
                   'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
 
     def validate(self, data):
@@ -528,10 +530,11 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
     )
     # This field is a custom property on the model, not a serializer field.
     get_total_price = serializers.ReadOnlyField()
+    product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = PurchaseOrderItem
-        fields = ['id', 'url', 'purchase_order', 'product', 'description',
+        fields = ['id', 'url', 'purchase_order', 'product', 'description', 'product_details',
                   'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
 
     def validate(self, data):
