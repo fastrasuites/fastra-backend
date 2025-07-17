@@ -122,9 +122,10 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
             # Update per-location stock
             # Update product quantity if done
             if stock_adjustment.status == "done":
-                location_stock = LocationStock.objects.filter(
+                location_stock, created = LocationStock.objects.get_or_create(
                     location=warehouse_location, product=product,
-                ).first()
+                    defaults={'quantity': 0}
+                )
                 if location_stock:
                     location_stock.quantity = adjusted_quantity
                     location_stock.save()
@@ -151,9 +152,10 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
                 was_validated = getattr(instance, 'status', None) == 'done'
                 is_now_validated = validated_data.get('status', None) == 'done'
                 if not was_validated and is_now_validated:
-                    location_stock = LocationStock.objects.filter(
-                        location=warehouse_location, product=product
-                    ).first()
+                    location_stock, created = LocationStock.objects.get_or_create(
+                        location=warehouse_location, product=product,
+                        defaults={'quantity': 0}
+                    )
                     if location_stock:
                         location_stock.quantity = adjusted_quantity
                         location_stock.save()
