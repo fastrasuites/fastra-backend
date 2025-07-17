@@ -27,7 +27,8 @@ from django.contrib.auth.models import Group
 from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet
 from .models import AccessRight
 from django.contrib.contenttypes.models import ContentType
-
+from django.contrib.auth.models import User
+from django.contrib.auth.hashers import check_password
 
 
 @extend_schema_view(
@@ -171,9 +172,16 @@ class LoginView(APIView):
         #         raise TenantNotFoundException()
         #
         # if not tenant.is_verified:
-        #     return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = authenticate(request, email=email, password=password)
+        # user = authenticate(request, email=email, password=password) #only God knows why this is Failing and not working appropriately
+        user = User.objects.get(email=email)
+        if user is None:
+            raise InvalidCredentialsException()        
+        
+        is_valid = check_password(password, user.password)
+        if is_valid is False:
+            raise InvalidCredentialsException()
+        
         tenant_id = request.session.get('tenant_id')
         tenant_schema_name = request.session.get('tenant_schema_name')
         tenant_company_name = request.session.get('tenant_company_name')
@@ -185,9 +193,6 @@ class LoginView(APIView):
 
         if not tenant.is_verified:
             return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if user is None:
-            raise InvalidCredentialsException()
 
         refresh = RefreshToken.for_user(user)
         refresh['tenant_id'] = tenant_id
