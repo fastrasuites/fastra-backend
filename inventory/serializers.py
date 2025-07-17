@@ -77,10 +77,10 @@ class StockAdjustmentItemSerializer(serializers.ModelSerializer):
                                                   view_name='product-detail')
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
 
-    class Meta:
-        model = StockAdjustmentItem
-        fields = ['id', 'product', 'unit_of_measure', 'current_quantity', 'adjusted_quantity',
-                  'stock_adjustment']
+class Meta:
+    model = StockAdjustmentItem
+    fields = ['id', 'product', 'unit_of_measure', 'adjusted_quantity', 'stock_adjustment']
+    read_only_fields = ['current_quantity']
 
 
 class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
@@ -171,7 +171,8 @@ class ScrapItemSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = ScrapItem
-        fields = ['id', 'scrap', 'product', 'scrap_quantity', 'adjusted_quantity']
+        fields = ['id', 'scrap', 'product', 'scrap_quantity']
+        read_only_fields = ['adjusted_quantity']
 
 
 class ScrapSerializer(serializers.HyperlinkedModelSerializer):
