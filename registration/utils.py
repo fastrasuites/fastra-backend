@@ -10,6 +10,12 @@ from contextlib import contextmanager
 
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from registration.models import Tenant
+from users.models import TenantUser
+from django_tenants.utils import schema_context
+import logging
+
+
 
 class Util:
     @staticmethod
@@ -65,4 +71,27 @@ def generate_tokens(user):
     refresh = RefreshToken.for_user(user)
 
     return str(refresh.access_token), str(refresh)
+
+
+
+
+logger = logging.getLogger(__name__)
+
+def make_authentication(userid):
+    with schema_context('public'):
+        all_tenants = Tenant.objects.all()
+        
+        for tenant in all_tenants:
+            try:
+                with schema_context(tenant.schema_name):
+                    if TenantUser.objects.filter(user_id=userid).exists():
+                        return tenant.id, tenant.schema_name, tenant.company_name
+            except TenantUser.DoesNotExist:
+                logger.warning(f"User {userid} not found in schema {tenant.schema_name}")
+                continue
+            except Exception as e:
+                logger.error(f"Unexpected error in schema '{tenant.schema_name}': {str(e)}")
+                continue
+        
+        return None  
 
