@@ -10,12 +10,12 @@ from django.core.management import call_command
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
 from registration.config import DESIRED_INVENTORY_MODELS, DESIRED_PURCHASE_MODELS
-from users.models import AccessGroupRight, AccessGroupRightUser
+from users.models import AccessGroupRight, AccessGroupRightUser, TenantUser
 from users.serializers import AccessGroupRightSerializer
 from .models import Tenant, Domain
 from .serializers import AccessRightSerializer, TenantRegistrationSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .utils import Util, set_tenant_schema
+from .utils import Util, make_authentication, set_tenant_schema
 from django.contrib.sites.shortcuts import get_current_site
 import jwt
 from django.conf import settings
@@ -152,53 +152,45 @@ class LoginView(APIView):
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
-        if serializer.is_valid():
-            email = serializer.validated_data['email']
-            password = serializer.validated_data['password']
-        else:
+        if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # email = request.data.get('email')
-        # password = request.data.get('password')
-        # full_host = request.get_host().split(':')[0]
-        # schema_name = full_host.split('.')[0]
-        #
-        # schema_name = slugify(company_name)
-        #
-        # with set_tenant_schema('public'):
-        #     try:
-        #         tenant_s = Tenant.objects.get(schema_name=schema_name)
-        #     except Tenant.DoesNotExist:
-        #         raise TenantNotFoundException()
-        #
-        # if not tenant.is_verified:
+        email = serializer.validated_data['email']
+        password = serializer.validated_data['password']
 
-        # user = authenticate(request, email=email, password=password) #only God knows why this is Failing and not working appropriately
-        user = User.objects.get(email=email)
+        user = User.objects.filter(email=email).first()
         if user is None:
-            raise InvalidCredentialsException()        
-        
-        is_valid = check_password(password, user.password)
-        if is_valid is False:
-            raise InvalidCredentialsException()
-        
-        tenant_id = request.session.get('tenant_id')
-        tenant_schema_name = request.session.get('tenant_schema_name')
-        tenant_company_name = request.session.get('tenant_company_name')
-        with set_tenant_schema('public'):
-            try:
+            return Response({'detail': 'Invalid email or password.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        tenant_info = make_authentication(user.id)
+        if tenant_info is None:
+            return Response({'detail': 'User not found in any tenant schema.'}, status=status.HTTP_404_NOT_FOUND)
+
+        tenant_id, tenant_schema_name, tenant_company_name = tenant_info
+
+        if not check_password(password, user.password):
+            return Response({'detail': 'Invalid email or password.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            with set_tenant_schema('public'):
                 tenant = Tenant.objects.get(schema_name=tenant_schema_name)
-            except Tenant.DoesNotExist:
-                raise TenantNotFoundException()
+        except Tenant.DoesNotExist:
+            return Response({'detail': 'Tenant not found.'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'detail': f'Unexpected error accessing tenant: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         if not tenant.is_verified:
             return Response({'error': 'Tenant not verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Generate token
         refresh = RefreshToken.for_user(user)
         refresh['tenant_id'] = tenant_id
         refresh['schema_name'] = tenant_schema_name
 
-        data = self.get_access_groups(tenant_schema_name, user)        
+        try:
+            data = self.get_access_groups(tenant_schema_name, user)
+        except Exception as e:
+            return Response({'detail': f'Failed to fetch user access groups: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({
             'refresh_token': str(refresh),
