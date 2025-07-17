@@ -256,7 +256,7 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
             # Only check for duplicates within the incoming items for partial update
             if len(incoming_product_ids) != len(set(incoming_product_ids)):
                 raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
-        required_fields = ['requesting_location', 'requester', 'currency', 'vendor']
+        required_fields = ['requester', 'currency', 'vendor']
         for field in required_fields:
             if field in data and data[field] is None:
                 raise serializers.ValidationError(f"{field.replace('_', ' ').capitalize()} is required.")
@@ -456,7 +456,7 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
             else:
                 existing_product_ids = []
             all_product_ids = incoming_product_ids + existing_product_ids
-            if len(all_product_ids) != len(set(all_product_ids)):
+            if len(incoming_product_ids) != len(set(incoming_product_ids)):
                 raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
         required_fields = ['purchase_request', 'currency', 'vendor', 'expiry_date']
         if data.get('purchase_request') and data['purchase_request'].status != 'approved':
@@ -678,7 +678,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
             else:
                 existing_product_ids = []
             all_product_ids = incoming_product_ids + existing_product_ids
-            if len(all_product_ids) != len(set(all_product_ids)):
+            if len(incoming_product_ids) != len(set(incoming_product_ids)):
                 raise serializers.ValidationError("Duplicate products found in items. Each product should be unique.")
         required_fields = ['destination_location', 'created_by', 'currency', 'vendor', 'related_rfq']
         if data.get('related_rfq') and data['related_rfq'].status != "approved":

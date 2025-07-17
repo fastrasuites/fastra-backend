@@ -306,7 +306,7 @@ class Location(models.Model):
         return [
             {
                 'product_id': stock.product.id,
-                'product_name': stock.product.name,
+                'product_name': stock.product.product_name,
                 'quantity': stock.quantity
             }
             for stock in self.stocks.select_related('product').all()
@@ -467,17 +467,19 @@ class StockAdjustmentItem(models.Model):
         max_length=50,
         editable=False,
     )
-    current_quantity = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        editable=False,
-        verbose_name='Current Quantity'
-    )
     adjusted_quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         verbose_name='Adjusted Quantity'
     )
+
+    @property
+    def current_quantity(self):
+        location = self.stock_adjustment.warehouse_location
+        if self.product.location_stocks.filter(location=location).exists():
+            return self.product.location_stocks.filter(location=location).first().quantity
+        else:
+            return Decimal('0')
 
     objects = models.Manager()
 
@@ -488,13 +490,8 @@ class StockAdjustmentItem(models.Model):
         if self.product:
             if not self.unit_of_measure:
                 self.unit_of_measure = self.product.unit_of_measure
-            if not self.current_quantity:
-                self.current_quantity = self.product.available_product_quantity
             if self.adjusted_quantity < 0:
                 raise ValidationError("Adjusted quantity cannot be negative")
-            if self.stock_adjustment.is_done:
-                self.product.available_product_quantity = self.adjusted_quantity
-                self.product.save()
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
@@ -574,11 +571,14 @@ class ScrapItem(models.Model):
         editable=False,
         verbose_name='Scrap Quantity'
     )
-    adjusted_quantity = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        verbose_name='Adjusted Quantity'
-    )
+
+    @property
+    def adjusted_quantity(self):
+        """Calculate the adjusted quantity based on the current stock level"""
+        product_in_location = self.product.location_stocks.filter(location=self.scrap.warehouse_location).first()
+        if product_in_location:
+            return product_in_location.quantity - self.scrap_quantity
+        return Decimal('0')
 
     objects = models.Manager()
 
@@ -589,12 +589,8 @@ class ScrapItem(models.Model):
         if self.product:
             if not self.scrap_quantity:
                 raise ValidationError("Scrap quantity is required")
-            self.adjusted_quantity = self.product.available_product_quantity - self.scrap_quantity
             if self.adjusted_quantity < 0:
                 raise ValidationError("Adjusted quantity cannot be negative")
-            if self.scrap.is_done:
-                self.product.available_product_quantity = self.adjusted_quantity
-                self.product.save()
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
@@ -1041,8 +1037,12 @@ class DeliveryOrderReturnItem(models.Model):
             if isinstance(value, str):
                 setattr(self, field.name, value.strip())
         if self.delivery_order_return and self.delivery_order_return.source_document:
-            self.returned_product_item.available_product_quantity += self.returned_quantity
-            self.returned_product_item.save()
+            # self.returned_product_item.available_product_quantity += self.returned_quantity
+            location = self.delivery_order_return.source_document.source_location
+            if self.returned_product_item.location_stocks.filter(location=location).exists():
+                stock = self.returned_product_item.location_stocks.get(location=location)
+                stock.quantity += self.returned_quantity
+                stock.save()
         super().save(*args, **kwargs)
 # END RETURNED PRODUCTS
 
@@ -1079,8 +1079,12 @@ class ReturnIncomingProductItem(models.Model):
             if isinstance(value, str):
                 setattr(self, field.name, value.strip())
         if self.return_incoming_product and self.return_incoming_product.source_document:
-            self.product.available_product_quantity += self.quantity_to_be_returned
-            self.product.save()
+            # self.product.available_product_quantity += self.quantity_to_be_returned
+            location = self.return_incoming_product.source_document.destination_location
+            if location and self.product.location_stocks.filter(location=location).exists():
+                stock = self.product.location_stocks.get(location=location)
+                stock.quantity -= self.quantity_to_be_returned
+                stock.save()
         super(self, ReturnIncomingProductItem).save()
 # END RETURN OF INCOMING PRODUCTS
 
