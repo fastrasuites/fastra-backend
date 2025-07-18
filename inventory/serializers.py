@@ -87,10 +87,10 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='stock-adjustment-detail',
                                                lookup_field='id',
                                                lookup_url_kwarg='id')
-    warehouse_location = serializers.HyperlinkedRelatedField(queryset=Location.objects.filter(is_hidden=False),
-                                                             view_name='location-detail',
-                                                             lookup_url_kwarg='id',
-                                                             lookup_field='id')
+    warehouse_location = serializers.PrimaryKeyRelatedField(
+        queryset=Location.get_active_locations().filter(is_hidden=False),
+        required=False
+    )
 
     stock_adjustment_items = StockAdjustmentItemSerializer(many=True)
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
@@ -105,10 +105,28 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
             # Ensure this matches the `lookup_field`
         }
 
+    def validate(self, attrs):
+        """
+        Validate the Stock Adjustment data.
+        """
+        items_data = attrs.get('stock_adjustment_items', [])
+        if not items_data:
+            raise serializers.ValidationError("At least one item is required to create a Stock Adjustment.")
+        for item in items_data:
+            product = item.get('product')
+            adjusted_quantity = item.get('adjusted_quantity', 0)
+            if adjusted_quantity < 0:
+                raise serializers.ValidationError("Adjusted quantity cannot be negative.")
+            if not Product.objects.filter(id=product.id, is_hidden=False).exists():
+                raise serializers.ValidationError("Invalid Product")
+        return attrs
+
     def create(self, validated_data):
         """
         Create a new Stock Adjustment with its associated items.
         """
+        if not validated_data.get('warehouse_location') and MultiLocation.objects.filter(is_activated=False).exists():
+            validated_data['warehouse_location'] = Location.get_active_locations().first()
         items_data = validated_data.pop('stock_adjustment_items')
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a Stock Adjustment.")
@@ -189,11 +207,9 @@ class ScrapItemSerializer(serializers.HyperlinkedModelSerializer):
 
 class ScrapSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='scrap-detail', lookup_field='id')
-    warehouse_location = serializers.HyperlinkedRelatedField(
-        queryset=Location.objects.filter(is_hidden=False),
-        view_name='location-detail',
-        lookup_url_kwarg='id',
-        lookup_field='id'
+    warehouse_location = serializers.PrimaryKeyRelatedField(
+        queryset=Location.get_active_locations().filter(is_hidden=False),
+        required=False
     )
 
     scrap_items = ScrapItemSerializer(many=True)
@@ -220,9 +236,6 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
         for item in items_data:
             product = item.get('product')
             scrap_quantity = item.get('scrap_quantity', 0)
-            adjusted_quantity = item.get('adjusted_quantity', 0)
-            if adjusted_quantity < 0:
-                raise serializers.ValidationError("Adjusted quantity cannot be negative.")
             if scrap_quantity <= 0:
                 raise serializers.ValidationError("Scrap quantity cannot be zero or negative.")
             if not Product.objects.filter(id=product.id, is_hidden=False).exists():
@@ -233,6 +246,8 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
         """
         Create a new Scrap with its associated items.
         """
+        if not validated_data.get('warehouse_location') and MultiLocation.objects.filter(is_activated=False).exists():
+            validated_data['warehouse_location'] = Location.get_active_locations().first()
         items_data = validated_data.pop('scrap_items')
         scrap = Scrap.objects.create(**validated_data)
         warehouse_location = scrap.warehouse_location
@@ -256,22 +271,53 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
         return scrap
 
     def update(self, instance, validated_data):
-        """
-        Update an existing instance with validated data.
-        """
+        partial = self.context.get('partial', False)
         items_data = validated_data.pop('scrap_items', None)
         warehouse_location = validated_data.get('warehouse_location', instance.warehouse_location)
-        if items_data:
-            instance.scrap_items.all().delete()
-            for item_data in items_data:
-                product = item_data['product']
-                scrap_quantity = item_data['scrap_quantity']
-                ScrapItem.objects.create(scrap=instance, **item_data)
-                # Update per-location stock
-                # Only update stock if the status is being changed to done in this update
-                was_validated = getattr(instance, 'status', None) == 'done'
-                is_now_validated = validated_data.get('status', None) == 'done'
-                if not was_validated and is_now_validated:
+
+        # Update instance fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if items_data is not None:
+            existing_items = {item.id: item for item in instance.scrap_items.all()}
+            incoming_item_ids = set(item_data.get('id') for item_data in items_data if item_data.get('id'))
+
+            if partial:
+                # Only update or add provided items, do not delete others
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        scrap_item = existing_items[item_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(scrap_item, attr, value)
+                        scrap_item.save()
+                    else:
+                        ScrapItem.objects.create(scrap=instance, **item_data)
+            else:
+                # Full update: delete items not present, update/add others
+                for item_id in set(existing_items.keys()) - incoming_item_ids:
+                    existing_items[item_id].delete()
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        scrap_item = existing_items[item_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(scrap_item, attr, value)
+                        scrap_item.save()
+                    else:
+                        ScrapItem.objects.create(scrap=instance, **item_data)
+
+            # Update location stock if status changed to "done"
+            was_validated = getattr(instance, 'status', None) == 'done'
+            is_now_validated = validated_data.get('status', None) == 'done'
+            if not was_validated and is_now_validated:
+                for item_data in items_data:
+                    product = item_data['product']
+                    scrap_quantity = item_data['scrap_quantity']
                     location_stock = LocationStock.objects.filter(
                         location=warehouse_location, product=product
                     ).first()
@@ -281,9 +327,7 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
                         raise serializers.ValidationError("Insufficient stock to scrap this quantity.")
                     location_stock.quantity -= scrap_quantity
                     location_stock.save()
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
+
         return instance
 
 
