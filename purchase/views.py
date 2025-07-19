@@ -314,7 +314,7 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['id', 'status', "vendor__company_name", "currency__currency_name",
                      "requesting_location__location_name"]
-    filterset_fields = ['status', "requesting_location__id", "requester__user_id"]
+    filterset_fields = ['status', "requesting_location__id", "requester__user_id", 'date_created']
     # Map DRF actions to your permission names
     action_permission_map = {
         **basic_action_permission_map,
@@ -474,7 +474,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
     app_label = "purchase"
     model_name = "requestforquotation"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    filterset_fields = ['status', "purchase_request__id",]
+    filterset_fields = ['status', "purchase_request__id", 'date_created']
     search_fields = ["vendor__company_name", 'status', "purchase_request__id"]
     action_permission_map = {
         **basic_action_permission_map,
@@ -691,7 +691,7 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     app_label = "purchase"
     model_name = "purchaseorder"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    filterset_fields = ['status', "destination_location__id", "created_by__user_id"]
+    filterset_fields = ['status', "destination_location__id", "created_by__user_id", 'date_created']
     search_fields = ['status', "vendor__company_name", "related_rfq__id", "destination_location__location_name"]
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
