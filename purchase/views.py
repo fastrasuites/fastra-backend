@@ -197,7 +197,8 @@ class ProductViewSet(SearchDeleteViewSet):
     app_label = "purchase"
     model_name = "product"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    search_fields = ['product_name', 'product_category', 'unit_of_measure__name', ]
+    search_fields = ['product_name', 'product_category', "unit_of_measure__unit_name", ]
+    filterset_fields = ["unit_of_measure__unit_name",]
     action_permission_map = {
         **basic_action_permission_map,
         "upload_excel": "create",
@@ -311,8 +312,9 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
     app_label = "purchase"
     model_name = "purchaserequest"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    search_fields = ['id', 'requester__username', 'suggested_vendor__name']
-    filterset_fields = ['status']
+    search_fields = ['id', 'status', "vendor__company_name", "currency__currency_name",
+                     "requesting_location__location_name"]
+    filterset_fields = ['status', "requesting_location__id", "requester__user_id"]
     # Map DRF actions to your permission names
     action_permission_map = {
         **basic_action_permission_map,
@@ -456,7 +458,7 @@ class PurchaseRequestItemViewSet(SearchViewSet):
     serializer_class = PurchaseRequestItemSerializer
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['purchase_request__id']
-    search_fields = ['product__product_name', 'description', 'unit_of_measure__name', 'purchase_request__id']
+    search_fields = ["product__product_name", "unit_of_measure__unit_name", "purchase_request__id"]
 
 @extend_schema_view(
     list=extend_schema(tags=['Request For Quotation']),
@@ -472,8 +474,8 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
     app_label = "purchase"
     model_name = "requestforquotation"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    filterset_fields = ['status']
-    search_fields = ['vendor__company_name', 'status', 'purchase_request__id']
+    filterset_fields = ['status', "purchase_request__id",]
+    search_fields = ["vendor__company_name", 'status', "purchase_request__id"]
     action_permission_map = {
         **basic_action_permission_map,
         "check_rfq_editable": "view",
@@ -671,7 +673,8 @@ class RequestForQuotationItemViewSet(SearchViewSet):
     queryset = RequestForQuotationItem.objects.all()
     serializer_class = RequestForQuotationItemSerializer
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['request_for_quotation__id']
+    search_fields = ["product__product_name", "unit_of_measure__unit_name",]
+    filterset_fields = ["product__product_name", "unit_of_measure__unit_name", "request_for_quotation__id"]
 
 
 @extend_schema_view(
@@ -688,8 +691,8 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     app_label = "purchase"
     model_name = "purchaseorder"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    filterset_fields = ['status']
-    search_fields = ['status', 'vendor__company_name']
+    filterset_fields = ['status', "destination_location__id", "created_by__user_id"]
+    search_fields = ['status', "vendor__company_name", "related_rfq__id", "destination_location__location_name"]
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
     action_permission_map = {
@@ -879,4 +882,5 @@ class PurchaseOrderItemViewSet(SearchViewSet):
     queryset = PurchaseOrderItem.objects.all()
     serializer_class = PurchaseOrderItemSerializer
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['purchase_order__id']
+    search_fields = ["product__product_name", "unit_of_measure__unit_name",]
+    filterset_fields = ["product__product_name", "unit_of_measure__unit_name", "purchase_order__id"]
