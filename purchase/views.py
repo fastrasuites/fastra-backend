@@ -93,18 +93,20 @@ class VendorViewSet(SearchDeleteViewSet):
         "upload_profile_picture": "create"
         }
 
+    def handle_profile_picture(self, validated_data):
+        if validated_data.get("profile_picture_image", None):
+            validated_data["profile_picture"] = convert_to_base64(validated_data["profile_picture_image"])
+            validated_data.pop("profile_picture_image")
+        return validated_data
+
     def create(self, request, *args, **kwargs):
         serializer = VendorSerializer(data=request.data)
         if serializer.is_valid():
-            if serializer.validated_data.get("profile_picture_image", None) is not None:
-                serializer.validated_data["profile_picture"] = convert_to_base64(serializer.validated_data["profile_picture_image"])
-                serializer.validated_data.pop("profile_picture_image")
-
-            vendor = serializer.save()
+            validated_data = self.handle_profile_picture(serializer.validated_data)
+            vendor = Vendor.objects.create(**validated_data)
             return Response({
                 "message": "Vendor created successfully",
                 "vendor": {
-                    # "url": vendor.url,
                     "company_name": vendor.company_name,
                     "email": vendor.email,
                     "address": vendor.address,
@@ -113,24 +115,76 @@ class VendorViewSet(SearchDeleteViewSet):
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         serializer = VendorSerializer(instance, data=request.data, partial=partial)
+
         if serializer.is_valid():
-            vendor = serializer.save()
+            validated_data = self.handle_profile_picture(serializer.validated_data)
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
             return Response({
                 "message": "Vendor updated successfully",
                 "vendor": {
-                    "url": vendor.url,
-                    "company_name": vendor.company_name,
-                    "email": vendor.email,
-                    "address": vendor.address,
-                    "profile_picture": request.build_absolute_uri(
-                        vendor.profile_picture.url) if vendor.profile_picture else None,
+                    "company_name": instance.company_name,
+                    "email": instance.email,
+                    "address": instance.address,
+                    "profile_picture": instance.profile_picture,
                 }
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+    # def create(self, request, *args, **kwargs):
+    #     serializer = VendorSerializer(data=request.data)
+    #     if serializer.is_valid():
+    #         if serializer.validated_data.get("profile_picture_image", None) is not None:
+    #             serializer.validated_data["profile_picture"] = convert_to_base64(serializer.validated_data["profile_picture_image"])
+    #             serializer.validated_data.pop("profile_picture_image")
+    #
+    #         vendor = serializer.save()
+    #         return Response({
+    #             "message": "Vendor created successfully",
+    #             "vendor": {
+    #                 # "url": vendor.url,
+    #                 "company_name": vendor.company_name,
+    #                 "email": vendor.email,
+    #                 "address": vendor.address,
+    #                 "profile_picture": vendor.profile_picture
+    #             }
+    #         }, status=status.HTTP_201_CREATED)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #
+    # def update(self, request, *args, **kwargs):
+    #     partial = kwargs.pop('partial', False)
+    #     instance = self.get_object()
+    #     serializer = VendorSerializer(instance, data=request.data, partial=partial)
+    #
+    #     if serializer.is_valid():
+    #         validated_data = serializer.validated_data
+    #
+    #         if validated_data.get("profile_picture_image", None) is not None:
+    #             validated_data["profile_picture"] = convert_to_base64(validated_data["profile_picture_image"])
+    #             validated_data.pop("profile_picture_image")
+    #
+    #         vendor = serializer.save()
+    #
+    #         return Response({
+    #             "message": "Vendor updated successfully",
+    #             "vendor": {
+    #                 "company_name": vendor.company_name,
+    #                 "email": vendor.email,
+    #                 "address": vendor.address,
+    #                 "profile_picture": vendor.profile_picture,  # base64 string
+    #             }
+    #         }, status=status.HTTP_200_OK)
+    #
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
     def upload_excel(self, request):
@@ -176,12 +230,19 @@ class VendorViewSet(SearchDeleteViewSet):
     @action(detail=True, methods=['POST'])
     def upload_profile_picture(self, request, pk=None):
         vendor = self.get_object()
-        if 'profile_picture' not in request.FILES:
+        profile_file = request.FILES.get("profile_picture")
+
+        if not profile_file:
             return Response({"error": "No file provided"}, status=400)
 
-        vendor.profile_picture = request.FILES['profile_picture']
+        vendor.profile_picture = convert_to_base64(profile_file)
         vendor.save()
-        return Response({"message": "Profile picture uploaded successfully"}, status=200)
+
+        return Response({
+            "message": "Profile picture uploaded successfully",
+            "profile_picture": vendor.profile_picture
+        }, status=200)
+
 
 @extend_schema_view(
     list=extend_schema(tags=['Products']),

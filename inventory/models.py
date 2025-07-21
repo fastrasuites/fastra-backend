@@ -307,6 +307,7 @@ class Location(models.Model):
             {
                 'product_id': stock.product.id,
                 'product_name': stock.product.product_name,
+                'product_unit_of_measure': stock.product.unit_of_measure,
                 'quantity': stock.quantity
             }
             for stock in self.stocks.select_related('product').all()
