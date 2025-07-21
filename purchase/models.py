@@ -165,7 +165,7 @@ def generate_unique_po_id():
 
 
 class UnitOfMeasure(models.Model):
-    unit_name = models.CharField(max_length=100)
+    unit_name = models.CharField(max_length=100, unique=True)
     unit_symbol = models.CharField(max_length=10, unique=True, null=True, blank=True)
     unit_category = models.CharField(max_length=100)
     created_on = models.DateTimeField(auto_now_add=True)
@@ -174,6 +174,7 @@ class UnitOfMeasure(models.Model):
     objects = models.Manager()
 
     class Meta:
+        unique_together = ('unit_name', 'unit_category')
         ordering = ['is_hidden', '-created_on']
         verbose_name_plural = 'Units of Measure'
 
@@ -185,7 +186,7 @@ class UnitOfMeasure(models.Model):
 
 
 class Currency(models.Model):
-    currency_name = models.CharField(max_length=100)
+    currency_name = models.CharField(max_length=100, unique=True)
     currency_code = models.CharField(max_length=10, unique=True, null=True, blank=True)
     currency_symbol = CKEditor5Field(blank=True, null=True)
     created_on = models.DateTimeField(auto_now_add=True)
@@ -194,6 +195,7 @@ class Currency(models.Model):
     objects = models.Manager()
 
     class Meta:
+        unique_together = ('currency_name', 'currency_code')
         ordering = ['is_hidden', '-created_on']
         verbose_name_plural = 'Currencies'
 
@@ -550,6 +552,10 @@ class RequestForQuotationItem(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
 
     objects = models.Manager()
+
+    class Meta:
+        unique_together = ('request_for_quotation', 'product')
+
 
     def __init__(self, *args, **kwargs):
         self._total_price = None
