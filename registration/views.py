@@ -131,7 +131,7 @@ class LoginView(APIView):
             exclude_fields = {'date_created', 'date_updated', 'application', "id"}
 
             for app in applications:
-                access_groups = AccessGroupRight.objects.filter(application=app).distinct('access_code', 'group_name')
+                access_groups = AccessGroupRight.objects.filter(access_code__in=user_access_codes, application=app)
                 
                 if not access_groups.exists():
                     continue  # Skip applications with no access groups
