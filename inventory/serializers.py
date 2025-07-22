@@ -91,13 +91,13 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         queryset=Location.get_active_locations().filter(is_hidden=False),
         required=False
     )
-
+    warehouse_location_details = LocationSerializer(source = 'warehouse_location', read_only=True)
     stock_adjustment_items = StockAdjustmentItemSerializer(many=True)
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
 
     class Meta:
         model = StockAdjustment
-        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'status', 'is_hidden',
+        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'warehouse_location_details', 'notes', 'status', 'is_hidden',
                   'stock_adjustment_items', 'is_done', 'can_edit']
         read_only_fields = ['date_created', 'date_updated', 'adjustment_type']
         extra_kwargs = {
