@@ -488,41 +488,40 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
     def update(self, instance, validated_data):
         partial = self.context.get('partial', False)
         items_data = validated_data.pop('items', None)
+
+        # Update RFQ base fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
         if items_data is not None:
-            # If partial, handle only provided fields
-            if partial:
-                # custom partial update logic here
-                existing_items = {item.product.id: item for item in instance.items.all()}
-                incoming_product_ids = set()
-                for item_data in items_data:
-                    product_id = item_data['product'].id if hasattr(item_data['product'], 'id') else int(item_data['product'])
-                    incoming_product_ids.add(product_id)
-                    if product_id in existing_items:
-                        rfq_item = existing_items[product_id]
-                        for attr, value in item_data.items():
-                            if attr != 'id' and attr != 'product':
-                                setattr(rfq_item, attr, value)
-                        rfq_item.save()
-                    else:
-                        RequestForQuotationItem.objects.create(request_for_quotation=instance, **item_data)
-                        # Do not delete items not present in the update
-            else:
-                # full update logic here
-                existing_items = {item.id: item for item in instance.items.all()}
-                for item_data in items_data:
-                    item_id = item_data.get('id')
-                    if item_id and item_id in existing_items:
-                        for attr, value in item_data.items():
-                            if attr != 'id':
-                                setattr(existing_items[item_id], attr, value)
-                        existing_items[item_id].save()
-                    else:
-                        RequestForQuotationItem.objects.create(request_for_quotation=instance, **item_data)
-                        # Do not delete items not present in the update
+            existing_items = {item.product.id: item for item in instance.items.all()}
+            incoming_product_ids = set()
+
+            for item_data in items_data:
+                product = item_data['product']
+                product_id = product.id if hasattr(product, 'id') else int(product)
+                incoming_product_ids.add(product_id)
+
+                if product_id in existing_items:
+                    # Update existing item
+                    rfq_item = existing_items[product_id]
+                    for attr, value in item_data.items():
+                        if attr != 'id' and attr != 'product':
+                            setattr(rfq_item, attr, value)
+                    rfq_item.save()
+                else:
+                    # Create new item
+                    RequestForQuotationItem.objects.create(request_for_quotation=instance, **item_data)
+
+            if not partial:
+                # Delete removed items (only on full update)
+                for pid, item in existing_items.items():
+                    if pid not in incoming_product_ids:
+                        item.delete()
+
         return instance
+
 
 
 class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
@@ -624,8 +623,14 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
 
     def validate_create(self, data):
         required_fields = ['items', 'created_by', 'currency', 'vendor',  'related_rfq', 'created_by']
-        if data.get('related_rfq') and data['related_rfq'].status != "approved":
-            raise serializers.ValidationError("RFQ must be approved before creating a Purchase Order.")
+        if data.get('related_rfq'):
+            rfq = data['related_rfq']
+            if rfq.status != "approved":
+                raise serializers.ValidationError("RFQ must be approved before creating a Purchase Order.")
+            existing_po = PurchaseOrder.objects.filter(related_rfq=rfq).exclude(pk=self.instance.pk if self.instance else None).first()
+            if existing_po:
+                raise serializers.ValidationError("This RFQ is already linked to another Purchase Order.")
+
         for field in required_fields:
             if not data.get(field):
                 raise serializers.ValidationError(
@@ -699,52 +704,62 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         return data
 
     def create(self, validated_data):
-        if not validated_data.get('destination_location') and MultiLocation.objects.filter(is_activated=False).exists():
-            validated_data['destination_location'] = Location.get_active_locations().first()
         items_data = validated_data.pop('items')
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a purchase order.")
+
+        if not validated_data.get('destination_location') and MultiLocation.objects.filter(is_activated=False).exists():
+            validated_data['destination_location'] = Location.get_active_locations().first()
+
         po = PurchaseOrder.objects.create(**validated_data)
-        PurchaseOrderItem.objects.bulk_create(
-            [PurchaseOrderItem(
-                purchase_order=po,
-                **item_data
-            ) for item_data in items_data]
-        )
+
+        unique_product_ids = set()
+        item_objects = []
+        for item_data in items_data:
+            product = item_data['product']
+            product_id = product.id if hasattr(product, 'id') else int(product)
+            if product_id in unique_product_ids:
+                raise serializers.ValidationError("Duplicate products found in items.")
+            unique_product_ids.add(product_id)
+            item_objects.append(PurchaseOrderItem(purchase_order=po, **item_data))
+
+        PurchaseOrderItem.objects.bulk_create(item_objects)
         return po
 
     def update(self, instance, validated_data):
         partial = self.context.get('partial', False)
         items_data = validated_data.pop('items', None)
+
+        # Update PO fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
         if items_data is not None:
-            # If partial, handle only provided fields
-            if partial:
-                # custom partial update logic here
-                existing_items = {item.product.id: item for item in instance.items.all()}
-                incoming_product_ids = set()
-                for item_data in items_data:
-                    product_id = item_data['product'].id if hasattr(item_data['product'], 'id') else int(item_data['product'])
-                    incoming_product_ids.add(product_id)
-                    if product_id in existing_items:
-                        po_item = existing_items[product_id]
-                        for attr, value in item_data.items():
-                            if attr != 'id' and attr != 'product':
-                                setattr(po_item, attr, value)
-                        po_item.save()
-                    else:
-                        PurchaseOrderItem.objects.create(purchase_order=instance, **item_data)
-            else:
-                existing_items = {item.id: item for item in instance.items.all()}
-                for item_data in items_data:
-                    item_id = item_data.get('id')
-                    if item_id and item_id in existing_items:
-                        for attr, value in item_data.items():
-                            if attr != 'id':
-                                setattr(existing_items[item_id], attr, value)
-                        existing_items[item_id].save()
-                    else:
-                        PurchaseOrderItem.objects.create(purchase_order=instance, **item_data)
+            # Map existing items by product ID
+            existing_items = {item.product.id: item for item in instance.items.all()}
+            incoming_product_ids = set()
+
+            for item_data in items_data:
+                product = item_data['product']
+                product_id = product.id if hasattr(product, 'id') else int(product)
+                incoming_product_ids.add(product_id)
+
+                if product_id in existing_items:
+                    # Update existing item
+                    po_item = existing_items[product_id]
+                    for attr, value in item_data.items():
+                        if attr != 'id' and attr != 'product':
+                            setattr(po_item, attr, value)
+                    po_item.save()
+                else:
+                    # Create new item
+                    PurchaseOrderItem.objects.create(purchase_order=instance, **item_data)
+
+            # Optionally delete items no longer present
+            for prod_id, po_item in existing_items.items():
+                if prod_id not in incoming_product_ids:
+                    po_item.delete()
+
         return instance
+
