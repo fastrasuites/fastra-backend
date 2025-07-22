@@ -91,7 +91,8 @@ class VendorViewSet(SearchDeleteViewSet):
     action_permission_map = {
         **basic_action_permission_map,
         "upload_excel" : "create",
-        "upload_profile_picture": "create"
+        "upload_profile_picture": "create",
+        "download_template": "view",
         }
 
     def handle_profile_picture(self, validated_data):
