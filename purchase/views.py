@@ -263,7 +263,8 @@ class ProductViewSet(SearchDeleteViewSet):
     action_permission_map = {
         **basic_action_permission_map,
         "upload_excel": "create",
-        "delete_all_products": "delete"
+        "delete_all_products": "delete",
+        "download_template": "view",
     }
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
@@ -288,8 +289,9 @@ class ProductViewSet(SearchDeleteViewSet):
                 valid_product_categories = [choice[0] for choice in PRODUCT_CATEGORY]
 
                 for row in sheet.iter_rows(min_row=2, values_only=True):
-                    (product_name, product_description, product_category, unit_of_measure,
-                     available_product_quantity, total_quantity_purchased) = row[:6]
+                    (
+                        product_name, product_description, product_category, unit_of_measure
+                    ) = row[:4]
 
                     print(f"{products_count - (products_created + products_updated)} products remaining")
 
@@ -306,7 +308,7 @@ class ProductViewSet(SearchDeleteViewSet):
                     unit_of_measure_name = row[3]
 
                     # Fetch the UnitOfMeasure instance, or create it if it doesn't exist
-                    unit_of_measure, created = UnitOfMeasure.objects.get_or_create(name=unit_of_measure_name)
+                    unit_of_measure = UnitOfMeasure.objects.get(unit_name=unit_of_measure_name)
 
                     try:
                         # Check if the product already exists by product_name
@@ -317,8 +319,6 @@ class ProductViewSet(SearchDeleteViewSet):
                             # Update the existing product quantities
                             existing_product.product_description = product_description
                             existing_product.unit_of_measure = unit_of_measure
-                            existing_product.available_product_quantity += available_product_quantity
-                            existing_product.total_quantity_purchased += total_quantity_purchased
                             existing_product.save()
                             products_updated += 1
                         else:
@@ -327,9 +327,7 @@ class ProductViewSet(SearchDeleteViewSet):
                                 product_name=product_name,
                                 product_description=product_description,
                                 product_category=product_category,
-                                unit_of_measure=unit_of_measure,
-                                available_product_quantity=available_product_quantity,
-                                total_quantity_purchased=total_quantity_purchased,
+                                unit_of_measure=unit_of_measure
                             )
                             product.save()
                             products_created += 1
@@ -346,6 +344,66 @@ class ProductViewSet(SearchDeleteViewSet):
                 return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
         else:
             return Response(serializer.errors, status=400)
+
+    @action(detail=False, methods=['GET'], url_path='download-template')
+    def download_template(self, request):
+        """
+        Endpoint to download a template Excel file for product import.
+        The workbook will have:
+        - A 'Products' sheet for data entry (and import).
+        - An 'Instructions' sheet describing how to fill the 'Products' sheet.
+        - A list of all available unit_of_measure names at the time of download.
+        """
+        from openpyxl import Workbook
+        from django.http import HttpResponse
+        import io
+        from .models import UnitOfMeasure
+
+        # Create workbook and sheets
+        wb = Workbook()
+        ws_products = wb.active
+        ws_products.title = "Products"
+
+        # Define the template headers
+        headers = [
+            "product_name",
+            "product_description",
+            "product_category",
+            "unit_of_measure",
+        ]
+        ws_products.append(headers)
+
+        # Add instructions sheet
+        ws_instructions = wb.create_sheet(title="Instructions")
+        ws_instructions["A1"] = "Instructions for Filling the Products Sheet"
+        ws_instructions["A2"] = (
+            "1. Fill each row in the 'Products' sheet with product details.\n"
+            "2. 'product_category' should match one of the allowed categories:\n"
+            "a. Consumable\n"
+            "b. Stockable\n"
+            "c. Service product\n"
+            "3. 'unit_of_measure' should match an existing unit name (see below).\n"
+            "4. Do not modify the header row."
+        )
+        ws_instructions["A4"] = "After filling, upload this file using the import feature in the system."
+        ws_instructions["A6"] = "Available unit_of_measure names:"
+
+        # Add all unit_of_measure names starting from A7
+        unit_names = UnitOfMeasure.objects.values_list("unit_name", flat=True)
+        for idx, name in enumerate(unit_names, start=7):
+            ws_instructions[f"A{idx}"] = name
+
+        # Save workbook to a BytesIO stream
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        response = HttpResponse(
+            output,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=product_import_template.xlsx'
+        return response
 
     @action(detail=False, methods=['DELETE'], permission_classes=[IsAdminUser], url_path='delete-all',
             url_name='delete_all_products')
