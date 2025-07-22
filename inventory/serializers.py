@@ -360,16 +360,17 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         help_text="Valid keys are: 'backorder', 'overpay'."
     )
     backorder_of = serializers.ReadOnlyField()
-
-
     incoming_product_id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
+    source_location_details = LocationSerializer(source='source_location', read_only=True)
+    destination_location_details = LocationSerializer(source='destination_location', read_only=True)
 
     class Meta:
         model = IncomingProduct
         fields = ['incoming_product_id', 'receipt_type', 'related_po', 'backorder_of', 'user_choice',
-                  'supplier', 'source_location', 'incoming_product_items', 'destination_location', 'status',
+                  'supplier', 'source_location', 'source_location_details', 'incoming_product_items', 'destination_location',
+                   'destination_location_details', 'status',
                   'is_validated', 'can_edit', 'is_hidden']
-        read_only_fields = ['date_created', 'date_updated']
+        read_only_fields = ['date_created', 'date_updated', "source_location_details", "destination_location_details"]
 
     def validate(self, data):
         # validation to ensure that the related purchase order is not already linked to another incoming product.
