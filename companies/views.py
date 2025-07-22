@@ -341,9 +341,10 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
             #try:
                 #user = User.objects.get(email=email)
                 #user = User.objects.get(email=email, is_superuser=True, is_staff=True)
-
+            user = None
             try:
-                user = User.objects.get(email=email)
+                with schema_context("public"):
+                   user = User.objects.get(email=email)
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
 
