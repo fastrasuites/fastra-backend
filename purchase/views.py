@@ -1,8 +1,9 @@
 import json
 import requests
 import os
+import io
 
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 from urllib.parse import quote
 
 from django.http import HttpResponse
@@ -137,54 +138,50 @@ class VendorViewSet(SearchDeleteViewSet):
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['GET'], url_path='download-template')
+    def download_template(self, request):
+        """
+        Endpoint to download a template Excel file for vendor import.
+        The workbook will have:
+        - A 'Vendors' sheet for data entry (and import).
+        - An 'Instructions' sheet describing how to fill the 'Vendors' sheet.
+        """
 
+        # Create workbook and sheets
+        wb = Workbook()
+        ws_vendors = wb.active
+        ws_vendors.title = "Vendors"
 
-    # def create(self, request, *args, **kwargs):
-    #     serializer = VendorSerializer(data=request.data)
-    #     if serializer.is_valid():
-    #         if serializer.validated_data.get("profile_picture_image", None) is not None:
-    #             serializer.validated_data["profile_picture"] = convert_to_base64(serializer.validated_data["profile_picture_image"])
-    #             serializer.validated_data.pop("profile_picture_image")
-    #
-    #         vendor = serializer.save()
-    #         return Response({
-    #             "message": "Vendor created successfully",
-    #             "vendor": {
-    #                 # "url": vendor.url,
-    #                 "company_name": vendor.company_name,
-    #                 "email": vendor.email,
-    #                 "address": vendor.address,
-    #                 "profile_picture": vendor.profile_picture
-    #             }
-    #         }, status=status.HTTP_201_CREATED)
-    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    #
-    # def update(self, request, *args, **kwargs):
-    #     partial = kwargs.pop('partial', False)
-    #     instance = self.get_object()
-    #     serializer = VendorSerializer(instance, data=request.data, partial=partial)
-    #
-    #     if serializer.is_valid():
-    #         validated_data = serializer.validated_data
-    #
-    #         if validated_data.get("profile_picture_image", None) is not None:
-    #             validated_data["profile_picture"] = convert_to_base64(validated_data["profile_picture_image"])
-    #             validated_data.pop("profile_picture_image")
-    #
-    #         vendor = serializer.save()
-    #
-    #         return Response({
-    #             "message": "Vendor updated successfully",
-    #             "vendor": {
-    #                 "company_name": vendor.company_name,
-    #                 "email": vendor.email,
-    #                 "address": vendor.address,
-    #                 "profile_picture": vendor.profile_picture,  # base64 string
-    #             }
-    #         }, status=status.HTTP_200_OK)
-    #
-    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Define the template headers
+        headers = [
+            "company_name",
+            "email",
+            "address",
+            "phone_number",
+        ]
+        ws_vendors.append(headers)
 
+        # Add instructions sheet
+        ws_instructions = wb.create_sheet(title="Instructions")
+        ws_instructions["A1"] = "Instructions for Filling the Vendors Sheet"
+        ws_instructions["A2"] = (
+            "1. Fill each row in the 'Vendors' sheet with vendor details.\n"
+            "2. All columns are required.\n"
+            "3. Do not modify the header row."
+        )
+        ws_instructions["A4"] = "After filling, upload this file using the import feature in the system."
+
+        # Save workbook to a BytesIO stream
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        response = HttpResponse(
+            output,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=vendor_import_template.xlsx'
+        return response
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
     def upload_excel(self, request):
