@@ -57,8 +57,6 @@ class CurrencySerializer(serializers.HyperlinkedModelSerializer):
         currency_code = validated_data.get('currency_code')
         if Currency.objects.filter(currency_code__iexact=currency_code, currency_name__iexact=currency_name).exists():
             raise serializers.ValidationError('A currency with this code and name already exists.')
-        if Currency.objects.filter(currency_name__iexact=currency_name).exists():
-            raise serializers.ValidationError('A currency with this name already exists.')
         return super().create(validated_data)
 
 

@@ -14,6 +14,9 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
+from django.core.validators import EmailValidator, RegexValidator
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django_tenants.utils import tenant_context
@@ -207,6 +210,7 @@ class VendorViewSet(SearchDeleteViewSet):
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
     def upload_excel(self, request):
+
         serializer = ExcelUploadSerializer(data=request.data)
         if serializer.is_valid():
             excel_file = serializer.validated_data['file']
@@ -215,25 +219,44 @@ class VendorViewSet(SearchDeleteViewSet):
 
             try:
                 workbook = load_workbook(excel_file)
-                # Always read from the 'Vendors' sheet
                 if 'Vendors' not in workbook.sheetnames:
                     return Response({"error": "No 'Vendors' sheet found in the uploaded file."}, status=400)
                 sheet = workbook['Vendors']
 
                 errors = []
                 rows_to_create = []
+                update_instances = []
+                BATCH_SIZE = 500
+
+                email_validator = EmailValidator()
+                phone_validator = RegexValidator(
+                    regex=r'^\d{7,15}$',
+                    message="Phone number must be digits only, 7-15 characters."
+                )
 
                 for idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
                     company_name, email, address, phone_number = row[:4]
                     row_errors = []
 
                     if not company_name or not email or not address or not phone_number:
-                        row_errors.append("All fields are required.")
+                        row_errors.append(f"All fields are required. Row values: {row}")
 
-                    # Add more validation as needed (e.g., email format)
+                    # Email validation
+                    if email:
+                        try:
+                            email_validator(email)
+                        except DjangoValidationError:
+                            row_errors.append(f"Invalid email: {email}")
+
+                    # Phone number validation
+                    if phone_number:
+                        try:
+                            phone_validator(str(phone_number))
+                        except DjangoValidationError:
+                            row_errors.append(f"Invalid phone number: {phone_number}")
 
                     if row_errors:
-                        errors.append({"row": idx, "errors": row_errors})
+                        errors.append({"row": idx, "values": row, "errors": row_errors})
                     else:
                         rows_to_create.append({
                             "company_name": company_name,
@@ -244,18 +267,49 @@ class VendorViewSet(SearchDeleteViewSet):
 
                 if errors:
                     return Response({
-                        "message": "Errors found in the uploaded file. No vendors were created.",
+                        "message": "Errors found in the uploaded file. No vendors were created or updated.",
                         "errors": errors
                     }, status=400)
 
                 vendors_created = 0
-                for data in rows_to_create:
-                    vendor = Vendor(**data)
-                    vendor.save()
-                    vendors_created += 1
+                vendors_updated = 0
+                create_instances = []
+
+                # Use transaction to ensure atomicity
+                from django.db import transaction
+
+                try:
+                    with transaction.atomic():
+                        # Fetch all existing vendors with matching company_name and email
+                        company_names = [row["company_name"] for row in rows_to_create]
+                        emails = [row["email"] for row in rows_to_create]
+                        existing_vendors = Vendor.objects.filter(company_name__in=company_names, email__in=emails)
+                        existing_lookup = {(v.company_name.lower(), v.email.lower()): v for v in existing_vendors}
+
+                        for row in rows_to_create:
+                            key = (row["company_name"].lower(), row["email"].lower())
+                            if key in existing_lookup:
+                                vendor = existing_lookup[key]
+                                vendor.address = row["address"]
+                                vendor.phone_number = row["phone_number"]
+                                update_instances.append(vendor)
+                                vendors_updated += 1
+                            else:
+                                create_instances.append(Vendor(**row))
+                                vendors_created += 1
+
+                        # Bulk update in batches
+                        for i in range(0, len(update_instances), BATCH_SIZE):
+                            Vendor.objects.bulk_update(update_instances[i:i+BATCH_SIZE], ["address", "phone_number"])
+                        # Bulk create in batches
+                        for i in range(0, len(create_instances), BATCH_SIZE):
+                            Vendor.objects.bulk_create(create_instances[i:i+BATCH_SIZE])
+
+                except Exception as e:
+                    return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
 
                 return Response({
-                    "message": f"Successfully created {vendors_created} vendors",
+                    "message": f"Successfully created {vendors_created} vendors, updated {vendors_updated} vendors",
                     "errors": []
                 }, status=201)
 
@@ -323,7 +377,6 @@ class ProductViewSet(SearchDeleteViewSet):
                 valid_product_categories = [choice[0] for choice in PRODUCT_CATEGORY]
                 errors = []
                 rows_to_create = []
-                rows_to_update = []
                 update_instances = []
 
                 for idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
@@ -364,40 +417,50 @@ class ProductViewSet(SearchDeleteViewSet):
                 products_created = 0
                 products_updated = 0
                 create_instances = []
+                BATCH_SIZE = 500
 
-                if check_for_duplicates:
-                    # Fetch all existing products in one query
-                    product_names = [row["product_name"] for row in rows_to_create]
-                    product_categories = [row["product_category"] for row in rows_to_create]
-                    existing_products = Product.objects.filter(
-                        product_name__in=product_names,
-                        product_category__in=product_categories
-                    )
-                    existing_lookup = {
-                        (p.product_name.lower(), p.product_category.lower()): p for p in existing_products
-                    }
+                try:
+                    with transaction.atomic():
+                        if check_for_duplicates:
+                            product_names = [row["product_name"] for row in rows_to_create]
+                            product_categories = [row["product_category"] for row in rows_to_create]
+                            existing_products = Product.objects.filter(
+                                product_name__in=product_names,
+                                product_category__in=product_categories
+                            )
+                            existing_lookup = {
+                                (p.product_name.lower(), p.product_category.lower()): p for p in existing_products
+                            }
 
-                    for row in rows_to_create:
-                        key = (row["product_name"].lower(), row["product_category"].lower())
-                        if key in existing_lookup:
-                            product = existing_lookup[key]
-                            product.product_description = row["product_description"]
-                            product.unit_of_measure_id = row["unit_of_measure_id"]
-                            update_instances.append(product)
-                            products_updated += 1
+                            for row in rows_to_create:
+                                key = (row["product_name"].lower(), row["product_category"].lower())
+                                if key in existing_lookup:
+                                    product = existing_lookup[key]
+                                    product.product_description = row["product_description"]
+                                    product.unit_of_measure_id = row["unit_of_measure_id"]
+                                    update_instances.append(product)
+                                    products_updated += 1
+                                else:
+                                    create_instances.append(Product(**row))
+                                    products_created += 1
+
+                            # Bulk update in batches
+                            for i in range(0, len(update_instances), BATCH_SIZE):
+                                Product.objects.bulk_update(
+                                    update_instances[i:i+BATCH_SIZE],
+                                    ["product_description", "unit_of_measure_id"]
+                                )
+                            # Bulk create in batches
+                            for i in range(0, len(create_instances), BATCH_SIZE):
+                                Product.objects.bulk_create(create_instances[i:i+BATCH_SIZE])
                         else:
-                            create_instances.append(Product(**row))
-                            products_created += 1
-
-                    if update_instances:
-                        Product.objects.bulk_update(update_instances, ["product_description", "unit_of_measure_id"])
-                    if create_instances:
-                        Product.objects.bulk_create(create_instances)
-                else:
-                    # Only create new products
-                    create_instances = [Product(**row) for row in rows_to_create]
-                    Product.objects.bulk_create(create_instances)
-                    products_created = len(create_instances)
+                            # Only create new products in batches
+                            create_instances = [Product(**row) for row in rows_to_create]
+                            for i in range(0, len(create_instances), BATCH_SIZE):
+                                Product.objects.bulk_create(create_instances[i:i+BATCH_SIZE])
+                            products_created = len(create_instances)
+                except Exception as e:
+                    return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
 
                 return Response({
                     "message": f"Successfully created {products_created} products, updated {products_updated} products",
@@ -448,7 +511,6 @@ class ProductViewSet(SearchDeleteViewSet):
         ws_products.append(headers)
 
         # Data validation for product_name (required, not blank)
-        from openpyxl.worksheet.datavalidation import DataValidation
         name_dv = DataValidation(
             type="custom",
             formula1='=LEN(TRIM(A2))>0',
