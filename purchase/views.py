@@ -210,12 +210,11 @@ class VendorViewSet(SearchDeleteViewSet):
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
     def upload_excel(self, request):
-
         serializer = ExcelUploadSerializer(data=request.data)
         if serializer.is_valid():
-            excel_file = serializer.validated_data['file']
-            if not isinstance(excel_file, InMemoryUploadedFile):
-                return Response({"error": "Invalid file format"}, status=400)
+            excel_file = serializer.validated_data.get('file')
+            if not excel_file or not isinstance(excel_file, InMemoryUploadedFile):
+                return Response({"error": "No file provided or invalid file format"}, status=400)
 
             try:
                 workbook = load_workbook(excel_file)
@@ -234,22 +233,42 @@ class VendorViewSet(SearchDeleteViewSet):
                     message="Phone number must be digits only, 7-15 characters."
                 )
 
+                # Check if the sheet is empty (only header or no data)
+                if sheet.max_row < 2:
+                    return Response({"error": "The 'Vendors' sheet is empty."}, status=400)
+
                 for idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
                     company_name, email, address, phone_number = row[:4]
                     row_errors = []
 
-                    if not company_name or not email or not address or not phone_number:
-                        row_errors.append(f"All fields are required. Row values: {row}")
+                    # Check if the entire row is empty
+                    if all(cell is None or str(cell).strip() == "" for cell in (company_name, email, address, phone_number)):
+                        row_errors.append("Entire row is empty.")
+                        errors.append({"row": idx, "values": row, "errors": row_errors})
+                        continue
+
+                    # Check for empty columns
+                    empty_columns = []
+                    if not company_name or str(company_name).strip() == "":
+                        empty_columns.append("company_name")
+                    if not email or str(email).strip() == "":
+                        empty_columns.append("email")
+                    if not address or str(address).strip() == "":
+                        empty_columns.append("address")
+                    if not phone_number or str(phone_number).strip() == "":
+                        empty_columns.append("phone_number")
+                    if empty_columns:
+                        row_errors.append(f"Missing required fields: {', '.join(empty_columns)}. Row values: {row}")
 
                     # Email validation
-                    if email:
+                    if email and str(email).strip() != "":
                         try:
                             email_validator(email)
                         except DjangoValidationError:
                             row_errors.append(f"Invalid email: {email}")
 
                     # Phone number validation
-                    if phone_number:
+                    if phone_number and str(phone_number).strip() != "":
                         try:
                             phone_validator(str(phone_number))
                         except DjangoValidationError:
@@ -362,14 +381,18 @@ class ProductViewSet(SearchDeleteViewSet):
             excel_file = serializer.validated_data['file']
             check_for_duplicates = serializer.validated_data.get('check_for_duplicates', False)
 
-            if not isinstance(excel_file, InMemoryUploadedFile):
-                return Response({"error": "Invalid file format"}, status=400)
+            if not excel_file or not isinstance(excel_file, InMemoryUploadedFile):
+                return Response({"error": "No file provided or invalid file format"}, status=400)
 
             try:
                 workbook = load_workbook(excel_file)
                 if 'Products' not in workbook.sheetnames:
                     return Response({"error": "No 'Products' sheet found in the uploaded file."}, status=400)
                 sheet = workbook['Products']
+
+                # Check if the sheet is empty (only header or no data)
+                if sheet.max_row < 2:
+                    return Response({"error": "The 'Products' sheet is empty."}, status=400)
 
                 valid_product_categories = [choice[0] for choice in PRODUCT_CATEGORY]
                 errors = []
@@ -380,9 +403,28 @@ class ProductViewSet(SearchDeleteViewSet):
                     product_name, product_description, product_category, unit_of_measure_name = row[:4]
                     row_errors = []
 
-                    product_category_slug = slugify(product_category)
+                    # Check if the entire row is empty
+                    if all(cell is None or str(cell).strip() == "" for cell in (product_name, product_description, product_category, unit_of_measure_name)):
+                        row_errors.append("Entire row is empty.")
+                        errors.append({"row": idx, "values": row, "errors": row_errors})
+                        continue
 
-                    if product_category_slug not in valid_product_categories:
+                    # Check for empty columns
+                    empty_columns = []
+                    if not product_name or str(product_name).strip() == "":
+                        empty_columns.append("product_name")
+                    if not product_description or str(product_description).strip() == "":
+                        empty_columns.append("product_description")
+                    if not product_category or str(product_category).strip() == "":
+                        empty_columns.append("product_category")
+                    if not unit_of_measure_name or str(unit_of_measure_name).strip() == "":
+                        empty_columns.append("unit_of_measure")
+                    if empty_columns:
+                        row_errors.append(f"Missing required fields: {', '.join(empty_columns)}. Row values: {row}")
+
+                    product_category_slug = slugify(product_category) if product_category else ""
+
+                    if product_category and product_category_slug not in valid_product_categories:
                         row_errors.append(
                             f"Invalid category '{product_category}' for {product_name}. "
                             f"Valid categories are: {(', '.join(valid_product_categories)).title().replace('-', ' ')}."
