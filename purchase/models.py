@@ -165,7 +165,7 @@ def generate_unique_po_id():
 
 
 class UnitOfMeasure(models.Model):
-    unit_name = models.CharField(max_length=100)
+    unit_name = models.CharField(max_length=100, unique=True)
     unit_symbol = models.CharField(max_length=10, unique=True, null=True, blank=True)
     unit_category = models.CharField(max_length=100)
     created_on = models.DateTimeField(auto_now_add=True)
@@ -174,6 +174,7 @@ class UnitOfMeasure(models.Model):
     objects = models.Manager()
 
     class Meta:
+        unique_together = ('unit_name', 'unit_category')
         ordering = ['is_hidden', '-created_on']
         verbose_name_plural = 'Units of Measure'
 
@@ -185,7 +186,7 @@ class UnitOfMeasure(models.Model):
 
 
 class Currency(models.Model):
-    currency_name = models.CharField(max_length=100)
+    currency_name = models.CharField(max_length=100, unique=True)
     currency_code = models.CharField(max_length=10, unique=True, null=True, blank=True)
     currency_symbol = CKEditor5Field(blank=True, null=True)
     created_on = models.DateTimeField(auto_now_add=True)
@@ -194,6 +195,7 @@ class Currency(models.Model):
     objects = models.Manager()
 
     class Meta:
+        unique_together = ('currency_name', 'currency_code')
         ordering = ['is_hidden', '-created_on']
         verbose_name_plural = 'Currencies'
 
@@ -205,13 +207,27 @@ class Product(models.Model):
     product_name = models.CharField(max_length=100)
     product_description = CKEditor5Field(null=True, blank=True)
     product_category = models.CharField(max_length=64, choices=PRODUCT_CATEGORY)
-    available_product_quantity = models.PositiveIntegerField(verbose_name="Available Product Quantity", default=0)
     total_quantity_purchased = models.PositiveIntegerField(verbose_name="Total Quantity Purchased", default=0)
     unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True)
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
 
     is_hidden = models.BooleanField(default=False)
+
+    @property
+    def available_product_quantity(self):
+        from inventory.models import Location, LocationStock, MultiLocation
+        if MultiLocation.objects.filter(is_activated=True).exists():
+            return LocationStock.objects.filter(
+                location__in=Location.get_active_locations(),
+                product=self
+            ).aggregate(total=models.Sum('quantity'))['total'] or 0
+        else:
+            location = Location.get_active_locations().first()
+            if location:
+                stock = LocationStock.objects.filter(location=location, product=self).first()
+                return stock.quantity if stock else 0
+            return 0
 
     objects = models.Manager()
 
@@ -230,6 +246,24 @@ class Product(models.Model):
 
     def __str__(self):
         return self.product_name
+
+    # def get_inventory_level(self):
+    #     """
+    #     Calculate the current inventory level for this product.
+    #     """
+    #     from inventory import IncomingProductItem, DeliveryOrderItem
+    #     # Calculate total incoming quantities
+    #     incoming_total = IncomingProductItem.objects.filter(
+    #         product=self
+    #     ).aggregate(total_received=models.Sum('quantity_received'))['total_received'] or 0
+    #
+    #     # Calculate total outgoing quantities
+    #     outgoing_total = DeliveryOrderItem.objects.filter(
+    #         product_item=self
+    #     ).aggregate(total_delivered=models.Sum('quantity_to_deliver'))['total_delivered'] or 0
+    #
+    #     # Calculate current inventory level
+    #     return incoming_total - outgoing_total
 
 
 class Department(models.Model):
@@ -252,7 +286,7 @@ class Vendor(models.Model):
     email = models.EmailField(max_length=100)
     address = models.CharField(max_length=300, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
-    profile_picture = models.ImageField(upload_to='vendor_profiles/', blank=True, null=True)
+    profile_picture = models.TextField(blank=True, null=True)
     is_hidden = models.BooleanField(default=False)
 
     objects = models.Manager()
@@ -308,7 +342,8 @@ class PurchaseRequest(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_pr_id, editable=False)
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
-    # requester = models.ForeignKey(TenantUser, on_delete=models.CASCADE, related_name='purchase_requests')
+    requester = models.ForeignKey('users.TenantUser', on_delete=models.SET_NULL,
+                                  null=True, blank=True, related_name='purchase_requests')
     currency = models.ForeignKey("Currency", on_delete=models.SET_NULL, null=True, blank=True,
                                  related_name='purchase_requests')
     requesting_location = models.ForeignKey('inventory.Location', on_delete=models.SET_NULL, null=True, blank=True)
@@ -381,6 +416,14 @@ class PurchaseRequestItem(models.Model):
 
     def __str__(self):
         return self.product.product_name
+
+    def save(self, *args, **kwargs):
+        self.total_price = self.qty * self.estimated_unit_price
+        if not self.description:
+            self.description = self.product.product_description
+        if not self.unit_of_measure:
+            self.unit_of_measure = self.product.unit_of_measure
+        super(PurchaseRequestItem, self).save(*args, **kwargs)
 
 
 # this is a signal that calculates the qty times the unit price automatically
@@ -500,7 +543,7 @@ class RequestForQuotation(models.Model):
 class RequestForQuotationItem(models.Model):
     request_for_quotation = models.ForeignKey(RequestForQuotation, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    description = models.CharField(max_length=255)
+    description = models.CharField(max_length=255, null=True, blank=True)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
     unit_of_measure = models.ForeignKey("UnitOfMeasure", on_delete=models.SET_NULL, null=True, blank=True,
                                         related_name="rfqs")
@@ -509,6 +552,10 @@ class RequestForQuotationItem(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
 
     objects = models.Manager()
+
+    class Meta:
+        unique_together = ('request_for_quotation', 'product')
+
 
     def __init__(self, *args, **kwargs):
         self._total_price = None
@@ -530,59 +577,19 @@ class RequestForQuotationItem(models.Model):
     class Meta:
         ordering = ['-date_created']
 
-#
-# class RFQVendorQuote(models.Model):
-#     date_opened = models.DateTimeField(auto_now_add=True)
-#     date_updated = models.DateTimeField(auto_now=True)
-#     rfq = models.ForeignKey("RequestForQuotation", on_delete=models.CASCADE, related_name='quotes')
-#     vendor = models.ForeignKey("Vendor", on_delete=models.CASCADE, related_name='rfq_quotes')
-#     is_hidden = models.BooleanField(default=False)
-#
-#     objects = models.Manager()
-#
-#     @property
-#     def quote_total_price(self):
-#         quote_total_price = sum(item.total_price for item in self.items.all())
-#         return quote_total_price
-#
-#     class Meta:
-#         ordering = ['is_hidden', '-date_updated']
-#
-#     def __str__(self):
-#         return f"{self.vendor} - {self.rfq}"
-#
-#
-# class RFQVendorQuoteItem(models.Model):
-#     rfq_vendor_quote = models.ForeignKey("RFQVendorQuote", on_delete=models.CASCADE, related_name='items')
-#     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-#     description = CKEditor5Field(null=True, blank=True)
-#     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
-#     estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-#
-#     objects = models.Manager()
-#
-#     def __init__(self, *args, **kwargs):
-#         self._total_price = None
-#         super(RFQVendorQuoteItem, self).__init__(*args, **kwargs)
-#
-#     def get_total_price(self, *args, **kwargs):
-#         if self._total_price is None:
-#             self.set_total_price()
-#         return self._total_price
-#
-#     def set_total_price(self, *args, **kwargs):
-#         self._total_price = self.estimated_unit_price * self.qty
-#
-#     total_price = property(get_total_price, set_total_price, doc="total price property")
-#
-#     def __str__(self):
-#         return self.product.product_name
+    def save(self, *args, **kwargs):
+        if not self.description:
+            self.description = self.product.product_description
+        if not self.unit_of_measure:
+            self.unit_of_measure = self.product.unit_of_measure
+        super(RequestForQuotationItem, self).save(*args, **kwargs)
 
 
 class PurchaseOrder(models.Model):
     id = models.CharField(max_length=10, primary_key=True, unique=True, default=generate_unique_po_id, editable=False)
     status = models.CharField(max_length=200, choices=PURCHASE_ORDER_STATUS, default="draft")
-    # created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchase_orders')
+    created_by = models.ForeignKey('users.TenantUser', on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name='purchase_orders')
     date_created = models.DateTimeField(auto_now_add=True)
     related_rfq = models.OneToOneField(
         RequestForQuotation,
@@ -709,50 +716,9 @@ class PurchaseOrderItem(models.Model):
     def __str__(self):
         return f"{self.product.product_name} || {self.total_price}"
 
-
-# class POVendorQuote(models.Model):
-#     date_created = models.DateTimeField(auto_now_add=True)
-#     date_updated = models.DateTimeField(auto_now=True)
-#     purchase_order = models.ForeignKey("PurchaseOrder", on_delete=models.CASCADE, related_name='quotes')
-#     vendor = models.ForeignKey("Vendor", on_delete=models.CASCADE, related_name='po_quotes')
-#     is_hidden = models.BooleanField(default=False)
-#
-#     objects = models.Manager()
-#
-#     class Meta:
-#         ordering = ['is_hidden', '-date_updated']
-#
-#     def __str__(self):
-#         return f"{self.vendor} - {self.purchase_order}"
-#
-#     @property
-#     def quote_total_price(self):
-#         quote_total_price = sum(item.total_price for item in self.items.all())
-#         return quote_total_price
-#
-#
-# class POVendorQuoteItem(models.Model):
-#     po_vendor_quote = models.ForeignKey("POVendorQuote", on_delete=models.CASCADE, related_name='items')
-#     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-#     description = CKEditor5Field(null=True, blank=True)
-#     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
-#     estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-#
-#     objects = models.Manager()
-#
-#     def __init__(self, *args, **kwargs):
-#         self._total_price = None
-#         super(POVendorQuoteItem, self).__init__(*args, **kwargs)
-#
-#     def get_total_price(self, *args, **kwargs):
-#         if self._total_price is None:
-#             self.set_total_price()
-#         return self._total_price
-#
-#     def set_total_price(self, *args, **kwargs):
-#         self._total_price = self.estimated_unit_price * self.qty
-#
-#     total_price = property(get_total_price, set_total_price, doc="total price property")
-#
-#     def __str__(self):
-#         return self.product.product_name
+    def save(self, *args, **kwargs):
+        if not self.description:
+            self.description = self.product.product_description
+        if not self.unit_of_measure:
+            self.unit_of_measure = self.product.unit_of_measure
+        super(PurchaseOrderItem, self).save(*args, **kwargs)

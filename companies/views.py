@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render, redirect
 from django.urls import reverse
 #from django.core.mail import send_mail
-from registration.utils import Util
+from registration.utils import Util, make_authentication
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth import login as auth_login
@@ -39,7 +39,7 @@ from .serializers import ChangeAdminPasswordSerializer, OTPVerificationSerialize
     ForgottenPasswordSerializer, CompanyProfileSerializer,MarkOnboardedSerializer, ResendVerificationEmailSerializer
 from .utils import Util
 from .permissions import IsAdminUser
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import  permissions
 
 
@@ -341,15 +341,18 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
             #try:
                 #user = User.objects.get(email=email)
                 #user = User.objects.get(email=email, is_superuser=True, is_staff=True)
-
+            user = None
             try:
-                user = User.objects.get(email=email)
+                with schema_context("public"):
+                   user = User.objects.get(email=email)
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
 
             if not (user.is_superuser and user.is_staff):
             # Notify tenant admin
-                schema_name = connection.schema_name
+                # schema_name = connection.schema_name
+
+                _, schema_name, _ = make_authentication(user.id)
                 try:
                     tenant_details = Tenant.objects.get(schema_name=schema_name)
                 except Tenant.DoesNotExist:
@@ -595,36 +598,53 @@ class UpdateCompanyProfileView(generics.RetrieveUpdateAPIView):
         tenant_user = TenantUser.objects.filter(user_id=tenant_id).first()
         if not tenant_user:
             raise PermissionDenied(detail='Tenant user not found.')
-            #return Response({'error': 'Tenant user not found.'}, status=status.HTTP_404_NOT_FOUND)
-        
+
         tenant = tenant_user.tenant
         company_profile, created = CompanyProfile.objects.get_or_create(tenant=tenant)
         return company_profile
 
     def update(self, request, *args, **kwargs):
-        print("Incoming data:", request.data)
+        # print("Incoming data:", request.data)
 
-        data = request.data.copy()
-        data._mutable = True  # allow mutation
+        # Create a new dictionary to avoid copying file objects
+        data = {}
 
-        roles_raw = data.get('roles')
-        if roles_raw:
-            if isinstance(roles_raw, list):
-                roles_raw = roles_raw[0]  # extract JSON string from list
-            try:
-                parsed_roles = json.loads(roles_raw)
-                data.setlist('roles', parsed_roles)
-            except json.JSONDecodeError:
-                return Response({"error": "Invalid JSON in roles"}, status=400)
-            
-     #we try to extract roles from the list, and make sure it remains  a list but then extract all other that are aready a list
-     #and  convert it to a simple dictionary most especially keys that have only one value
-        fields_to_keep_as_list = {'roles'}
-        data = {
-            k: v if k in fields_to_keep_as_list else v[0] if isinstance(v, list) and len(v) == 1 else v
-            for k, v in data.lists()
-        }
-        print("Clean dict data:", data)
+        # Handle file uploads separately
+        files_data = {}
+        if hasattr(request, 'FILES'):
+            for key, file_obj in request.FILES.items():
+                # Map 'logo' to 'logo_image' for the serializer
+                if key == 'logo':
+                    files_data['logo_image'] = file_obj
+                else:
+                    files_data[key] = file_obj
+
+        # Process non-file data
+        for key, value in request.data.items():
+            # Skip file fields that are already handled
+            if key in request.FILES:
+                continue
+
+            # Handle roles specially
+            if key == 'roles':
+                if isinstance(value, list):
+                    value = value[0]  # Extract JSON string from list
+                try:
+                    parsed_roles = json.loads(value) if isinstance(value, str) else value
+                    data[key] = parsed_roles
+                except (json.JSONDecodeError, TypeError):
+                    return Response({"error": "Invalid JSON in roles"}, status=400)
+            else:
+                # Convert single-item lists to single values
+                if isinstance(value, list) and len(value) == 1:
+                    data[key] = value[0]
+                else:
+                    data[key] = value
+
+        # Merge file data with regular data
+        data.update(files_data)
+
+        # print("Clean dict data:", data)
 
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
@@ -635,7 +655,7 @@ class UpdateCompanyProfileView(generics.RetrieveUpdateAPIView):
         if getattr(instance, '_prefetched_objects_cache', None):
             instance._prefetched_objects_cache = {}
 
-        print(serializer.data.get("logo"))
+        # print("Logo in response:", serializer.data.get("logo"))
         return Response(serializer.data)
 
     def handle_exception(self, exc):
@@ -709,6 +729,7 @@ class ChangeAdminPassword(generics.GenericAPIView):
 
                         # Update TenantUser password
                         tenant_user.set_tenant_password(new_password)
+                        tenant_user.temp_password = None
                         tenant_user.save()
 
                     except TenantUser.DoesNotExist:

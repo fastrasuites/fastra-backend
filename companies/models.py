@@ -42,7 +42,7 @@ def save_user_profile(sender, instance, **kwargs):
 
 class CompanyProfile(models.Model):
     tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE)
-    logo = models.ImageField(upload_to='company_logo', blank=True, null=True)
+    logo = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     street_address = models.CharField(max_length=255, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)

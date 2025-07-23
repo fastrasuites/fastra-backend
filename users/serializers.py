@@ -6,9 +6,10 @@ from django.utils.translation import gettext as _
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.contrib.auth.password_validation import validate_password
 
+from companies.serializers import CompanyRoleSerializer
 from core.errors.exceptions import TenantNotFoundException
 from registration.models import AccessRight, Tenant
-from users.models import AccessGroupRight, TenantUser
+from users.models import AccessGroupRight, AccessGroupRightUser, TenantUser
 from django.db import transaction
 
 from users.utils import convert_to_base64, generate_access_code_for_access_group, generate_random_password
@@ -35,12 +36,11 @@ class PermissionSerializer(serializers.HyperlinkedModelSerializer):
         return instance
 
 
-class GroupSerializer(serializers.HyperlinkedModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name='group-detail')
+class GroupSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Group
-        fields = ['url', 'id', 'name']
+        fields = ['id', 'name']
 
     def create(self, validated_data):
         return Group.objects.create(**validated_data)
@@ -229,21 +229,22 @@ class PasswordChangeSerializer(serializers.Serializer):
 
 
 # START THE VIEWS FOR THE NEW TENANT USER ACCOUNT
-class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
+class NewTenantUserSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(read_only=True) 
-    user = serializers.SerializerMethodField()
-    groups = serializers.ListField(required=False, write_only=True)
+    access_codes = serializers.ListField(required=False, write_only=True)
     name = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
     temp_password = serializers.CharField(read_only=True)
-    signature_image = serializers.ImageField(write_only=True, required=False)
+    signature_image = serializers.ImageField(write_only=True, required=False,  allow_null=True)
+    user_image_image = serializers.ImageField(write_only=True, required=False,  allow_null=True)
+    company_role_details = CompanyRoleSerializer(source='company_role', read_only=True)
 
     class Meta:
         model = TenantUser
-        fields = ['id', 'user', 'name', 'email', 'role', 'phone_number', 'language', 'timezone',
-                  'in_app_notifications', 'email_notifications', 'groups', 'temp_password', 'date_created',
-                  'signature', 'signature_image']
-        extra_kwargs = {'signature': {'read_only': True}}
+        fields = ['id', 'user_id', 'name', 'email', 'company_role', 'company_role_details', 'phone_number', 'language', 'timezone',
+                  'in_app_notifications', 'email_notifications', 'access_codes', 'temp_password', 'date_created',
+                  'signature', 'signature_image', 'user_image_image', 'user_image']
+        extra_kwargs = {'signature': {'read_only': True}, 'user_image': {'read_only': True}, 'company_role_details': {'read_only': True}}
 
 
     def get_user(self, obj):
@@ -261,11 +262,24 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         except User.DoesNotExist:
             return None
 
-    def validate_groups(self, value):
-        # we are automatically converting each item to uppercase
-        return [item.upper() for item in value]    
+    def validate_access_codes(self, value):
+        # Convert all access codes to uppercase
+        value = [item.upper() for item in value]
+        valid_codes = set(AccessGroupRight.objects.values_list('access_code', flat=True))
+        invalid_codes = [code for code in value if code not in valid_codes]
+
+        if invalid_codes:
+            raise serializers.ValidationError(
+                f"The following access codes are invalid: {', '.join(invalid_codes)}"
+            )
+
+        return value
+
     
     def validate_email(self, value):
+        if self.context['request'].method == "PATCH":
+            return value
+
         with schema_context('public'):
             if User.objects.filter(email=value).exists():
                 raise serializers.ValidationError("This email already exists")
@@ -279,9 +293,9 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
             raise TenantNotFoundException()
         
         password = generate_random_password()
-        name_list = validated_data["name"].strip().split(' ')
-        first_name = validated_data["name"]
-        last_name = None
+        name_list = validated_data.get("name", None).strip().split(' ')
+        first_name = name_list[0]
+        last_name = ""
         if len(name_list) > 1:
             first_name = name_list[0]
             last_name = name_list[1]
@@ -290,24 +304,31 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         username = f"{first_name[:4]}_{uuid.uuid4().hex[:8]}"
 
         with schema_context('public'):
-            new_user = User.objects.create(email=validated_data["email"], password=password, username=username,
+            new_user = User.objects.create(email=validated_data.get("email", None), password=password, username=username,
                                            first_name=first_name, last_name=last_name)
             new_user.set_password(password)
             new_user.save()
 
         validated_data["temp_password"] = password
-        validated_data["password"] = new_user.password
+        validated_data["password"] = new_user.password  
+        if 'user_image_image' in validated_data:
+            validated_data["user_image"] = convert_to_base64(validated_data.get("user_image_image", None))      
         
-        groups = validated_data.pop('groups', [])
+        access_codes = validated_data.pop('access_codes', [])
         validated_data.pop('name')
         validated_data.pop('email')
         validated_data.pop('signature_image', None)
+        validated_data.pop('user_image_image', None)
         
         tenant_user = TenantUser.objects.create(user_id=new_user.id, tenant=tenant, **validated_data)
-        with schema_context('public'):
-            group_objs = [Group.objects.get(name=group_name) for group_name in groups if Group.objects.filter(name=group_name).exists()]
-            new_user.groups.add(*group_objs)
-        return tenant_user
+
+        access_group_right_user = [AccessGroupRightUser(
+            access_code = code,
+            user_id = tenant_user.user_id
+        ) for code in access_codes]
+
+        results = AccessGroupRightUser.objects.bulk_create(access_group_right_user)
+        return tenant_user, new_user.email
 
     @transaction.atomic
     def update_user_information(self, instance, validated_data):
@@ -347,11 +368,19 @@ class NewTenantUserSerializer(serializers.HyperlinkedModelSerializer):
         if validated_data.get("signature_image", None) is not None:
             tenant_user.signature = convert_to_base64(validated_data["signature_image"])
         
-        if validated_data.get("groups", None) is not None:
-            groups = validated_data.pop("groups")
-            with schema_context('public'):
-                group_objs = [Group.objects.get(name=group_name) for group_name in groups if Group.objects.filter(name=group_name).exists()]
-                user.groups.set(group_objs)
+        if validated_data.get("user_image_image", None) is not None:
+            tenant_user.user_image = convert_to_base64(validated_data["user_image_image"])
+        
+        if validated_data.get("access_codes", None) is not None:
+            access_codes = validated_data.pop("access_codes")
+
+            access_group_right_user = [AccessGroupRightUser(
+            access_code = code,
+            user_id = tenant_user.user_id
+            ) for code in access_codes]
+
+            AccessGroupRightUser.objects.filter(user_id=tenant_user.user_id).delete()
+            results = AccessGroupRightUser.objects.bulk_create(access_group_right_user)
         
         tenant_user.save()
         with schema_context('public'):
@@ -401,14 +430,19 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 # START THE ACCESSGROUP RIGHT SERIALIZER
 class AccessGroupRightSerializer(serializers.ModelSerializer):
+    from registration.serializers import AccessRightSerializer
+
     group_name = serializers.CharField(max_length=20, required=True)
     access_rights = serializers.ListField(child=serializers.DictField(), required=True, write_only=True)
+    access_right_details = AccessRightSerializer(source='access_right', read_only=True)
+    access_right = serializers.PrimaryKeyRelatedField(queryset=AccessRight.objects.filter(is_hidden=False), required=False, allow_null=True)
+
 
     class Meta:
         model = AccessGroupRight
-        fields = ["access_code", "group_name", "application", 
-                  "application_module", "access_rights", "access_right", "date_updated", "date_created"]
-        read_only_fields = ["access_right", "access_code"]
+        fields = ["id", "access_code", "group_name", "application", 
+                  "application_module", "access_rights", "access_right", "access_right_details", "date_updated", "date_created"]
+        read_only_fields = ["id", "access_right", "access_code"]
 
     def validate_access_rights(self, value):
         for item in value:
@@ -466,6 +500,7 @@ class AccessGroupRightSerializer(serializers.ModelSerializer):
 
         return {
             "detail": "Access Group Created Successfully",
-            "group_name": group_name
+            "group_name": group_name,
+            "access_code": access_code
         }
 # END THE ACCESSGROUP RIGHT SERIALIZER

@@ -6,13 +6,16 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from purchase.models import Product
-from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet
-from shared.viewsets.soft_delete_viewset import SoftDeleteWithModelViewSet
+from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet
+from users.module_permissions import HasModulePermission
 
-from .models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, MultiLocation, ReturnIncomingProduct, StockAdjustment, StockAdjustmentItem, ScrapItem, Scrap, IncomingProduct, \
-    IncomingProductItem, StockMove
-from .serializers import DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer, DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, ReturnIncomingProductSerializer, StockAdjustmentSerializer, \
-    StockAdjustmentItemSerializer, ScrapItemSerializer, ScrapSerializer, IncomingProductSerializer, IPItemSerializer, StockMoveSerializer
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location,
+                     MultiLocation, ReturnIncomingProduct, StockAdjustment, Scrap, IncomingProduct,
+                     IncomingProductItem, StockMove)
+from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer,
+                          DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer,
+                          ReturnIncomingProductSerializer, StockAdjustmentSerializer,
+                          ScrapSerializer, IncomingProductSerializer, StockMoveSerializer)
 
 from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id, generate_returned_incoming_product_unique_id
 from django.db import transaction
@@ -20,6 +23,8 @@ from rest_framework import mixins, viewsets
 from .filters import StockMoveFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.core.exceptions import ObjectDoesNotExist
+from users.config import basic_action_permission_map
+
 
 class LocationViewSet(SearchDeleteViewSet):
     queryset = Location.objects.all()
@@ -32,6 +37,22 @@ class LocationViewSet(SearchDeleteViewSet):
     def get_active_locations(self, request):
         queryset = Location.get_active_locations()
         return Response(queryset.values())
+
+    @action(detail=True, methods=['GET'])
+    def location_stock_levels(self, request, *args, **kwargs):
+        """
+        Returns the stock levels for all products in a specific location.
+        """
+        try:
+            location = self.get_object()
+            if location.is_hidden:
+                return Response({"error": "Location is archived."}, status=status.HTTP_404_NOT_FOUND)
+            stock_levels = location.get_stock_levels()
+            return Response(stock_levels, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist:
+            return Response({"error": "Location not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def create(self, request, *args, **kwargs):
         try:
@@ -50,10 +71,18 @@ class LocationViewSet(SearchDeleteViewSet):
 class StockAdjustmentViewSet(SearchDeleteViewSet):
     queryset = StockAdjustment.objects.all()
     serializer_class = StockAdjustmentSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "inventory"
+    model_name = "stockadjustment"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
-    search_fields = ['date_created', 'status', 'warehouse_location']
+    search_fields = ['date_created', 'status', 'warehouse_location']    
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_editable": "view",
+        "draft_list": "view",
+        "done_list": "view",          
+    }
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -112,19 +141,20 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
         return Response(serializer.data)
 
 
-class StockAdjustmentItemViewSet(viewsets.ModelViewSet):
-    queryset = StockAdjustmentItem.objects.all()
-    serializer_class = StockAdjustmentItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-
 class ScrapViewSet(SearchDeleteViewSet):
     queryset = Scrap.objects.all()
     serializer_class = ScrapSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "inventory"
+    model_name = "scrap"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['date_created', 'status', 'warehouse_location']
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_editable": "view"
+    }
+
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -173,19 +203,20 @@ class ScrapViewSet(SearchDeleteViewSet):
     #     return Response({'status': 'done'})
 
 
-class ScrapItemViewSet(viewsets.ModelViewSet):
-    queryset = ScrapItem.objects.all()
-    serializer_class = ScrapItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-
 class IncomingProductViewSet(SearchDeleteViewSet):
     queryset = IncomingProduct.objects.all()
     serializer_class = IncomingProductSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    app_label = "inventory"
+    model_name = "stockmove"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['date_created', 'status', 'destination_location']
     lookup_field = 'incoming_product_id'
     lookup_url_kwarg = 'incoming_product_id'
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_editable": "view",
+        "list_backorders": "view"
+    }
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -306,8 +337,8 @@ class MultiLocationViewSet(viewsets.GenericViewSet):
         try:
             instance = self.get_queryset().first()
             if instance.is_activated:
-                # Deactivating: check if locations > 3
-                if Location.get_active_locations().count() > 1:
+                # Deactivating: check if active locations > 1
+                if Location.get_active_locations().filter(is_hidden=False).count() > 1:
                     return Response({
                         'status': 'error',
                         'message': 'Reduce number of locations to three before deactivating'
@@ -349,8 +380,15 @@ class MultiLocationViewSet(viewsets.GenericViewSet):
 # START FOR THE DELIVERY ORDER
 class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrder.objects.filter(is_hidden=False)
-    permission_classes = [permissions.IsAuthenticated]
     serializer_class = DeliveryOrderSerializer
+    app_label = "inventory"
+    model_name = "deliveryorder"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_availability": "edit",
+        "confirm_delivery": "approve"
+    }
 
     def create(self, request, *args, **kwargs):
         """This is to create a new Delivery Order."""
@@ -415,7 +453,7 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
             return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-
+    @transaction.atomic
     def confirm_delivery(self, request, *args, **kwargs):
         serializer = self.get_serializer
         """This is to confirm the delivery order. Append the delievery order id(pk) to the request"""
@@ -428,6 +466,14 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         try:
             delivery_order.status = "done"
             delivery_order.save()
+
+            """This is to update by deducting the Quantity to deliver from the available quantity of the Product"""
+            delivery_order_items = DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id)
+            for item in delivery_order_items:
+                product_item = item.product_item
+                product_item.available_product_quantity -= item.quantity_to_deliver
+                product_item.save()
+
             serialized_order = DeliveryOrderSerializer(delivery_order, context={'request': request})
             return Response(serialized_order.data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -470,6 +516,11 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
                                 {"error": f"Missing field in delivery order item: {str(ke)}"},
                                 status=status.HTTP_400_BAD_REQUEST
                             )
+                        except ObjectDoesNotExist:
+                            return Response(
+                                {"error": f"One or all of the Products does not exist"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
                         except Exception as e:
                             return Response(
                                 {"error": f"Error processing delivery order item: {str(e)}"},
@@ -496,8 +547,11 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
 # START FOR THE DELIVERY ORDER RETURN 
 class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrderReturn.objects.filter(is_hidden=False)
-    permission_classes = [permissions.IsAuthenticated]
     serializer_class = DeliveryOrderReturnSerializer
+    app_label = "inventory"
+    model_name = "deliveryorderreturn"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = basic_action_permission_map
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -555,8 +609,14 @@ class DeliveryOrderReturnItemViewSet(SoftDeleteWithModelViewSet):
 # START RETURN INCOMING PRODUCTS
 class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
     queryset = ReturnIncomingProduct.objects.filter(is_hidden=False)
-    permission_classes = [permissions.IsAuthenticated]
     serializer_class = ReturnIncomingProductSerializer
+    app_label = "inventory"
+    model_name = "returnincomingproduct"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = {
+        **basic_action_permission_map,
+        "approve": "approve"
+    }
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -607,8 +667,12 @@ class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
 # START STOCK MOVES
 class StockMoveViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
     queryset = StockMove.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
     serializer_class = StockMoveSerializer
+    app_label = "inventory"
+    model_name = "stockmove"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     filter_backends = [DjangoFilterBackend]
     filterset_class = StockMoveFilter
+    action_permission_map = basic_action_permission_map
+
 # END STOCK MOVES

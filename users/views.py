@@ -1,3 +1,4 @@
+from django.core.mail import EmailMessage
 from django.shortcuts import get_object_or_404, render
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, status, generics, filters
@@ -16,60 +17,14 @@ from .utils import Util, generate_access_code_for_access_group, generate_random_
 from django_tenants.utils import schema_context
 from django.db import transaction
 from .utils import convert_to_base64
-from .models import AccessGroupRight
+from .models import AccessGroupRight, AccessGroupRightUser
 from .serializers import AccessGroupRightSerializer
 from rest_framework.exceptions import ValidationError
 from rest_framework import serializers
+from rest_framework.exceptions import NotFound
+from django.core.exceptions import ObjectDoesNotExist
 
-class SoftDeleteWithModelViewSet(viewsets.ModelViewSet):
-    def get_queryset(self):
-        return super().get_queryset()
-
-    def perform_destroy(self, instance):
-        instance.is_hidden = True
-        instance.save()
-
-    @action(detail=True, methods=['get', 'post'])
-    def toggle_hidden(self, request, pk=None, *args, **kwargs):
-        instance = self.get_object()
-        instance.is_hidden = not instance.is_hidden
-        instance.save()
-        return Response({'status': f'Hidden status set to {instance.is_hidden}'}, status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False)
-    def hidden(self, request, *args, **kwargs):
-        hidden_instances = self.queryset.filter(is_hidden=True)
-        page = self.paginate_queryset(hidden_instances)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(hidden_instances, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False)
-    def active(self, request, *args, **kwargs):
-        active_instances = self.queryset.filter(is_hidden=False)
-        page = self.paginate_queryset(active_instances)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(active_instances, many=True)
-        return Response(serializer.data)
-
-
-class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    search_fields = []
-
-    @action(detail=False)
-    def search(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset()).filter(is_hidden=False)
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -251,6 +206,104 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
     search_fields = ['user__username', 'user__email']
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        tenant_users = serializer.data
+        basic = request.query_params.get("basic") == "true"
+
+        basic_users_data = []
+        if basic:
+            for data in tenant_users:
+                with schema_context("public"):
+                    """If there is a query parameter with ?basic=true from the frontend, then this block of code triggers
+                    and this is to return simply the id, first_name and the last_name, 
+                    without the other unneccesary fields"""
+                    try:
+                        user = User.objects.get(pk=data["user_id"])
+                        basic_users_data.append({
+                            "id": data["id"],
+                            "first_name": user.first_name,
+                            "last_name": user.last_name
+                        })
+                    except User.DoesNotExist:
+                        basic_users_data.append({
+                            "id": data["id"],
+                            "first_name": "",
+                            "last_name": ""
+                        })
+            return Response(basic_users_data)
+        
+        for data in tenant_users:
+            with schema_context("public"):
+                try:
+                    user = User.objects.get(pk=data["user_id"])
+                    data["email"] = user.email
+                    data["first_name"] = user.first_name
+                    data["last_name"] = user.last_name
+                    data["last_login"] = user.last_login
+                except User.DoesNotExist:
+                    data["email"] = ""
+                    data["first_name"] = ""
+                    data["last_name"] = ""
+                    data["last_login"] = None
+        return Response(tenant_users)
+
+
+    def retrieve(self, request, pk=None):
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            data = serializer.data
+            
+            access_group_user = AccessGroupRightUser.objects.filter(user_id=instance.user_id)
+            access_codes = None
+            if not access_group_user.exists():
+                access_codes = []
+                with schema_context("public"):
+                    user = User.objects.get(pk=instance.user_id)
+                    data["email"] = user.email
+                    data["first_name"] = user.first_name
+                    data["last_name"] = user.last_name
+                    data["last_login"] = user.last_login
+                return Response(data)
+
+            access_codes = [code.access_code for code in access_group_user]
+
+            access_group = AccessGroupRight.objects.filter(
+                access_code__in=access_codes
+            ).distinct('access_code', 'group_name')
+            access_group = list(access_group)
+            access_groups = []
+            for grp in access_group:
+                access_dict = {
+                    "access_code": grp.access_code,
+                    "application": grp.application,
+                    "group_name": grp.group_name
+                }
+                access_groups.append(access_dict)
+
+            data["application_accesses"] = access_groups
+
+            with schema_context("public"):
+                user = User.objects.get(pk=access_group_user[0].user_id)
+                data["email"] = user.email
+                data["first_name"] = user.first_name
+                data["last_name"] = user.last_name
+                data["last_login"] = user.last_login
+            return Response(data)
+
+        except ObjectDoesNotExist:
+            raise NotFound(detail="Requested object not found.")
+
+        except Exception as e:
+            return Response(
+                {"detail": f"An unexpected error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+
     def get_user_email(self, tenant_user):
         if hasattr(tenant_user, 'user') and hasattr(tenant_user.user, 'email'):
             return tenant_user.user.email
@@ -259,24 +312,17 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
         else:
             raise ValueError("No email address available for verification")
 
-    def send_verification_email(self, tenant_user):
+    def send_account_email(self, tenant_user, email):
         try:
             email = self.get_user_email(tenant_user)
         except ValueError as e:
             print(f"Error: {str(e)}")
             return
-
-        token = RefreshToken.for_user(tenant_user)
-        token['email'] = email
-
-        current_site = get_current_site(self.request).domain
-        verification_url = f'https://{current_site}/email-verify?token={str(token.access_token)}'
-
-        email_body = f'Hi {tenant_user.user.username},\n\nUse the link below to verify your email:\n{verification_url}'
+        email_body = f'Your account has been created Successfully, Below are your login credentials\n\n Email: {email} \n Password: {tenant_user.temp_password}'
         email_data = {
             'email_body': email_body,
             'to_email': email,
-            'email_subject': 'Verify Your Email'
+            'email_subject': 'Account Created Successfully'
         }
         Util.send_email(email_data)
 
@@ -288,10 +334,11 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
         serializer.validated_data["tenant_schema_name"] = tenant_schema_name
         if 'signature_image' in serializer.validated_data:
             serializer.validated_data["signature"] = convert_to_base64(serializer.validated_data["signature_image"])
-        tenant_user = self.perform_create(serializer)
+        tenant_user, email = serializer.create(serializer.validated_data)
+        self.send_account_email(tenant_user, email)
         headers = self.get_success_headers(serializer.validated_data)
         return Response({
-            'detail': 'Tenant user created successfully. If an email was provided, a verification link has been sent.',
+            'detail': 'Tenant user created successfully. If an email was provided, account login credentials has been sent.',
             'user': serializer.data
         }, status=status.HTTP_201_CREATED, headers=headers)
 
@@ -313,11 +360,17 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
                 tenant_user.save()
                 with schema_context('public'):
                     user.save()
+            email_data = {
+                    'email_body': f"Password reset successful, your new password is {new_password}",
+                    'to_email': email,
+                    'email_subject': 'Passord Reset Successful'
+                }
+            Util.send_email(email_data)
 
             return Response({'detail': f'Password reset successfully. New Password is {new_password}'}, status=status.HTTP_200_OK)
         except Exception as ex:
             return Response({"detail": str(ex)}, status=status.HTTP_400_BAD_REQUEST)
-
+        
 
 class NewTenantPasswordViewSet(SearchDeleteViewSet):
     serializer_class = ChangePasswordSerializer
@@ -344,7 +397,7 @@ class NewTenantProfileViewSet(SearchDeleteViewSet):
     def update_user_information(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(data=request.data, partial=True)
-        # Validate incoming data
+        # # Validate incoming data
         serializer.is_valid(raise_exception=True)
         serializer.update_user_information(instance, serializer.validated_data)
         
@@ -374,7 +427,63 @@ class AccessGroupRightViewSet(SoftDeleteWithModelViewSet):
         # Use a serializer that returns many=True
         serializer = AccessGroupRightSerializer(queryset, many=True)
         return Response(serializer.data)
+    
+    def get_restructured(self, request):
+        """
+        Retrieves a restructured dataset of access groups grouped by application.
+        This method was implemented to provide a convenient data endpoint for external use cases,
+        avoiding the need for additional queries on the client side.
+        """
+        try:
+            applications = AccessGroupRight.objects.values_list('application', flat=True).distinct()
+            if not applications:
+                return Response({"detail": "No applications found."}, status=status.HTTP_404_NOT_FOUND)
 
+            data = []
+            exclude_fields = {'date_created', 'date_updated', 'application'}
+
+            for app in applications:
+                access_groups = AccessGroupRight.objects.filter(application=app).distinct('access_code', 'group_name')
+                
+                if not access_groups.exists():
+                    continue  # Skip applications with no access groups
+
+                serialized = AccessGroupRightSerializer(access_groups, many=True)
+
+                cleaned_data = [
+                    {k: v for k, v in item.items() if k not in exclude_fields}
+                    for item in serialized.data
+                ]
+
+                data.append({
+                    "application": app,
+                    "access_groups": cleaned_data
+                })
+
+            payload = {
+                "tenant_company_name": request.tenant.company_name,
+                "data": data
+             }
+
+            return Response(payload, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            return Response(
+                {"detail": "Invalid data provided."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except serializers.ValidationError as e:
+            return Response(
+                {"detail": "An error occurred while serializing the data."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception:
+            # Log error here if desired
+            return Response(
+                {"detail": "An unexpected error occurred while processing the request."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     def create(self, request, *args, **kwargs):
         serializer = AccessGroupRightSerializer(data=request.data)
         if serializer.is_valid():

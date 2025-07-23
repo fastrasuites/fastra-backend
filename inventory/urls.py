@@ -17,20 +17,16 @@ Including another URLconf
 from django.urls import path, include
 from rest_framework import routers
 
-from .views import (DeliveryOrderReturnViewSet, DeliveryOrderViewSet, LocationViewSet, MultiLocationViewSet, ReturnIncomingProductViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
-                    ScrapViewSet, ScrapItemViewSet, StockMoveViewSet)
-from .views import (LocationViewSet, MultiLocationViewSet, StockAdjustmentViewSet, StockAdjustmentItemViewSet,
-                    ScrapViewSet, ScrapItemViewSet, IncomingProductViewSet)
+from .views import (DeliveryOrderReturnViewSet, DeliveryOrderViewSet, LocationViewSet, MultiLocationViewSet,
+                    ReturnIncomingProductViewSet, StockAdjustmentViewSet, ScrapViewSet, StockMoveViewSet,
+                    IncomingProductViewSet)
 
 router = routers.DefaultRouter()
 
 router.register(r'location', LocationViewSet, basename='location')
 router.register(r'configuration/multi-location', MultiLocationViewSet, basename='multi-location')
 router.register(r'stock-adjustment', StockAdjustmentViewSet, basename='stock-adjustment')
-router.register(r'stock-adjustment/stock-adjustment-item', StockAdjustmentItemViewSet,
-                basename='stock-adjustment-item')
 router.register(r'scrap', ScrapViewSet, basename='scrap')
-router.register(r'scrap/scrap-item', ScrapItemViewSet, basename='scrap-item')
 # FOR THE DELIVERY ORDERS
 router.register(r'delivery-orders', DeliveryOrderViewSet, basename='delivery-orders')
 

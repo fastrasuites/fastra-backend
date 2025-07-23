@@ -26,87 +26,337 @@ from companies.permissions import HasTenantAccess
 from core.utils import enforce_tenant_schema
 from inventory.models import IncomingProduct, Location, IncomingProductItem
 from users.models import TenantUser
+from users.module_permissions import HasModulePermission
+from users.utils import convert_to_base64
+from shared.viewsets.soft_delete_search_viewset import SearchDeleteViewSet, SearchViewSet
 from .models import (PurchaseRequest, PurchaseRequestItem, Department, Vendor,
                      Product, RequestForQuotation, RequestForQuotationItem, UnitOfMeasure, PurchaseOrder, PurchaseOrderItem, PRODUCT_CATEGORY, Currency)
-from .serializers import (PurchaseRequestSerializer, DepartmentSerializer,
-                          VendorSerializer, ProductSerializer,
+from .serializers import (PurchaseRequestSerializer, VendorSerializer, ProductSerializer,
                           RequestForQuotationSerializer, RequestForQuotationItemSerializer,
                           UnitOfMeasureSerializer, PurchaseRequestItemSerializer,
                           PurchaseOrderSerializer, PurchaseOrderItemSerializer,
                           ExcelUploadSerializer, CurrencySerializer)
 from .utils import generate_model_pdf
+from users.config import basic_action_permission_map
 
 
-class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin, mixins.CreateModelMixin,
-                                 mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
-    """
-    A viewset that provides default `list()`, `create()`, `retrieve()`, `update()`, `partial_update()`,
-    and a custom `destroy()` action to hide instances instead of deleting them, a custom action to list
-    hidden instances, a custom action to revert the hidden field back to False.
-    """
+@extend_schema_view(
+    list=extend_schema(tags=['Currency']),
+    retrieve=extend_schema(tags=['Currency']),
+    create=extend_schema(tags=['Currency']),
+    update=extend_schema(tags=['Currency']),
+    partial_update=extend_schema(tags=['Currency']),
+    destroy=extend_schema(tags=['Currency']),
+)
+class CurrencyViewSet(SearchDeleteViewSet):
+    serializer_class = CurrencySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = Currency.objects.all()
 
-    def get_queryset(self):
-        # # Filter out hidden instances by default
-        # return self.queryset.filter(is_hidden=False)
-        return super().get_queryset()
+@extend_schema_view(
+    list=extend_schema(tags=['Unit Of Measure']),
+    retrieve=extend_schema(tags=['Unit Of Measure']),
+    create=extend_schema(tags=['Unit Of Measure']),
+    update=extend_schema(tags=['Unit Of Measure']),
+    partial_update=extend_schema(tags=['Unit Of Measure']),
+    destroy=extend_schema(tags=['Unit Of Measure']),
+)
+class UnitOfMeasureViewSet(SearchDeleteViewSet):
+    queryset = UnitOfMeasure.objects.all()
+    serializer_class = UnitOfMeasureSerializer
+    app_label = "purchase"
+    model_name = "unitofmeasure"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    search_fields = ['unit_name', 'unit_category']    
+    action_permission_map = basic_action_permission_map
 
-    @action(detail=True, methods=['put', 'patch'])
-    def toggle_hidden_status(self, request, pk=None, *args, **kwargs):
-        # Toggle the hidden status of an instance
+
+@extend_schema_view(
+    list=extend_schema(tags=['Vendors']),
+    retrieve=extend_schema(tags=['Vendors']),
+    create=extend_schema(tags=['Vendors']),
+    update=extend_schema(tags=['Vendors']),
+    partial_update=extend_schema(tags=['Vendors']),
+    destroy=extend_schema(tags=['Vendors']),
+)
+class VendorViewSet(SearchDeleteViewSet):
+    queryset = Vendor.objects.all()
+    serializer_class = VendorSerializer
+    app_label = "purchase"
+    model_name = "vendor"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    parser_classes = (MultiPartParser, FormParser)
+    search_fields = ['company_name', 'email']
+    action_permission_map = {
+        **basic_action_permission_map,
+        "upload_excel" : "create",
+        "upload_profile_picture": "create"
+        }
+
+    def handle_profile_picture(self, validated_data):
+        if validated_data.get("profile_picture_image", None):
+            validated_data["profile_picture"] = convert_to_base64(validated_data["profile_picture_image"])
+            validated_data.pop("profile_picture_image")
+        return validated_data
+
+    def create(self, request, *args, **kwargs):
+        serializer = VendorSerializer(data=request.data)
+        if serializer.is_valid():
+            validated_data = self.handle_profile_picture(serializer.validated_data)
+            vendor = Vendor.objects.create(**validated_data)
+            return Response({
+                "message": "Vendor created successfully",
+                "vendor": {
+                    "company_name": vendor.company_name,
+                    "email": vendor.email,
+                    "address": vendor.address,
+                    "profile_picture": vendor.profile_picture
+                }
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
         instance = self.get_object()
-        instance.is_hidden = not instance.is_hidden
-        instance.save()
-        return Response({'status': f'Hidden status set to {instance.is_hidden}'}, status=status.HTTP_204_NO_CONTENT)
+        serializer = VendorSerializer(instance, data=request.data, partial=partial)
 
-    @action(detail=True, methods=['delete'])
-    def soft_delete(self, request, pk=None, *args, **kwargs):
-        # Soft delete an instance
-        instance = self.get_object()
-        instance.is_hidden = True
-        instance.save()
-        return Response({'status': 'hidden'}, status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False, methods=['get'])
-    def hidden_list(self, request, *args, **kwargs):
-        # List all hidden instances
-        hidden_instances = self.queryset.filter(is_hidden=True)
-        page = self.paginate_queryset(hidden_instances)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(hidden_instances, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    @action(detail=False, methods=['get'])
-    def active_list(self, request, *args, **kwargs):
-        # List all active instances
-        active_instances = self.queryset.filter(is_hidden=False)
-        page = self.paginate_queryset(active_instances)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(active_instances, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        if serializer.is_valid():
+            validated_data = self.handle_profile_picture(serializer.validated_data)
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            return Response({
+                "message": "Vendor updated successfully",
+                "vendor": {
+                    "company_name": instance.company_name,
+                    "email": instance.email,
+                    "address": instance.address,
+                    "profile_picture": instance.profile_picture,
+                }
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
-    """
-    A viewset that inherits from `SoftDeleteWithModelViewSet` and adds a custom `search` action to
-    enable searching functionality.
-    The search functionality can be accessed via the DRF API interface.
-    """
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    search_fields = []
 
-    @action(detail=False, methods=['get'])
-    def search(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset()).filter(is_hidden=False)
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+    # def create(self, request, *args, **kwargs):
+    #     serializer = VendorSerializer(data=request.data)
+    #     if serializer.is_valid():
+    #         if serializer.validated_data.get("profile_picture_image", None) is not None:
+    #             serializer.validated_data["profile_picture"] = convert_to_base64(serializer.validated_data["profile_picture_image"])
+    #             serializer.validated_data.pop("profile_picture_image")
+    #
+    #         vendor = serializer.save()
+    #         return Response({
+    #             "message": "Vendor created successfully",
+    #             "vendor": {
+    #                 # "url": vendor.url,
+    #                 "company_name": vendor.company_name,
+    #                 "email": vendor.email,
+    #                 "address": vendor.address,
+    #                 "profile_picture": vendor.profile_picture
+    #             }
+    #         }, status=status.HTTP_201_CREATED)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #
+    # def update(self, request, *args, **kwargs):
+    #     partial = kwargs.pop('partial', False)
+    #     instance = self.get_object()
+    #     serializer = VendorSerializer(instance, data=request.data, partial=partial)
+    #
+    #     if serializer.is_valid():
+    #         validated_data = serializer.validated_data
+    #
+    #         if validated_data.get("profile_picture_image", None) is not None:
+    #             validated_data["profile_picture"] = convert_to_base64(validated_data["profile_picture_image"])
+    #             validated_data.pop("profile_picture_image")
+    #
+    #         vendor = serializer.save()
+    #
+    #         return Response({
+    #             "message": "Vendor updated successfully",
+    #             "vendor": {
+    #                 "company_name": vendor.company_name,
+    #                 "email": vendor.email,
+    #                 "address": vendor.address,
+    #                 "profile_picture": vendor.profile_picture,  # base64 string
+    #             }
+    #         }, status=status.HTTP_200_OK)
+    #
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
+    def upload_excel(self, request):
+        serializer = ExcelUploadSerializer(data=request.data)
+        if serializer.is_valid():
+            excel_file = serializer.validated_data['file']
+            if not isinstance(excel_file, InMemoryUploadedFile):
+                return Response({"error": "Invalid file format"}, status=400)
+
+            try:
+                workbook = load_workbook(excel_file)
+                sheet = workbook.active
+
+                vendors_created = 0
+                errors = []
+
+                for row in sheet.iter_rows(min_row=2, values_only=True):
+                    company_name, email, address, phone_number = row[:4]
+
+                    try:
+                        vendor = Vendor(
+                            company_name=company_name,
+                            email=email,
+                            address=address,
+                            phone_number=phone_number,
+                            # is_hidden=bool(is_hidden)
+                        )
+                        vendor.save()
+                        vendors_created += 1
+                    except Exception as e:
+                        errors.append(f"Error creating vendor {company_name}: {str(e)}")
+
+                return Response({
+                    "message": f"Successfully created {vendors_created} vendors",
+                    "errors": errors
+                }, status=201)
+
+            except Exception as e:
+                return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
+        else:
+            return Response(serializer.errors, status=400)
+
+    @action(detail=True, methods=['POST'])
+    def upload_profile_picture(self, request, pk=None):
+        vendor = self.get_object()
+        profile_file = request.FILES.get("profile_picture")
+
+        if not profile_file:
+            return Response({"error": "No file provided"}, status=400)
+
+        vendor.profile_picture = convert_to_base64(profile_file)
+        vendor.save()
+
+        return Response({
+            "message": "Profile picture uploaded successfully",
+            "profile_picture": vendor.profile_picture
+        }, status=200)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=['Products']),
+    retrieve=extend_schema(tags=['Products']),
+    create=extend_schema(tags=['Products']),
+    update=extend_schema(tags=['Products']),
+    partial_update=extend_schema(tags=['Products']),
+    destroy=extend_schema(tags=['Products']),
+)
+class ProductViewSet(SearchDeleteViewSet):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    app_label = "purchase"
+    model_name = "product"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    search_fields = ['product_name', 'product_category', "unit_of_measure__unit_name", ]
+    filterset_fields = ["unit_of_measure__unit_name",]
+    action_permission_map = {
+        **basic_action_permission_map,
+        "upload_excel": "create",
+        "delete_all_products": "delete"
+    }
+
+    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
+    def upload_excel(self, request):
+        serializer = ExcelUploadSerializer(data=request.data)
+        if serializer.is_valid():
+            excel_file = serializer.validated_data['file']
+            check_for_duplicates = serializer.validated_data.get('check_for_duplicates', False)
+
+            if not isinstance(excel_file, InMemoryUploadedFile):
+                return Response({"error": "Invalid file format"}, status=400)
+
+            try:
+                workbook = load_workbook(excel_file)
+                sheet = workbook.active
+
+                products_count = sheet.max_row - 1
+                products_created = 0
+                products_updated = 0
+                errors = []
+
+                valid_product_categories = [choice[0] for choice in PRODUCT_CATEGORY]
+
+                for row in sheet.iter_rows(min_row=2, values_only=True):
+                    (product_name, product_description, product_category, unit_of_measure,
+                     available_product_quantity, total_quantity_purchased) = row[:6]
+
+                    print(f"{products_count - (products_created + products_updated)} products remaining")
+
+                    product_category = slugify(product_category)
+
+                    # Check if the product_category is among the options available
+                    if product_category not in valid_product_categories:
+                        return Response({
+                            "errors": f"Invalid category '{product_category}' for {product_name}. "
+                                      f"Valid categories are: {', '.join(valid_product_categories)}. "
+                                      f"Created {products_created}, Updated {products_updated}."
+                        }, status=400)
+
+                    unit_of_measure_name = row[3]
+
+                    # Fetch the UnitOfMeasure instance, or create it if it doesn't exist
+                    unit_of_measure, created = UnitOfMeasure.objects.get_or_create(name=unit_of_measure_name)
+
+                    try:
+                        # Check if the product already exists by product_name
+                        existing_product = Product.objects.filter(product_name__iexact=product_name,
+                                                                  product_category__iexact=product_category).first()
+
+                        if check_for_duplicates and existing_product:
+                            # Update the existing product quantities
+                            existing_product.product_description = product_description
+                            existing_product.unit_of_measure = unit_of_measure
+                            existing_product.available_product_quantity += available_product_quantity
+                            existing_product.total_quantity_purchased += total_quantity_purchased
+                            existing_product.save()
+                            products_updated += 1
+                        else:
+                            # Create a new product if no duplicates are found or check_for_duplicates is False
+                            product = Product(
+                                product_name=product_name,
+                                product_description=product_description,
+                                product_category=product_category,
+                                unit_of_measure=unit_of_measure,
+                                available_product_quantity=available_product_quantity,
+                                total_quantity_purchased=total_quantity_purchased,
+                            )
+                            product.save()
+                            products_created += 1
+
+                    except Exception as e:
+                        errors.append(f"Error processing product {product_name}: {str(e)}")
+
+                return Response({
+                    "message": f"Successfully created {products_created} products, updated {products_updated} products",
+                    "errors": errors
+                }, status=201)
+
+            except Exception as e:
+                return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
+        else:
+            return Response(serializer.errors, status=400)
+
+    @action(detail=False, methods=['DELETE'], permission_classes=[IsAdminUser], url_path='delete-all',
+            url_name='delete_all_products')
+    def delete_all_products(self, request):
+        deleted_count, _ = Product.objects.all().delete()
+
+        return Response(
+            {"message": f"Successfully deleted {deleted_count} products."},
+            status=status.HTTP_200_OK
+        )
+
 
 @extend_schema_view(
     list=extend_schema(tags=['Purchase Requests']),
@@ -119,22 +369,52 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
 class PurchaseRequestViewSet(SearchDeleteViewSet):
     queryset = PurchaseRequest.objects.all()
     serializer_class = PurchaseRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['id', 'requester__username', 'suggested_vendor__name']
+    # Required by permission class
+    app_label = "purchase"
+    model_name = "purchaserequest"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    search_fields = ['id', 'status', "vendor__company_name", "currency__currency_name",
+                     "requesting_location__location_name"]
+    filterset_fields = ['status', "requesting_location__id", "requester__user_id", 'date_created']
+    # Map DRF actions to your permission names
+    action_permission_map = {
+        **basic_action_permission_map,
+        "draft_list": "view",
+        "pending_list": "view",
+        "approved_list": "view",
+        "rejected_list": "view",
+        "convert_to_rfq": "create",
+        "submit": "edit",
+        "approve": "approve",
+        "reject": "reject",
+    }
+
 
     def perform_create(self, serializer):
-        # # Ensure the user is a TenantUser
-        # user = self.request.user
-        # # Ensure we are operating within the correct tenant schema
-        # tenant = self.request.tenant  # Get the current tenant
-        #
-        # with tenant_context(tenant):  # Switch to the tenant's schema
-        #     try:
-        #         tenant_user = TenantUser.objects.get(user_id=user.id)
-        #     except ObjectDoesNotExist:
-        #         raise serializers.ValidationError("Requester must be a TenantUser within the tenant schema.")
+        # Ensure the user is a TenantUser
+        user = self.request.user
+        # Ensure we are operating within the correct tenant schema
+        tenant = self.request.tenant  # Get the current tenant
 
-        serializer.save()
+        with tenant_context(tenant):  # Switch to the tenant's schema
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id)
+            except ObjectDoesNotExist:
+                raise serializers.ValidationError("Requester must be a TenantUser within the tenant schema.")
+
+        serializer.save(requester=tenant_user)
+
+    def perform_update(self, serializer):
+        # Ensure the user is a TenantUser
+        user = self.request.user
+        # Ensure we are operating within the correct tenant schema
+        tenant = self.request.tenant
+        with tenant_context(tenant):  # Switch to the tenant's schema
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id)
+            except ObjectDoesNotExist:
+                raise serializers.ValidationError("Requester must be a TenantUser within the tenant schema.")
+        serializer.save(requester=tenant_user)
 
     @action(detail=False, methods=['get'])
     def draft_list(self, request):
@@ -234,271 +514,12 @@ class PurchaseRequestViewSet(SearchDeleteViewSet):
     partial_update=extend_schema(tags=['Purchase Request Items']),
     destroy=extend_schema(tags=['Purchase Request Items']),
 )
-class PurchaseRequestItemViewSet(viewsets.ModelViewSet):
+class PurchaseRequestItemViewSet(SearchViewSet):
     queryset = PurchaseRequestItem.objects.all()
     serializer_class = PurchaseRequestItemSerializer
     permission_classes = [permissions.IsAuthenticated]
-
-
-@extend_schema_view(
-    list=extend_schema(tags=['Departments']),
-    retrieve=extend_schema(tags=['Departments']),
-    create=extend_schema(tags=['Departments']),
-    update=extend_schema(tags=['Departments']),
-    partial_update=extend_schema(tags=['Departments']),
-    destroy=extend_schema(tags=['Departments']),
-)
-class DepartmentViewSet(SearchDeleteViewSet):
-    serializer_class = DepartmentSerializer
-    permission_classes = [IsAuthenticated, HasTenantAccess]
-    queryset = Department.objects.all()
-
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
-
-@extend_schema_view(
-    list=extend_schema(tags=['Currency']),
-    retrieve=extend_schema(tags=['Currency']),
-    create=extend_schema(tags=['Currency']),
-    update=extend_schema(tags=['Currency']),
-    partial_update=extend_schema(tags=['Currency']),
-    destroy=extend_schema(tags=['Currency']),
-)
-class CurrencyViewSet(SearchDeleteViewSet):
-    serializer_class = CurrencySerializer
-    permission_classes = [permissions.IsAuthenticated]
-    queryset = Currency.objects.all()
-
-@extend_schema_view(
-    list=extend_schema(tags=['Unit Of Measure']),
-    retrieve=extend_schema(tags=['Unit Of Measure']),
-    create=extend_schema(tags=['Unit Of Measure']),
-    update=extend_schema(tags=['Unit Of Measure']),
-    partial_update=extend_schema(tags=['Unit Of Measure']),
-    destroy=extend_schema(tags=['Unit Of Measure']),
-)
-class UnitOfMeasureViewSet(SearchDeleteViewSet):
-    queryset = UnitOfMeasure.objects.all()
-    serializer_class = UnitOfMeasureSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['unit_name', 'unit_category']
-
-
-# class VendorCategoryViewSet(SearchDeleteViewSet):
-#     queryset = VendorCategory.objects.all()
-#     serializer_class = VendorCategorySerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     search_fields = ['name',]
-
-
-@extend_schema_view(
-    list=extend_schema(tags=['Vendors']),
-    retrieve=extend_schema(tags=['Vendors']),
-    create=extend_schema(tags=['Vendors']),
-    update=extend_schema(tags=['Vendors']),
-    partial_update=extend_schema(tags=['Vendors']),
-    destroy=extend_schema(tags=['Vendors']),
-)
-class VendorViewSet(SearchDeleteViewSet):
-    queryset = Vendor.objects.all()
-    serializer_class = VendorSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    parser_classes = (MultiPartParser, FormParser)
-    search_fields = ['company_name', 'email']
-
-    def create(self, request, *args, **kwargs):
-        serializer = VendorSerializer(data=request.data)
-        if serializer.is_valid():
-            vendor = serializer.save()
-            return Response({
-                "message": "Vendor created successfully",
-                "vendor": {
-                    # "url": vendor.url,
-                    "company_name": vendor.company_name,
-                    "email": vendor.email,
-                    "address": vendor.address,
-                    "profile_picture": request.build_absolute_uri(
-                        vendor.profile_picture.url) if vendor.profile_picture else None,
-                }
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = VendorSerializer(instance, data=request.data, partial=partial)
-        if serializer.is_valid():
-            vendor = serializer.save()
-            return Response({
-                "message": "Vendor updated successfully",
-                "vendor": {
-                    "url": vendor.url,
-                    "company_name": vendor.company_name,
-                    "email": vendor.email,
-                    "address": vendor.address,
-                    "profile_picture": request.build_absolute_uri(
-                        vendor.profile_picture.url) if vendor.profile_picture else None,
-                }
-            }, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
-    def upload_excel(self, request):
-        serializer = ExcelUploadSerializer(data=request.data)
-        if serializer.is_valid():
-            excel_file = serializer.validated_data['file']
-            if not isinstance(excel_file, InMemoryUploadedFile):
-                return Response({"error": "Invalid file format"}, status=400)
-
-            try:
-                workbook = load_workbook(excel_file)
-                sheet = workbook.active
-
-                vendors_created = 0
-                errors = []
-
-                for row in sheet.iter_rows(min_row=2, values_only=True):
-                    company_name, email, address, phone_number = row[:4]
-
-                    try:
-                        vendor = Vendor(
-                            company_name=company_name,
-                            email=email,
-                            address=address,
-                            phone_number=phone_number,
-                            # is_hidden=bool(is_hidden)
-                        )
-                        vendor.save()
-                        vendors_created += 1
-                    except Exception as e:
-                        errors.append(f"Error creating vendor {company_name}: {str(e)}")
-
-                return Response({
-                    "message": f"Successfully created {vendors_created} vendors",
-                    "errors": errors
-                }, status=201)
-
-            except Exception as e:
-                return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
-        else:
-            return Response(serializer.errors, status=400)
-
-    @action(detail=True, methods=['POST'])
-    def upload_profile_picture(self, request, pk=None):
-        vendor = self.get_object()
-        if 'profile_picture' not in request.FILES:
-            return Response({"error": "No file provided"}, status=400)
-
-        vendor.profile_picture = request.FILES['profile_picture']
-        vendor.save()
-        return Response({"message": "Profile picture uploaded successfully"}, status=200)
-
-@extend_schema_view(
-    list=extend_schema(tags=['Products']),
-    retrieve=extend_schema(tags=['Products']),
-    create=extend_schema(tags=['Products']),
-    update=extend_schema(tags=['Products']),
-    partial_update=extend_schema(tags=['Products']),
-    destroy=extend_schema(tags=['Products']),
-)
-class ProductViewSet(SearchDeleteViewSet):
-    queryset = Product.objects.all()
-    serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['product_name', 'product_category', 'unit_of_measure__name', ]
-
-    @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
-    def upload_excel(self, request):
-        serializer = ExcelUploadSerializer(data=request.data)
-        if serializer.is_valid():
-            excel_file = serializer.validated_data['file']
-            check_for_duplicates = serializer.validated_data.get('check_for_duplicates', False)
-
-            if not isinstance(excel_file, InMemoryUploadedFile):
-                return Response({"error": "Invalid file format"}, status=400)
-
-            try:
-                workbook = load_workbook(excel_file)
-                sheet = workbook.active
-
-                products_count = sheet.max_row - 1
-                products_created = 0
-                products_updated = 0
-                errors = []
-
-                valid_product_categories = [choice[0] for choice in PRODUCT_CATEGORY]
-
-                for row in sheet.iter_rows(min_row=2, values_only=True):
-                    (product_name, product_description, product_category, unit_of_measure,
-                     available_product_quantity, total_quantity_purchased) = row[:6]
-
-                    print(f"{products_count - (products_created + products_updated)} products remaining")
-
-                    product_category = slugify(product_category)
-
-                    # Check if the product_category is among the options available
-                    if product_category not in valid_product_categories:
-                        return Response({
-                            "errors": f"Invalid category '{product_category}' for {product_name}. "
-                                      f"Valid categories are: {', '.join(valid_product_categories)}. "
-                                      f"Created {products_created}, Updated {products_updated}."
-                        }, status=400)
-
-                    unit_of_measure_name = row[3]
-
-                    # Fetch the UnitOfMeasure instance, or create it if it doesn't exist
-                    unit_of_measure, created = UnitOfMeasure.objects.get_or_create(name=unit_of_measure_name)
-
-                    try:
-                        # Check if the product already exists by product_name
-                        existing_product = Product.objects.filter(product_name__iexact=product_name,
-                                                                  product_category__iexact=product_category).first()
-
-                        if check_for_duplicates and existing_product:
-                            # Update the existing product quantities
-                            existing_product.product_description = product_description
-                            existing_product.unit_of_measure = unit_of_measure
-                            existing_product.available_product_quantity += available_product_quantity
-                            existing_product.total_quantity_purchased += total_quantity_purchased
-                            existing_product.save()
-                            products_updated += 1
-                        else:
-                            # Create a new product if no duplicates are found or check_for_duplicates is False
-                            product = Product(
-                                product_name=product_name,
-                                product_description=product_description,
-                                product_category=product_category,
-                                unit_of_measure=unit_of_measure,
-                                available_product_quantity=available_product_quantity,
-                                total_quantity_purchased=total_quantity_purchased,
-                            )
-                            product.save()
-                            products_created += 1
-
-                    except Exception as e:
-                        errors.append(f"Error processing product {product_name}: {str(e)}")
-
-                return Response({
-                    "message": f"Successfully created {products_created} products, updated {products_updated} products",
-                    "errors": errors
-                }, status=201)
-
-            except Exception as e:
-                return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
-        else:
-            return Response(serializer.errors, status=400)
-
-    @action(detail=False, methods=['DELETE'], permission_classes=[IsAdminUser], url_path='delete-all',
-            url_name='delete_all_products')
-    def delete_all_products(self, request):
-        deleted_count, _ = Product.objects.all().delete()
-
-        return Response(
-            {"message": f"Successfully deleted {deleted_count} products."},
-            status=status.HTTP_200_OK
-        )
-
+    filterset_fields = ['purchase_request__id']
+    search_fields = ["product__product_name", "unit_of_measure__unit_name", "purchase_request__id"]
 
 @extend_schema_view(
     list=extend_schema(tags=['Request For Quotation']),
@@ -511,8 +532,26 @@ class ProductViewSet(SearchDeleteViewSet):
 class RequestForQuotationViewSet(SearchDeleteViewSet):
     queryset = RequestForQuotation.objects.all()
     serializer_class = RequestForQuotationSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['vendor__company_name', 'status', 'purchase_request__id']
+    app_label = "purchase"
+    model_name = "requestforquotation"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    filterset_fields = ['status', "purchase_request__id", 'date_created']
+    search_fields = ["vendor__company_name", 'status', "purchase_request__id"]
+    action_permission_map = {
+        **basic_action_permission_map,
+        "check_rfq_editable": "view",
+        "check_rfq_mailable": "view",
+        "submit": "edit",
+        "approve": "approve",
+        "reject": "reject",
+        "draft_list": "view",
+        "toggle_hidden_status": "edit",
+        "pending_list": "view",
+        "approved_list": "view",
+        "rejected_list": "view",
+        "convert_to_po": "create",
+    }
+
 
     @action(detail=True, methods=['get'])
     def check_rfq_editable(self, rfq):
@@ -691,40 +730,13 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
     partial_update=extend_schema(tags=['Request For Quotation Items']),
     destroy=extend_schema(tags=['Request For Quotation Items']),
 )
-class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
+class RequestForQuotationItemViewSet(SearchViewSet):
     queryset = RequestForQuotationItem.objects.all()
     serializer_class = RequestForQuotationItemSerializer
     permission_classes = [permissions.IsAuthenticated]
+    search_fields = ["product__product_name", "unit_of_measure__unit_name",]
+    filterset_fields = ["product__product_name", "unit_of_measure__unit_name", "request_for_quotation__id"]
 
-#
-# @extend_schema_view(
-#     list=extend_schema(tags=['RFQ Vendor Quote']),
-#     retrieve=extend_schema(tags=['RFQ Vendor Quote']),
-#     create=extend_schema(tags=['RFQ Vendor Quote']),
-#     update=extend_schema(tags=['RFQ Vendor Quote']),
-#     partial_update=extend_schema(tags=['RFQ Vendor Quote']),
-#     destroy=extend_schema(tags=['RFQ Vendor Quote']),
-# )
-# class RFQVendorQuoteViewSet(SearchDeleteViewSet):
-#     queryset = RFQVendorQuote.objects.all()
-#     serializer_class = RFQVendorQuoteSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     search_fields = ['vendor__company_name', ]
-#
-#
-# @extend_schema_view(
-#     list=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     retrieve=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     create=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     update=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     partial_update=extend_schema(tags=['RFQ Vendor Quote Items']),
-#     destroy=extend_schema(tags=['RFQ Vendor Quote Items']),
-# )
-# class RFQVendorQuoteItemViewSet(viewsets.ModelViewSet):
-#     queryset = RFQVendorQuoteItem.objects.all()
-#     serializer_class = RFQVendorQuoteItemSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#
 
 @extend_schema_view(
     list=extend_schema(tags=['Purchase Orders']),
@@ -737,10 +749,39 @@ class RequestForQuotationItemViewSet(viewsets.ModelViewSet):
 class PurchaseOrderViewSet(SearchDeleteViewSet):
     queryset = PurchaseOrder.objects.all()
     serializer_class = PurchaseOrderSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    search_fields = ['status', 'vendor__company_name']
+    app_label = "purchase"
+    model_name = "purchaseorder"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    filterset_fields = ['status', "destination_location__id", "created_by__user_id", 'date_created']
+    search_fields = ['status', "vendor__company_name", "related_rfq__id", "destination_location__location_name"]
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
+    action_permission_map = {
+        **basic_action_permission_map,
+        "convert_to_incoming_product": "create",
+        "submit": "edit",
+        "complete": "edit",
+        "cancel": "edit",
+        "draft_list": "view",
+        "awaiting_list": "view",
+        "cancelled_list": "view",
+        "completed_list": "view"
+    }
+
+    def perform_create(self, serializer):
+        # Ensure the user is a TenantUser
+        user = self.request.user
+        # Ensure we are operating within the correct tenant schema
+        tenant = self.request.tenant  # Get the current tenant
+
+        with tenant_context(tenant):  # Switch to the tenant's schema
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id)
+            except ObjectDoesNotExist:
+                raise serializers.ValidationError("This user must be a TenantUser within the tenant schema.")
+
+        serializer.save(created_by=tenant_user)
+
 
     @action(detail=True, methods=['get'])
     def check_po_editable(self, po):
@@ -898,55 +939,9 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     partial_update=extend_schema(tags=['Purchase Order Items']),
     destroy=extend_schema(tags=['Purchase Order Items']),
 )
-class PurchaseOrderItemViewSet(viewsets.ModelViewSet):
+class PurchaseOrderItemViewSet(SearchViewSet):
     queryset = PurchaseOrderItem.objects.all()
     serializer_class = PurchaseOrderItemSerializer
     permission_classes = [permissions.IsAuthenticated]
-
-    @enforce_tenant_schema
-    def get(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-
-#
-# @extend_schema_view(
-#     list=extend_schema(tags=['PO Vendor Quote']),
-#     retrieve=extend_schema(tags=['PO Vendor Quote']),
-#     create=extend_schema(tags=['PO Vendor Quote']),
-#     update=extend_schema(tags=['PO Vendor Quote']),
-#     partial_update=extend_schema(tags=['PO Vendor Quote']),
-#     destroy=extend_schema(tags=['PO Vendor Quote']),
-# )
-# class POVendorQuoteViewSet(SearchDeleteViewSet):
-#     queryset = POVendorQuote.objects.all()
-#     serializer_class = POVendorQuoteSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     search_fields = ['vendor__company_name', ]
-#
-#     @enforce_tenant_schema
-#     def get(self, request, *args, **kwargs):
-#         queryset = self.get_queryset()
-#         serializer = self.get_serializer(queryset, many=True)
-#         return Response(serializer.data)
-#
-#
-# @extend_schema_view(
-#     list=extend_schema(tags=['PO Vendor Quote Items']),
-#     retrieve=extend_schema(tags=['PO Vendor Quote Items']),
-#     create=extend_schema(tags=['PO Vendor Quote Items']),
-#     update=extend_schema(tags=['PO Vendor Quote Items']),
-#     partial_update=extend_schema(tags=['PO Vendor Quote Items']),
-#     destroy=extend_schema(tags=['PO Vendor Quote Items']),
-# )
-# class POVendorQuoteItemViewSet(viewsets.ModelViewSet):
-#     queryset = POVendorQuoteItem.objects.all()
-#     serializer_class = POVendorQuoteItemSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#
-#     @enforce_tenant_schema
-#     def get(self, request, *args, **kwargs):
-#         # Custom logic can be added here
-#         queryset = self.get_queryset()
-#         serializer = self.get_serializer(queryset, many=True)
-#         return Response(serializer.data)
+    search_fields = ["product__product_name", "unit_of_measure__unit_name",]
+    filterset_fields = ["product__product_name", "unit_of_measure__unit_name", "purchase_order__id"]

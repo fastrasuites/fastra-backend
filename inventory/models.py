@@ -11,6 +11,8 @@ from decimal import Decimal
 
 from users.models import TenantUser
 from purchase.models import Product, Vendor, PurchaseOrder
+from decimal import Decimal, ROUND_HALF_UP
+
 
 LOCATION_TYPES = (
     ('internal', 'Internal'),
@@ -232,23 +234,97 @@ class Location(models.Model):
     def get_active_locations(cls):
         return cls.objects.exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
 
-    # def save(self, *args, **kwargs):
-    #    self.id = f"{self.location_code}{self.id_number:05d}"
-    #    if not MultiLocation.objects.filter(is_activated=True).exists() and Location.objects.filter(is_hidden=False).count() >= 3:
-    #        raise Exception("Maximum number of locations reached")
-    #    super().save(*args, **kwargs)
+    # def incoming_product_quantities_add(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total quantity received
+    #     at this location via IncomingProductItems.
+    #     """
+    #     from inventory.models import IncomingProductItem  # avoid circular import
+    #     qs = IncomingProductItem.objects.filter(
+    #         incoming_product__destination_location=self
+    #     ).values('product').annotate(total_received=models.Sum('quantity_received'))
+    #     return {entry['product']: entry['total_received'] for entry in qs}
+    #
+    # def delivery_order_quantities_subtract(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total quantity delivered
+    #     from this location via DeliveryOrderItems.
+    #     """
+    #     from inventory.models import DeliveryOrderItem  # Avoid circular import
+    #     qs = DeliveryOrderItem.objects.filter(
+    #         delivery_order__source_location=self
+    #     ).values('product_item').annotate(total_delivered=models.Sum('quantity_to_deliver'))
+    #     return {entry['product_item']: entry['total_delivered'] for entry in qs}
+    #
+    # def stock_adjustment_quantities_replace(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total quantity delivered
+    #     from this location via StockAdjustmentItems.
+    #     """
+    #     from inventory.models import StockAdjustmentItem  # Avoid circular import
+    #     qs = StockAdjustmentItem.objects.filter(
+    #         stock_adjustment__warehouse_location=self
+    #     ).values('product').annotate(total_adjusted=models.Sum('adjusted_quantity'))
+    #     return {entry['product']: entry['total_adjusted'] for entry in qs}
+    #
+    # def scrap_quantities_subtract(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total quantity delivered
+    #     from this location via ScrapItems.
+    #     """
+    #     from inventory.models import ScrapItem  # Avoid circular import
+    #     qs = ScrapItem.objects.filter(
+    #         scrap__warehouse_location=self
+    #     ).values('product').annotate(total_scrapped=models.Sum('scrap_quantity'))
+    #     return {entry['product']: entry['total_scrapped'] for entry in qs}
+    #
+    # def get_stock_levels(self):
+    #     """
+    #     Returns a dictionary mapping product IDs to the total stock level
+    #     at this location, considering incoming products, delivery orders,
+    #     stock adjustments, and scrapped items.
+    #     """
+    #     incoming_quantities = self.incoming_product_quantities_add()
+    #     delivery_quantities = self.delivery_order_quantities_subtract()
+    #     adjustment_quantities = self.stock_adjustment_quantities_replace()
+    #     scrap_quantities = self.scrap_quantities_subtract()
+    #
+    #     stock_levels = {}
+    #
+    #     for product_id in set(incoming_quantities.keys()).union(
+    #         delivery_quantities.keys(), adjustment_quantities.keys(), scrap_quantities.keys()):
+    #         stock_levels[product_id] = (
+    #             incoming_quantities.get(product_id, Decimal('0')) -
+    #             delivery_quantities.get(product_id, Decimal('0')) +
+    #             adjustment_quantities.get(product_id, Decimal('0')) -
+    #             scrap_quantities.get(product_id, Decimal('0'))
+    #         )
+    #
+    #     return stock_levels
+
+    def get_stock_levels(self):
+        return [
+            {
+                'product_id': stock.product.id,
+                'product_name': stock.product.product_name,
+                'product_unit_of_measure': stock.product.unit_of_measure,
+                'quantity': stock.quantity
+            }
+            for stock in self.stocks.select_related('product').all()
+        ]
 
     def save(self, *args, **kwargs):
         # Ensure the location code and location name are unique
-        if Location.objects.filter(location_code=self.location_code).exists() or Location.objects.filter(location_name=self.location_name).exists():
-            raise ValidationError(f"Location code '{self.location_code}' or Location name '{self.location_name}' "
+        if not self.pk:
+            if Location.objects.filter(location_code=self.location_code).exists() or Location.objects.filter(location_name=self.location_name).exists():
+                raise ValidationError(f"Location code '{self.location_code}' or Location name '{self.location_name}' "
                                   f"already exists.")
+            # Ensure the id is unique
+            if self.id and Location.objects.filter(id=self.id).exists():
+                raise ValidationError(f"ID '{self.id}' already exists.")
         # Ensure the location type is valid
         if self.location_type not in dict(LOCATION_TYPES).keys():
             raise ValidationError(f"Invalid location type '{self.location_type}'.")
-        # Ensure the id is unique
-        if self.id and Location.objects.filter(id=self.id).exists():
-            raise ValidationError(f"ID '{self.id}' already exists.")
         # Ensure the id_number is auto-incremented based on location_code
         if not self.id_number:
             last_location = Location.objects.filter(location_code=self.location_code).order_by('-id_number').first()
@@ -259,6 +335,15 @@ class Location(models.Model):
         if not MultiLocation.objects.filter(is_activated=True).exists() and Location.objects.filter(is_hidden=False).count() >= 3:
             raise Exception("Maximum number of locations reached")
         super().save(*args, **kwargs)
+
+
+class LocationStock(models.Model):
+    location = models.ForeignKey('Location', on_delete=models.CASCADE, related_name='stocks')
+    product = models.ForeignKey('purchase.Product', on_delete=models.CASCADE, related_name='location_stocks')
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        unique_together = ('location', 'product')
 
 
 # The multi-location option
@@ -283,8 +368,8 @@ class MultiLocation(models.Model):
         if self.pk:  # Only on update
             old = MultiLocation.objects.get(pk=self.pk)
             if old.is_activated and not self.is_activated:
-                if Location.objects.filter(is_hidden=False).count() > 3:
-                    raise ValidationError("Reduce number of locations to three before deactivating MultiLocation.")
+                if Location.get_active_locations().filter(is_hidden=False).count() > 1:
+                    raise ValidationError("Reduce number of active locations to one before deactivating MultiLocation.")
         return super(MultiLocation, self).save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
@@ -383,17 +468,19 @@ class StockAdjustmentItem(models.Model):
         max_length=50,
         editable=False,
     )
-    current_quantity = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        editable=False,
-        verbose_name='Current Quantity'
-    )
     adjusted_quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         verbose_name='Adjusted Quantity'
     )
+
+    @property
+    def current_quantity(self):
+        location = self.stock_adjustment.warehouse_location
+        if self.product.location_stocks.filter(location=location).exists():
+            return self.product.location_stocks.filter(location=location).first().quantity
+        else:
+            return Decimal('0')
 
     objects = models.Manager()
 
@@ -404,13 +491,8 @@ class StockAdjustmentItem(models.Model):
         if self.product:
             if not self.unit_of_measure:
                 self.unit_of_measure = self.product.unit_of_measure
-            if not self.current_quantity:
-                self.current_quantity = self.product.available_product_quantity
             if self.adjusted_quantity < 0:
                 raise ValidationError("Adjusted quantity cannot be negative")
-            if self.stock_adjustment.is_done:
-                self.product.available_product_quantity = self.adjusted_quantity
-                self.product.save()
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
@@ -490,11 +572,14 @@ class ScrapItem(models.Model):
         editable=False,
         verbose_name='Scrap Quantity'
     )
-    adjusted_quantity = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        verbose_name='Adjusted Quantity'
-    )
+
+    @property
+    def adjusted_quantity(self):
+        """Calculate the adjusted quantity based on the current stock level"""
+        product_in_location = self.product.location_stocks.filter(location=self.scrap.warehouse_location).first()
+        if product_in_location:
+            return product_in_location.quantity - self.scrap_quantity
+        return Decimal('0')
 
     objects = models.Manager()
 
@@ -504,12 +589,9 @@ class ScrapItem(models.Model):
     def save(self, *args, **kwargs):
         if self.product:
             if not self.scrap_quantity:
-                self.scrap_quantity = self.product.available_product_quantity
+                raise ValidationError("Scrap quantity is required")
             if self.adjusted_quantity < 0:
                 raise ValidationError("Adjusted quantity cannot be negative")
-            if self.scrap.is_done:
-                self.product.available_product_quantity = self.adjusted_quantity
-                self.product.save()
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
@@ -551,7 +633,7 @@ class IncomingProduct(models.Model):
     destination_location = models.ForeignKey(
         'Location',
         on_delete=models.PROTECT,
-        related_name='incoming_products_from_destination',
+        related_name='incoming_products_to_destination',
     )
     status = models.CharField(choices=INCOMING_PRODUCT_STATUS, max_length=15, default='draft')
     is_validated = models.BooleanField(default=False)
@@ -699,8 +781,6 @@ class IncomingProductItem(models.Model):
                     raise ValidationError("Expected quantity is required if there is no related purchase order.")
             if self.expected_quantity < 0 or self.quantity_received < 0:
                 raise ValidationError("Quantity cannot be negative")
-            if self.incoming_product.is_validated:
-                self.product.available_product_quantity += self.expected_quantity
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
@@ -893,6 +973,7 @@ class DeliveryOrderItem(models.Model):
     delivery_order = models.ForeignKey(DeliveryOrder, on_delete=models.CASCADE, related_name='delivery_order_items')
     product_item = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='product_items')
     quantity_to_deliver = models.PositiveIntegerField()
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='Product Unit Price', default=0)
     is_available = models.BooleanField(default=False)
     is_hidden = models.BooleanField(default=False)
     date_created = models.DateTimeField(auto_now_add=True)
@@ -900,11 +981,19 @@ class DeliveryOrderItem(models.Model):
     def __str__(self):
         return f"{self.product_item.product_name} ({self.quantity_to_deliver} {self.product_item.unit_of_measure})"
     
+    @property
+    def total_price(self):
+        return "{:.2f}".format(self.unit_price * self.quantity_to_deliver)
+    
+    
     def save(self, *args, **kwargs):
         for field in self._meta.fields:
             value = getattr(self, field.name)
             if isinstance(value, str):
                 setattr(self, field.name, value.strip())
+        if self.delivery_order.status == "done":
+            self.product_item -= self.quantity_to_deliver
+            self.product_item.save()
         super().save(*args, **kwargs)
 # END DELIVERY ORDERS
 
@@ -948,6 +1037,13 @@ class DeliveryOrderReturnItem(models.Model):
             value = getattr(self, field.name)
             if isinstance(value, str):
                 setattr(self, field.name, value.strip())
+        if self.delivery_order_return and self.delivery_order_return.source_document:
+            # self.returned_product_item.available_product_quantity += self.returned_quantity
+            location = self.delivery_order_return.source_document.source_location
+            if self.returned_product_item.location_stocks.filter(location=location).exists():
+                stock = self.returned_product_item.location_stocks.get(location=location)
+                stock.quantity += self.returned_quantity
+                stock.save()
         super().save(*args, **kwargs)
 # END RETURNED PRODUCTS
 
@@ -977,5 +1073,19 @@ class ReturnIncomingProductItem(models.Model):
 
     def __str__(self):
         return f"{self.return_incoming_product.unique_id} {self.product.product_name}"
+
+    def save(self, *args, **kwargs):
+        for field in self._meta.fields:
+            value = getattr(self, field.name)
+            if isinstance(value, str):
+                setattr(self, field.name, value.strip())
+        if self.return_incoming_product and self.return_incoming_product.source_document:
+            # self.product.available_product_quantity += self.quantity_to_be_returned
+            location = self.return_incoming_product.source_document.destination_location
+            if location and self.product.location_stocks.filter(location=location).exists():
+                stock = self.product.location_stocks.get(location=location)
+                stock.quantity -= self.quantity_to_be_returned
+                stock.save()
+        super(self, ReturnIncomingProductItem).save()
 # END RETURN OF INCOMING PRODUCTS
 
