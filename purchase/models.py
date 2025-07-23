@@ -207,7 +207,6 @@ class Product(models.Model):
     product_name = models.CharField(max_length=100)
     product_description = CKEditor5Field(null=True, blank=True)
     product_category = models.CharField(max_length=64, choices=PRODUCT_CATEGORY)
-    total_quantity_purchased = models.PositiveIntegerField(verbose_name="Total Quantity Purchased", default=0)
     unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True)
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
@@ -228,6 +227,16 @@ class Product(models.Model):
                 stock = LocationStock.objects.filter(location=location, product=self).first()
                 return stock.quantity if stock else 0
             return 0
+
+    @property
+    def total_quantity_purchased(self):
+        """
+        Returns the total quantity purchased for this product.
+        This is a placeholder method; actual implementation may vary based on your business logic.
+        """
+        return PurchaseOrderItem.objects.filter(
+            product=self, purchase_order__status='completed'
+        ).aggregate(total=models.Sum('qty'))['total'] or 0
 
     objects = models.Manager()
 
