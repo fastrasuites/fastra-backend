@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render, redirect
 from django.urls import reverse
 #from django.core.mail import send_mail
-from registration.utils import Util
+from registration.utils import Util, make_authentication
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth import login as auth_login
@@ -341,15 +341,18 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
             #try:
                 #user = User.objects.get(email=email)
                 #user = User.objects.get(email=email, is_superuser=True, is_staff=True)
-
+            user = None
             try:
-                user = User.objects.get(email=email)
+                with schema_context("public"):
+                   user = User.objects.get(email=email)
             except User.DoesNotExist:
                 return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
 
             if not (user.is_superuser and user.is_staff):
             # Notify tenant admin
-                schema_name = connection.schema_name
+                # schema_name = connection.schema_name
+
+                _, schema_name, _ = make_authentication(user.id)
                 try:
                     tenant_details = Tenant.objects.get(schema_name=schema_name)
                 except Tenant.DoesNotExist:
