@@ -113,3 +113,5 @@ class ChangeAdminPasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True, write_only=True)
     new_password = serializers.CharField(required=True, write_only=True)
 
+class MarkOnboardedSerializer(serializers.Serializer):
+    is_onboarded = serializers.BooleanField()

@@ -36,7 +36,7 @@ from users.models import TenantUser
 from .models import CompanyProfile
 from registration.models import OTP
 from .serializers import ChangeAdminPasswordSerializer, OTPVerificationSerializer, TenantSerializer, VerifyEmailSerializer, RequestForgottenPasswordSerializer, \
-    ForgottenPasswordSerializer, CompanyProfileSerializer, ResendVerificationEmailSerializer
+    ForgottenPasswordSerializer, CompanyProfileSerializer,MarkOnboardedSerializer, ResendVerificationEmailSerializer
 from .utils import Util
 from .permissions import IsAdminUser
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
