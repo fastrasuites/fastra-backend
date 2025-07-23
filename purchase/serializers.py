@@ -30,6 +30,18 @@ class UnitOfMeasureSerializer(serializers.HyperlinkedModelSerializer):
             raise serializers.ValidationError('A unit of measure with this name and category already exists.')
         return super().create(validated_data)
 
+    def update(self, instance, validated_data):
+        # Check for duplicates by unit_name and unit_category
+        unit_name = validated_data.get('unit_name', instance.unit_name)
+        unit_category = validated_data.get('unit_category', instance.unit_category)
+        if UnitOfMeasure.objects.filter(
+            unit_name__iexact=unit_name,
+            unit_category__iexact=unit_category
+        ).exclude(pk=instance.pk).exists():
+            raise serializers.ValidationError('A unit of measure with this name and category already exists.')
+
+        return super().update(instance, validated_data)
+
 
 class CurrencySerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='currency-detail')
@@ -38,6 +50,16 @@ class CurrencySerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = Currency
         fields = ['url', 'id', 'currency_name', 'currency_code', 'currency_symbol', 'created_on', 'is_hidden']
+
+    def create(self, validated_data):
+        # Check for duplicates by currency_code
+        currency_name = validated_data.get('currency_name')
+        currency_code = validated_data.get('currency_code')
+        if Currency.objects.filter(currency_code__iexact=currency_code, currency_name__iexact=currency_name).exists():
+            raise serializers.ValidationError('A currency with this code and name already exists.')
+        if Currency.objects.filter(currency_name__iexact=currency_name).exists():
+            raise serializers.ValidationError('A currency with this name already exists.')
+        return super().create(validated_data)
 
 
 class ExcelUploadSerializer(serializers.Serializer):

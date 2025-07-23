@@ -4,6 +4,7 @@ import os
 import io
 
 from openpyxl import load_workbook, Workbook
+from openpyxl.worksheet.datavalidation import DataValidation
 from urllib.parse import quote
 
 from django.http import HttpResponse
@@ -146,7 +147,10 @@ class VendorViewSet(SearchDeleteViewSet):
         The workbook will have:
         - An 'Instructions' sheet as the first sheet.
         - A 'Vendors' sheet for data entry (and import).
+        - Data validation for email and phone number columns.
         """
+
+
         wb = Workbook()
         ws_instructions = wb.active
         ws_instructions.title = "Instructions"
@@ -154,7 +158,8 @@ class VendorViewSet(SearchDeleteViewSet):
         ws_instructions["A2"] = "1. Fill each row in the 'Vendors' sheet with vendor details."
         ws_instructions["A3"] = "2. All columns are required."
         ws_instructions["A4"] = "3. Do not modify the header row."
-        ws_instructions["A6"] = "After filling, upload this file using the import feature in the system."
+        ws_instructions["A5"] = "4. Email and phone number fields are validated. Invalid entries will be highlighted."
+        ws_instructions["A7"] = "After filling, upload this file using the import feature in the system."
 
         # Add the Vendors sheet as the second sheet
         ws_vendors = wb.create_sheet(title="Vendors")
@@ -165,6 +170,28 @@ class VendorViewSet(SearchDeleteViewSet):
             "phone_number",
         ]
         ws_vendors.append(headers)
+
+        # Email validation (simple regex for demonstration)
+        email_dv = DataValidation(
+            type="custom",
+            formula1='=ISNUMBER(MATCH("*@*.?*",INDIRECT("RC",FALSE),0))',
+            showErrorMessage=True,
+            errorTitle="Invalid Email",
+            error="Please enter a valid email address."
+        )
+        ws_vendors.add_data_validation(email_dv)
+        email_dv.add(f"B2:B1048576")
+
+        # Phone number validation (digits only, length 7-15)
+        phone_dv = DataValidation(
+            type="custom",
+            formula1='=AND(ISNUMBER(--INDIRECT("RC",FALSE)),LEN(INDIRECT("RC",FALSE))>=7,LEN(INDIRECT("RC",FALSE))<=15)',
+            showErrorMessage=True,
+            errorTitle="Invalid Phone Number",
+            error="Phone number must be digits only, 7-15 characters."
+        )
+        ws_vendors.add_data_validation(phone_dv)
+        phone_dv.add(f"D2:D1048576")
 
         # Save workbook to a BytesIO stream
         output = io.BytesIO()
@@ -289,7 +316,6 @@ class ProductViewSet(SearchDeleteViewSet):
 
             try:
                 workbook = load_workbook(excel_file)
-                # Always read from the 'Products' sheet
                 if 'Products' not in workbook.sheetnames:
                     return Response({"error": "No 'Products' sheet found in the uploaded file."}, status=400)
                 sheet = workbook['Products']
@@ -297,6 +323,8 @@ class ProductViewSet(SearchDeleteViewSet):
                 valid_product_categories = [choice[0] for choice in PRODUCT_CATEGORY]
                 errors = []
                 rows_to_create = []
+                rows_to_update = []
+                update_instances = []
 
                 for idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
                     product_name, product_description, product_category, unit_of_measure_name = row[:4]
@@ -312,9 +340,10 @@ class ProductViewSet(SearchDeleteViewSet):
 
                     try:
                         unit_of_measure = UnitOfMeasure.objects.get(unit_name=unit_of_measure_name)
+                        unit_of_measure_id = unit_of_measure.id
                     except UnitOfMeasure.DoesNotExist:
                         row_errors.append(f"Unit of measure '{unit_of_measure_name}' does not exist for {product_name}.")
-                        unit_of_measure = None
+                        unit_of_measure_id = None
 
                     if row_errors:
                         errors.append({"row": idx, "errors": row_errors})
@@ -323,7 +352,7 @@ class ProductViewSet(SearchDeleteViewSet):
                             "product_name": product_name,
                             "product_description": product_description,
                             "product_category": product_category_slug,
-                            "unit_of_measure": unit_of_measure
+                            "unit_of_measure_id": unit_of_measure_id
                         })
 
                 if errors:
@@ -334,32 +363,41 @@ class ProductViewSet(SearchDeleteViewSet):
 
                 products_created = 0
                 products_updated = 0
+                create_instances = []
 
-                for row in rows_to_create:
-                    try:
-                        existing_product = Product.objects.filter(
-                            product_name__iexact=row["product_name"],
-                            product_category__iexact=row["product_category"]
-                        ).first()
+                if check_for_duplicates:
+                    # Fetch all existing products in one query
+                    product_names = [row["product_name"] for row in rows_to_create]
+                    product_categories = [row["product_category"] for row in rows_to_create]
+                    existing_products = Product.objects.filter(
+                        product_name__in=product_names,
+                        product_category__in=product_categories
+                    )
+                    existing_lookup = {
+                        (p.product_name.lower(), p.product_category.lower()): p for p in existing_products
+                    }
 
-                        if check_for_duplicates and existing_product:
-                            existing_product.product_description = row["product_description"]
-                            existing_product.unit_of_measure = row["unit_of_measure"]
-                            existing_product.save()
+                    for row in rows_to_create:
+                        key = (row["product_name"].lower(), row["product_category"].lower())
+                        if key in existing_lookup:
+                            product = existing_lookup[key]
+                            product.product_description = row["product_description"]
+                            product.unit_of_measure_id = row["unit_of_measure_id"]
+                            update_instances.append(product)
                             products_updated += 1
                         else:
-                            product = Product(
-                                product_name=row["product_name"],
-                                product_description=row["product_description"],
-                                product_category=row["product_category"],
-                                unit_of_measure=row["unit_of_measure"]
-                            )
-                            product.save()
+                            create_instances.append(Product(**row))
                             products_created += 1
 
-                    except Exception as e:
-                        # This should not happen, but if it does, collect as a general error
-                        errors.append({"row": "unknown", "errors": [f"Error processing product {row['product_name']}: {str(e)}"]})
+                    if update_instances:
+                        Product.objects.bulk_update(update_instances, ["product_description", "unit_of_measure_id"])
+                    if create_instances:
+                        Product.objects.bulk_create(create_instances)
+                else:
+                    # Only create new products
+                    create_instances = [Product(**row) for row in rows_to_create]
+                    Product.objects.bulk_create(create_instances)
+                    products_created = len(create_instances)
 
                 return Response({
                     "message": f"Successfully created {products_created} products, updated {products_updated} products",
@@ -379,6 +417,7 @@ class ProductViewSet(SearchDeleteViewSet):
         - An 'Instructions' sheet as the first sheet.
         - A 'Products' sheet for data entry (and import).
         - A list of all available unit_of_measure names at the time of download.
+        - Data validation for each column.
         """
         wb = Workbook()
         ws_instructions = wb.active
@@ -394,7 +433,7 @@ class ProductViewSet(SearchDeleteViewSet):
         ws_instructions["A7"] = "Available unit_of_measure names:"
 
         # Add all unit_of_measure names starting from A8
-        unit_names = UnitOfMeasure.objects.values_list("unit_name", flat=True)
+        unit_names = list(UnitOfMeasure.objects.values_list("unit_name", flat=True))
         for idx, name in enumerate(unit_names, start=8):
             ws_instructions[f"A{idx}"] = name
 
@@ -407,6 +446,66 @@ class ProductViewSet(SearchDeleteViewSet):
             "unit_of_measure",
         ]
         ws_products.append(headers)
+
+        # Data validation for product_name (required, not blank)
+        from openpyxl.worksheet.datavalidation import DataValidation
+        name_dv = DataValidation(
+            type="custom",
+            formula1='=LEN(TRIM(A2))>0',
+            showErrorMessage=True,
+            errorTitle="Required Field",
+            error="Product name is required."
+        )
+        ws_products.add_data_validation(name_dv)
+        name_dv.add("A2:A1048576")
+
+        # Data validation for product_description (required, not blank)
+        desc_dv = DataValidation(
+            type="custom",
+            formula1='=LEN(TRIM(B2))>0',
+            showErrorMessage=True,
+            errorTitle="Required Field",
+            error="Product description is required."
+        )
+        ws_products.add_data_validation(desc_dv)
+        desc_dv.add("B2:B1048576")
+
+        # Data validation for product_category (dropdown, type-able, must match slugified value)
+        category_slugs = [slugify(choice[0]) for choice in PRODUCT_CATEGORY]
+        # Create a hidden sheet to store the list for dropdown
+        ws_hidden = wb.create_sheet(title="ValidationLists")
+        for idx, slug in enumerate(category_slugs, start=1):
+            ws_hidden[f"A{idx}"] = slug
+        ws_hidden.sheet_state = 'hidden'
+        # Reference for dropdown
+        category_range = f"ValidationLists!$A$1:$A${len(category_slugs)}"
+        cat_dv = DataValidation(
+            type="list",
+            formula1=f"={category_range}",
+            allow_blank=False,
+            showDropDown=True,
+            showErrorMessage=True,
+            errorTitle="Invalid Category",
+            error="Category must match one of the allowed slug values."
+        )
+        ws_products.add_data_validation(cat_dv)
+        cat_dv.add("C2:C1048576")
+
+        # Data validation for unit_of_measure (dropdown, must match existing unit name)
+        for idx, name in enumerate(unit_names, start=1):
+            ws_hidden[f"B{idx}"] = name
+        unit_range = f"ValidationLists!$B$1:$B${len(unit_names)}"
+        unit_dv = DataValidation(
+            type="list",
+            formula1=f"={unit_range}",
+            allow_blank=False,
+            showDropDown=True,
+            showErrorMessage=True,
+            errorTitle="Invalid Unit",
+            error="Unit of measure must match one of the available units."
+        )
+        ws_products.add_data_validation(unit_dv)
+        unit_dv.add("D2:D1048576")
 
         # Save workbook to a BytesIO stream
         output = io.BytesIO()
