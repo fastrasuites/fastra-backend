@@ -363,7 +363,7 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
             email_data = {
                     'email_body': f"Password reset successful, your new password is {new_password}",
                     'to_email': email,
-                    'email_subject': 'Passord Reset Successful'
+                    'email_subject': 'Password Reset Successful'
                 }
             Util.send_email(email_data)
 
