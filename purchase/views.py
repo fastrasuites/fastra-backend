@@ -275,9 +275,6 @@ class VendorViewSet(SearchDeleteViewSet):
                 vendors_updated = 0
                 create_instances = []
 
-                # Use transaction to ensure atomicity
-                from django.db import transaction
-
                 try:
                     with transaction.atomic():
                         # Fetch all existing vendors with matching company_name and email
