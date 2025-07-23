@@ -144,16 +144,20 @@ class VendorViewSet(SearchDeleteViewSet):
         """
         Endpoint to download a template Excel file for vendor import.
         The workbook will have:
+        - An 'Instructions' sheet as the first sheet.
         - A 'Vendors' sheet for data entry (and import).
-        - An 'Instructions' sheet describing how to fill the 'Vendors' sheet.
         """
-
-        # Create workbook and sheets
         wb = Workbook()
-        ws_vendors = wb.active
-        ws_vendors.title = "Vendors"
+        ws_instructions = wb.active
+        ws_instructions.title = "Instructions"
+        ws_instructions["A1"] = "Instructions for Filling the Vendors Sheet:"
+        ws_instructions["A2"] = "1. Fill each row in the 'Vendors' sheet with vendor details."
+        ws_instructions["A3"] = "2. All columns are required."
+        ws_instructions["A4"] = "3. Do not modify the header row."
+        ws_instructions["A6"] = "After filling, upload this file using the import feature in the system."
 
-        # Define the template headers
+        # Add the Vendors sheet as the second sheet
+        ws_vendors = wb.create_sheet(title="Vendors")
         headers = [
             "company_name",
             "email",
@@ -161,16 +165,6 @@ class VendorViewSet(SearchDeleteViewSet):
             "phone_number",
         ]
         ws_vendors.append(headers)
-
-        # Add instructions sheet
-        ws_instructions = wb.create_sheet(title="Instructions")
-        ws_instructions["A1"] = "Instructions for Filling the Vendors Sheet"
-        ws_instructions["A2"] = (
-            "1. Fill each row in the 'Vendors' sheet with vendor details.\n"
-            "2. All columns are required.\n"
-            "3. Do not modify the header row."
-        )
-        ws_instructions["A4"] = "After filling, upload this file using the import feature in the system."
 
         # Save workbook to a BytesIO stream
         output = io.BytesIO()
@@ -194,30 +188,48 @@ class VendorViewSet(SearchDeleteViewSet):
 
             try:
                 workbook = load_workbook(excel_file)
-                sheet = workbook.active
+                # Always read from the 'Vendors' sheet
+                if 'Vendors' not in workbook.sheetnames:
+                    return Response({"error": "No 'Vendors' sheet found in the uploaded file."}, status=400)
+                sheet = workbook['Vendors']
+
+                errors = []
+                rows_to_create = []
+
+                for idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                    company_name, email, address, phone_number = row[:4]
+                    row_errors = []
+
+                    if not company_name or not email or not address or not phone_number:
+                        row_errors.append("All fields are required.")
+
+                    # Add more validation as needed (e.g., email format)
+
+                    if row_errors:
+                        errors.append({"row": idx, "errors": row_errors})
+                    else:
+                        rows_to_create.append({
+                            "company_name": company_name,
+                            "email": email,
+                            "address": address,
+                            "phone_number": phone_number,
+                        })
+
+                if errors:
+                    return Response({
+                        "message": "Errors found in the uploaded file. No vendors were created.",
+                        "errors": errors
+                    }, status=400)
 
                 vendors_created = 0
-                errors = []
-
-                for row in sheet.iter_rows(min_row=2, values_only=True):
-                    company_name, email, address, phone_number = row[:4]
-
-                    try:
-                        vendor = Vendor(
-                            company_name=company_name,
-                            email=email,
-                            address=address,
-                            phone_number=phone_number,
-                            # is_hidden=bool(is_hidden)
-                        )
-                        vendor.save()
-                        vendors_created += 1
-                    except Exception as e:
-                        errors.append(f"Error creating vendor {company_name}: {str(e)}")
+                for data in rows_to_create:
+                    vendor = Vendor(**data)
+                    vendor.save()
+                    vendors_created += 1
 
                 return Response({
                     "message": f"Successfully created {vendors_created} vendors",
-                    "errors": errors
+                    "errors": []
                 }, status=201)
 
             except Exception as e:
@@ -277,66 +289,82 @@ class ProductViewSet(SearchDeleteViewSet):
 
             try:
                 workbook = load_workbook(excel_file)
-                sheet = workbook.active
-
-                products_count = sheet.max_row - 1
-                products_created = 0
-                products_updated = 0
-                errors = []
+                # Always read from the 'Products' sheet
+                if 'Products' not in workbook.sheetnames:
+                    return Response({"error": "No 'Products' sheet found in the uploaded file."}, status=400)
+                sheet = workbook['Products']
 
                 valid_product_categories = [choice[0] for choice in PRODUCT_CATEGORY]
+                errors = []
+                rows_to_create = []
 
-                for row in sheet.iter_rows(min_row=2, values_only=True):
-                    (
-                        product_name, product_description, product_category, unit_of_measure
-                    ) = row[:4]
+                for idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                    product_name, product_description, product_category, unit_of_measure_name = row[:4]
+                    row_errors = []
 
-                    print(f"{products_count - (products_created + products_updated)} products remaining")
+                    product_category_slug = slugify(product_category)
 
-                    product_category = slugify(product_category)
-
-                    # Check if the product_category is among the options available
-                    if product_category not in valid_product_categories:
-                        return Response({
-                            "errors": f"Invalid category '{product_category}' for {product_name}. "
-                                      f"Valid categories are: {', '.join(valid_product_categories)}. "
-                                      f"Created {products_created}, Updated {products_updated}."
-                        }, status=400)
-
-                    unit_of_measure_name = row[3]
-
-                    # Fetch the UnitOfMeasure instance, or create it if it doesn't exist
-                    unit_of_measure = UnitOfMeasure.objects.get(unit_name=unit_of_measure_name)
+                    if product_category_slug not in valid_product_categories:
+                        row_errors.append(
+                            f"Invalid category '{product_category}' for {product_name}. "
+                            f"Valid categories are: {(', '.join(valid_product_categories)).title().replace('-', ' ')}."
+                        )
 
                     try:
-                        # Check if the product already exists by product_name
-                        existing_product = Product.objects.filter(product_name__iexact=product_name,
-                                                                  product_category__iexact=product_category).first()
+                        unit_of_measure = UnitOfMeasure.objects.get(unit_name=unit_of_measure_name)
+                    except UnitOfMeasure.DoesNotExist:
+                        row_errors.append(f"Unit of measure '{unit_of_measure_name}' does not exist for {product_name}.")
+                        unit_of_measure = None
+
+                    if row_errors:
+                        errors.append({"row": idx, "errors": row_errors})
+                    else:
+                        rows_to_create.append({
+                            "product_name": product_name,
+                            "product_description": product_description,
+                            "product_category": product_category_slug,
+                            "unit_of_measure": unit_of_measure
+                        })
+
+                if errors:
+                    return Response({
+                        "message": "Errors found in the uploaded file. No products were created or updated.",
+                        "errors": errors
+                    }, status=400)
+
+                products_created = 0
+                products_updated = 0
+
+                for row in rows_to_create:
+                    try:
+                        existing_product = Product.objects.filter(
+                            product_name__iexact=row["product_name"],
+                            product_category__iexact=row["product_category"]
+                        ).first()
 
                         if check_for_duplicates and existing_product:
-                            # Update the existing product quantities
-                            existing_product.product_description = product_description
-                            existing_product.unit_of_measure = unit_of_measure
+                            existing_product.product_description = row["product_description"]
+                            existing_product.unit_of_measure = row["unit_of_measure"]
                             existing_product.save()
                             products_updated += 1
                         else:
-                            # Create a new product if no duplicates are found or check_for_duplicates is False
                             product = Product(
-                                product_name=product_name,
-                                product_description=product_description,
-                                product_category=product_category,
-                                unit_of_measure=unit_of_measure
+                                product_name=row["product_name"],
+                                product_description=row["product_description"],
+                                product_category=row["product_category"],
+                                unit_of_measure=row["unit_of_measure"]
                             )
                             product.save()
                             products_created += 1
 
                     except Exception as e:
-                        errors.append(f"Error processing product {product_name}: {str(e)}")
+                        # This should not happen, but if it does, collect as a general error
+                        errors.append({"row": "unknown", "errors": [f"Error processing product {row['product_name']}: {str(e)}"]})
 
                 return Response({
                     "message": f"Successfully created {products_created} products, updated {products_updated} products",
                     "errors": errors
-                }, status=201)
+                }, status=201 if not errors else 400)
 
             except Exception as e:
                 return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
@@ -348,21 +376,30 @@ class ProductViewSet(SearchDeleteViewSet):
         """
         Endpoint to download a template Excel file for product import.
         The workbook will have:
+        - An 'Instructions' sheet as the first sheet.
         - A 'Products' sheet for data entry (and import).
-        - An 'Instructions' sheet describing how to fill the 'Products' sheet.
         - A list of all available unit_of_measure names at the time of download.
         """
-        from openpyxl import Workbook
-        from django.http import HttpResponse
-        import io
-        from .models import UnitOfMeasure
-
-        # Create workbook and sheets
         wb = Workbook()
-        ws_products = wb.active
-        ws_products.title = "Products"
+        ws_instructions = wb.active
+        ws_instructions.title = "Instructions"
+        ws_instructions["A1"] = "Instructions for Filling the Products Sheet:"
+        ws_instructions["A2"] = "1. Fill each row in the 'Products' sheet with product details."
+        ws_instructions["A3"] = (
+            "2. 'product_category' should match one of the allowed categories: "
+            + ", ".join([choice[0] for choice in PRODUCT_CATEGORY])
+        )
+        ws_instructions["A4"] = "3. 'unit_of_measure' should match an existing unit name (see below)."
+        ws_instructions["A5"] = "4. Do not modify the header row."
+        ws_instructions["A7"] = "Available unit_of_measure names:"
 
-        # Define the template headers
+        # Add all unit_of_measure names starting from A8
+        unit_names = UnitOfMeasure.objects.values_list("unit_name", flat=True)
+        for idx, name in enumerate(unit_names, start=8):
+            ws_instructions[f"A{idx}"] = name
+
+        # Add the Products sheet as the second sheet
+        ws_products = wb.create_sheet(title="Products")
         headers = [
             "product_name",
             "product_description",
@@ -370,26 +407,6 @@ class ProductViewSet(SearchDeleteViewSet):
             "unit_of_measure",
         ]
         ws_products.append(headers)
-
-        # Add instructions sheet
-        ws_instructions = wb.create_sheet(title="Instructions")
-        ws_instructions["A1"] = "Instructions for Filling the Products Sheet"
-        ws_instructions["A2"] = (
-            "1. Fill each row in the 'Products' sheet with product details.\n"
-            "2. 'product_category' should match one of the allowed categories:\n"
-            "a. Consumable\n"
-            "b. Stockable\n"
-            "c. Service product\n"
-            "3. 'unit_of_measure' should match an existing unit name (see below).\n"
-            "4. Do not modify the header row."
-        )
-        ws_instructions["A4"] = "After filling, upload this file using the import feature in the system."
-        ws_instructions["A6"] = "Available unit_of_measure names:"
-
-        # Add all unit_of_measure names starting from A7
-        unit_names = UnitOfMeasure.objects.values_list("unit_name", flat=True)
-        for idx, name in enumerate(unit_names, start=7):
-            ws_instructions[f"A{idx}"] = name
 
         # Save workbook to a BytesIO stream
         output = io.BytesIO()

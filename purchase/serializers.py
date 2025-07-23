@@ -22,6 +22,14 @@ class UnitOfMeasureSerializer(serializers.HyperlinkedModelSerializer):
         model = UnitOfMeasure
         fields = ['url', 'unit_name', 'unit_symbol', 'unit_category', 'created_on', 'is_hidden']
 
+    def create(self, validated_data):
+        # Check for duplicates by unit_name and unit_category
+        unit_name = validated_data.get('unit_name')
+        unit_category = validated_data.get('unit_category')
+        if UnitOfMeasure.objects.filter(unit_name__iexact=unit_name, unit_category__iexact=unit_category).exists():
+            raise serializers.ValidationError('A unit of measure with this name and category already exists.')
+        return super().create(validated_data)
+
 
 class CurrencySerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='currency-detail')
@@ -109,8 +117,6 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
                 # Update existing product quantities
                 existing_product.product_description = validated_data['product_description']
                 existing_product.unit_of_measure = validated_data['unit_of_measure']
-                existing_product.available_product_quantity += validated_data['available_product_quantity']
-                existing_product.total_quantity_purchased += validated_data['total_quantity_purchased']
                 existing_product.save()
                 return existing_product
 
