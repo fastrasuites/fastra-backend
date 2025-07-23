@@ -36,7 +36,7 @@ from users.models import TenantUser
 from .models import CompanyProfile
 from registration.models import OTP
 from .serializers import ChangeAdminPasswordSerializer, OTPVerificationSerializer, TenantSerializer, VerifyEmailSerializer, RequestForgottenPasswordSerializer, \
-    ForgottenPasswordSerializer, CompanyProfileSerializer, ResendVerificationEmailSerializer
+    ForgottenPasswordSerializer, CompanyProfileSerializer,MarkOnboardedSerializer, ResendVerificationEmailSerializer
 from .utils import Util
 from .permissions import IsAdminUser
 from rest_framework.permissions import IsAuthenticated
@@ -753,7 +753,41 @@ class ChangeAdminPassword(generics.GenericAPIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class MarkOnboardedView(generics.GenericAPIView):
+    serializer_class = MarkOnboardedSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
+    def patch(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            tenant = user.tenants.filter(schema_name=connection.schema_name).first()
+
+            if tenant:
+                with tenant_context(tenant):
+                    tenant.is_onboarded = not tenant.is_onboarded
+                    tenant.save()
+
+                    return Response({
+                        "id": tenant.id,
+                        "is_onboarded": tenant.is_onboarded
+                    }, status=status.HTTP_200_OK)
+            else:
+                return Response({'error': 'Tenant not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class OnboardingStatusView(generics.GenericAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        tenant = user.tenants.filter(schema_name=connection.schema_name).first()
+
+        if tenant:
+            return Response({'is_onboarded': tenant.is_onboarded}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Tenant not found.'}, status=status.HTTP_404_NOT_FOUND)
 
 class ProtectedView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]

@@ -1,8 +1,10 @@
 import json
 import requests
 import os
+import io
 
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
+from openpyxl.worksheet.datavalidation import DataValidation
 from urllib.parse import quote
 
 from django.http import HttpResponse
@@ -12,6 +14,9 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
+from django.core.validators import EmailValidator, RegexValidator
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from django_filters.rest_framework import DjangoFilterBackend
 from django_tenants.utils import tenant_context
@@ -90,7 +95,8 @@ class VendorViewSet(SearchDeleteViewSet):
     action_permission_map = {
         **basic_action_permission_map,
         "upload_excel" : "create",
-        "upload_profile_picture": "create"
+        "upload_profile_picture": "create",
+        "download_template": "view",
         }
 
     def handle_profile_picture(self, validated_data):
@@ -137,89 +143,190 @@ class VendorViewSet(SearchDeleteViewSet):
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['GET'], url_path='download-template')
+    def download_template(self, request):
+        """
+        Endpoint to download a template Excel file for vendor import.
+        The workbook will have:
+        - An 'Instructions' sheet as the first sheet.
+        - A 'Vendors' sheet for data entry (and import).
+        - Data validation for email and phone number columns.
+        """
 
 
-    # def create(self, request, *args, **kwargs):
-    #     serializer = VendorSerializer(data=request.data)
-    #     if serializer.is_valid():
-    #         if serializer.validated_data.get("profile_picture_image", None) is not None:
-    #             serializer.validated_data["profile_picture"] = convert_to_base64(serializer.validated_data["profile_picture_image"])
-    #             serializer.validated_data.pop("profile_picture_image")
-    #
-    #         vendor = serializer.save()
-    #         return Response({
-    #             "message": "Vendor created successfully",
-    #             "vendor": {
-    #                 # "url": vendor.url,
-    #                 "company_name": vendor.company_name,
-    #                 "email": vendor.email,
-    #                 "address": vendor.address,
-    #                 "profile_picture": vendor.profile_picture
-    #             }
-    #         }, status=status.HTTP_201_CREATED)
-    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    #
-    # def update(self, request, *args, **kwargs):
-    #     partial = kwargs.pop('partial', False)
-    #     instance = self.get_object()
-    #     serializer = VendorSerializer(instance, data=request.data, partial=partial)
-    #
-    #     if serializer.is_valid():
-    #         validated_data = serializer.validated_data
-    #
-    #         if validated_data.get("profile_picture_image", None) is not None:
-    #             validated_data["profile_picture"] = convert_to_base64(validated_data["profile_picture_image"])
-    #             validated_data.pop("profile_picture_image")
-    #
-    #         vendor = serializer.save()
-    #
-    #         return Response({
-    #             "message": "Vendor updated successfully",
-    #             "vendor": {
-    #                 "company_name": vendor.company_name,
-    #                 "email": vendor.email,
-    #                 "address": vendor.address,
-    #                 "profile_picture": vendor.profile_picture,  # base64 string
-    #             }
-    #         }, status=status.HTTP_200_OK)
-    #
-    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        wb = Workbook()
+        ws_instructions = wb.active
+        ws_instructions.title = "Instructions"
+        ws_instructions["A1"] = "Instructions for Filling the Vendors Sheet:"
+        ws_instructions["A2"] = "1. Fill each row in the 'Vendors' sheet with vendor details."
+        ws_instructions["A3"] = "2. All columns are required."
+        ws_instructions["A4"] = "3. Do not modify the header row."
+        ws_instructions["A5"] = "4. Email and phone number fields are validated. Invalid entries will be highlighted."
+        ws_instructions["A7"] = "After filling, upload this file using the import feature in the system."
 
+        # Add the Vendors sheet as the second sheet
+        ws_vendors = wb.create_sheet(title="Vendors")
+        headers = [
+            "company_name",
+            "email",
+            "address",
+            "phone_number",
+        ]
+        ws_vendors.append(headers)
+
+        # Email validation (simple regex for demonstration)
+        email_dv = DataValidation(
+            type="custom",
+            formula1='=ISNUMBER(MATCH("*@*.?*",INDIRECT("RC",FALSE),0))',
+            showErrorMessage=True,
+            errorTitle="Invalid Email",
+            error="Please enter a valid email address."
+        )
+        ws_vendors.add_data_validation(email_dv)
+        email_dv.add(f"B2:B1048576")
+
+        # Phone number validation (digits only, length 7-15)
+        phone_dv = DataValidation(
+            type="custom",
+            formula1='=AND(ISNUMBER(--INDIRECT("RC",FALSE)),LEN(INDIRECT("RC",FALSE))>=7,LEN(INDIRECT("RC",FALSE))<=15)',
+            showErrorMessage=True,
+            errorTitle="Invalid Phone Number",
+            error="Phone number must be digits only, 7-15 characters."
+        )
+        ws_vendors.add_data_validation(phone_dv)
+        phone_dv.add(f"D2:D1048576")
+
+        # Save workbook to a BytesIO stream
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        response = HttpResponse(
+            output,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=vendor_import_template.xlsx'
+        return response
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
     def upload_excel(self, request):
         serializer = ExcelUploadSerializer(data=request.data)
         if serializer.is_valid():
-            excel_file = serializer.validated_data['file']
-            if not isinstance(excel_file, InMemoryUploadedFile):
-                return Response({"error": "Invalid file format"}, status=400)
+            excel_file = serializer.validated_data.get('file')
+            if not excel_file or not isinstance(excel_file, InMemoryUploadedFile):
+                return Response({"error": "No file provided or invalid file format"}, status=400)
 
             try:
                 workbook = load_workbook(excel_file)
-                sheet = workbook.active
+                if 'Vendors' not in workbook.sheetnames:
+                    return Response({"error": "No 'Vendors' sheet found in the uploaded file."}, status=400)
+                sheet = workbook['Vendors']
+
+                errors = []
+                rows_to_create = []
+                update_instances = []
+                BATCH_SIZE = 500
+
+                email_validator = EmailValidator()
+                phone_validator = RegexValidator(
+                    regex=r'^\d{7,15}$',
+                    message="Phone number must be digits only, 7-15 characters."
+                )
+
+                # Check if the sheet is empty (only header or no data)
+                if sheet.max_row < 2:
+                    return Response({"error": "The 'Vendors' sheet is empty."}, status=400)
+
+                for idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                    company_name, email, address, phone_number = row[:4]
+                    row_errors = []
+
+                    # Check if the entire row is empty
+                    if all(cell is None or str(cell).strip() == "" for cell in (company_name, email, address, phone_number)):
+                        row_errors.append("Entire row is empty.")
+                        errors.append({"row": idx, "values": row, "errors": row_errors})
+                        continue
+
+                    # Check for empty columns
+                    empty_columns = []
+                    if not company_name or str(company_name).strip() == "":
+                        empty_columns.append("company_name")
+                    if not email or str(email).strip() == "":
+                        empty_columns.append("email")
+                    if not address or str(address).strip() == "":
+                        empty_columns.append("address")
+                    if not phone_number or str(phone_number).strip() == "":
+                        empty_columns.append("phone_number")
+                    if empty_columns:
+                        row_errors.append(f"Missing required fields: {', '.join(empty_columns)}. Row values: {row}")
+
+                    # Email validation
+                    if email and str(email).strip() != "":
+                        try:
+                            email_validator(email)
+                        except DjangoValidationError:
+                            row_errors.append(f"Invalid email: {email}")
+
+                    # Phone number validation
+                    if phone_number and str(phone_number).strip() != "":
+                        try:
+                            phone_validator(str(phone_number))
+                        except DjangoValidationError:
+                            row_errors.append(f"Invalid phone number: {phone_number}")
+
+                    if row_errors:
+                        errors.append({"row": idx, "values": row, "errors": row_errors})
+                    else:
+                        rows_to_create.append({
+                            "company_name": company_name,
+                            "email": email,
+                            "address": address,
+                            "phone_number": phone_number,
+                        })
+
+                if errors:
+                    return Response({
+                        "message": "Errors found in the uploaded file. No vendors were created or updated.",
+                        "errors": errors
+                    }, status=400)
 
                 vendors_created = 0
-                errors = []
+                vendors_updated = 0
+                create_instances = []
 
-                for row in sheet.iter_rows(min_row=2, values_only=True):
-                    company_name, email, address, phone_number = row[:4]
+                try:
+                    with transaction.atomic():
+                        # Fetch all existing vendors with matching company_name and email
+                        company_names = [row["company_name"] for row in rows_to_create]
+                        emails = [row["email"] for row in rows_to_create]
+                        existing_vendors = Vendor.objects.filter(company_name__in=company_names, email__in=emails)
+                        existing_lookup = {(v.company_name.lower(), v.email.lower()): v for v in existing_vendors}
 
-                    try:
-                        vendor = Vendor(
-                            company_name=company_name,
-                            email=email,
-                            address=address,
-                            phone_number=phone_number,
-                            # is_hidden=bool(is_hidden)
-                        )
-                        vendor.save()
-                        vendors_created += 1
-                    except Exception as e:
-                        errors.append(f"Error creating vendor {company_name}: {str(e)}")
+                        for row in rows_to_create:
+                            key = (row["company_name"].lower(), row["email"].lower())
+                            if key in existing_lookup:
+                                vendor = existing_lookup[key]
+                                vendor.address = row["address"]
+                                vendor.phone_number = row["phone_number"]
+                                update_instances.append(vendor)
+                                vendors_updated += 1
+                            else:
+                                create_instances.append(Vendor(**row))
+                                vendors_created += 1
+
+                        # Bulk update in batches
+                        for i in range(0, len(update_instances), BATCH_SIZE):
+                            Vendor.objects.bulk_update(update_instances[i:i+BATCH_SIZE], ["address", "phone_number"])
+                        # Bulk create in batches
+                        for i in range(0, len(create_instances), BATCH_SIZE):
+                            Vendor.objects.bulk_create(create_instances[i:i+BATCH_SIZE])
+
+                except Exception as e:
+                    return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
 
                 return Response({
-                    "message": f"Successfully created {vendors_created} vendors",
-                    "errors": errors
+                    "message": f"Successfully created {vendors_created} vendors, updated {vendors_updated} vendors",
+                    "errors": []
                 }, status=201)
 
             except Exception as e:
@@ -263,7 +370,8 @@ class ProductViewSet(SearchDeleteViewSet):
     action_permission_map = {
         **basic_action_permission_map,
         "upload_excel": "create",
-        "delete_all_products": "delete"
+        "delete_all_products": "delete",
+        "download_template": "view",
     }
 
     @action(detail=False, methods=['POST'], serializer_class=ExcelUploadSerializer)
@@ -273,79 +381,244 @@ class ProductViewSet(SearchDeleteViewSet):
             excel_file = serializer.validated_data['file']
             check_for_duplicates = serializer.validated_data.get('check_for_duplicates', False)
 
-            if not isinstance(excel_file, InMemoryUploadedFile):
-                return Response({"error": "Invalid file format"}, status=400)
+            if not excel_file or not isinstance(excel_file, InMemoryUploadedFile):
+                return Response({"error": "No file provided or invalid file format"}, status=400)
 
             try:
                 workbook = load_workbook(excel_file)
-                sheet = workbook.active
+                if 'Products' not in workbook.sheetnames:
+                    return Response({"error": "No 'Products' sheet found in the uploaded file."}, status=400)
+                sheet = workbook['Products']
 
-                products_count = sheet.max_row - 1
-                products_created = 0
-                products_updated = 0
-                errors = []
+                # Check if the sheet is empty (only header or no data)
+                if sheet.max_row < 2:
+                    return Response({"error": "The 'Products' sheet is empty."}, status=400)
 
                 valid_product_categories = [choice[0] for choice in PRODUCT_CATEGORY]
+                errors = []
+                rows_to_create = []
+                update_instances = []
 
-                for row in sheet.iter_rows(min_row=2, values_only=True):
-                    (product_name, product_description, product_category, unit_of_measure,
-                     available_product_quantity, total_quantity_purchased) = row[:6]
+                for idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                    product_name, product_description, product_category, unit_of_measure_name = row[:4]
+                    row_errors = []
 
-                    print(f"{products_count - (products_created + products_updated)} products remaining")
+                    # Check if the entire row is empty
+                    if all(cell is None or str(cell).strip() == "" for cell in (product_name, product_description, product_category, unit_of_measure_name)):
+                        row_errors.append("Entire row is empty.")
+                        errors.append({"row": idx, "values": row, "errors": row_errors})
+                        continue
 
-                    product_category = slugify(product_category)
+                    # Check for empty columns
+                    empty_columns = []
+                    if not product_name or str(product_name).strip() == "":
+                        empty_columns.append("product_name")
+                    if not product_description or str(product_description).strip() == "":
+                        empty_columns.append("product_description")
+                    if not product_category or str(product_category).strip() == "":
+                        empty_columns.append("product_category")
+                    if not unit_of_measure_name or str(unit_of_measure_name).strip() == "":
+                        empty_columns.append("unit_of_measure")
+                    if empty_columns:
+                        row_errors.append(f"Missing required fields: {', '.join(empty_columns)}. Row values: {row}")
 
-                    # Check if the product_category is among the options available
-                    if product_category not in valid_product_categories:
-                        return Response({
-                            "errors": f"Invalid category '{product_category}' for {product_name}. "
-                                      f"Valid categories are: {', '.join(valid_product_categories)}. "
-                                      f"Created {products_created}, Updated {products_updated}."
-                        }, status=400)
+                    product_category_slug = slugify(product_category) if product_category else ""
 
-                    unit_of_measure_name = row[3]
-
-                    # Fetch the UnitOfMeasure instance, or create it if it doesn't exist
-                    unit_of_measure, created = UnitOfMeasure.objects.get_or_create(name=unit_of_measure_name)
+                    if product_category and product_category_slug not in valid_product_categories:
+                        row_errors.append(
+                            f"Invalid category '{product_category}' for {product_name}. "
+                            f"Valid categories are: {(', '.join(valid_product_categories)).title().replace('-', ' ')}."
+                        )
 
                     try:
-                        # Check if the product already exists by product_name
-                        existing_product = Product.objects.filter(product_name__iexact=product_name,
-                                                                  product_category__iexact=product_category).first()
+                        unit_of_measure = UnitOfMeasure.objects.get(unit_name=unit_of_measure_name)
+                        unit_of_measure_id = unit_of_measure.id
+                    except UnitOfMeasure.DoesNotExist:
+                        row_errors.append(f"Unit of measure '{unit_of_measure_name}' does not exist for {product_name}.")
+                        unit_of_measure_id = None
 
-                        if check_for_duplicates and existing_product:
-                            # Update the existing product quantities
-                            existing_product.product_description = product_description
-                            existing_product.unit_of_measure = unit_of_measure
-                            existing_product.available_product_quantity += available_product_quantity
-                            existing_product.total_quantity_purchased += total_quantity_purchased
-                            existing_product.save()
-                            products_updated += 1
-                        else:
-                            # Create a new product if no duplicates are found or check_for_duplicates is False
-                            product = Product(
-                                product_name=product_name,
-                                product_description=product_description,
-                                product_category=product_category,
-                                unit_of_measure=unit_of_measure,
-                                available_product_quantity=available_product_quantity,
-                                total_quantity_purchased=total_quantity_purchased,
+                    if row_errors:
+                        errors.append({"row": idx, "errors": row_errors})
+                    else:
+                        rows_to_create.append({
+                            "product_name": product_name,
+                            "product_description": product_description,
+                            "product_category": product_category_slug,
+                            "unit_of_measure_id": unit_of_measure_id
+                        })
+
+                if errors:
+                    return Response({
+                        "message": "Errors found in the uploaded file. No products were created or updated.",
+                        "errors": errors
+                    }, status=400)
+
+                products_created = 0
+                products_updated = 0
+                create_instances = []
+                BATCH_SIZE = 500
+
+                try:
+                    with transaction.atomic():
+                        if check_for_duplicates:
+                            product_names = [row["product_name"] for row in rows_to_create]
+                            product_categories = [row["product_category"] for row in rows_to_create]
+                            existing_products = Product.objects.filter(
+                                product_name__in=product_names,
+                                product_category__in=product_categories
                             )
-                            product.save()
-                            products_created += 1
+                            existing_lookup = {
+                                (p.product_name.lower(), p.product_category.lower()): p for p in existing_products
+                            }
 
-                    except Exception as e:
-                        errors.append(f"Error processing product {product_name}: {str(e)}")
+                            for row in rows_to_create:
+                                key = (row["product_name"].lower(), row["product_category"].lower())
+                                if key in existing_lookup:
+                                    product = existing_lookup[key]
+                                    product.product_description = row["product_description"]
+                                    product.unit_of_measure_id = row["unit_of_measure_id"]
+                                    update_instances.append(product)
+                                    products_updated += 1
+                                else:
+                                    create_instances.append(Product(**row))
+                                    products_created += 1
+
+                            # Bulk update in batches
+                            for i in range(0, len(update_instances), BATCH_SIZE):
+                                Product.objects.bulk_update(
+                                    update_instances[i:i+BATCH_SIZE],
+                                    ["product_description", "unit_of_measure_id"]
+                                )
+                            # Bulk create in batches
+                            for i in range(0, len(create_instances), BATCH_SIZE):
+                                Product.objects.bulk_create(create_instances[i:i+BATCH_SIZE])
+                        else:
+                            # Only create new products in batches
+                            create_instances = [Product(**row) for row in rows_to_create]
+                            for i in range(0, len(create_instances), BATCH_SIZE):
+                                Product.objects.bulk_create(create_instances[i:i+BATCH_SIZE])
+                            products_created = len(create_instances)
+                except Exception as e:
+                    return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
 
                 return Response({
                     "message": f"Successfully created {products_created} products, updated {products_updated} products",
                     "errors": errors
-                }, status=201)
+                }, status=201 if not errors else 400)
 
             except Exception as e:
                 return Response({"error": f"Error processing Excel file: {str(e)}"}, status=400)
         else:
             return Response(serializer.errors, status=400)
+
+    @action(detail=False, methods=['GET'], url_path='download-template')
+    def download_template(self, request):
+        """
+        Endpoint to download a template Excel file for product import.
+        The workbook will have:
+        - An 'Instructions' sheet as the first sheet.
+        - A 'Products' sheet for data entry (and import).
+        - A list of all available unit_of_measure names at the time of download.
+        - Data validation for each column.
+        """
+        wb = Workbook()
+        ws_instructions = wb.active
+        ws_instructions.title = "Instructions"
+        ws_instructions["A1"] = "Instructions for Filling the Products Sheet:"
+        ws_instructions["A2"] = "1. Fill each row in the 'Products' sheet with product details."
+        ws_instructions["A3"] = (
+            "2. 'product_category' should match one of the allowed categories: "
+            + ", ".join([choice[0] for choice in PRODUCT_CATEGORY])
+        )
+        ws_instructions["A4"] = "3. 'unit_of_measure' should match an existing unit name (see below)."
+        ws_instructions["A5"] = "4. Do not modify the header row."
+        ws_instructions["A7"] = "Available unit_of_measure names:"
+
+        # Add all unit_of_measure names starting from A8
+        unit_names = list(UnitOfMeasure.objects.values_list("unit_name", flat=True))
+        for idx, name in enumerate(unit_names, start=8):
+            ws_instructions[f"A{idx}"] = name
+
+        # Add the Products sheet as the second sheet
+        ws_products = wb.create_sheet(title="Products")
+        headers = [
+            "product_name",
+            "product_description",
+            "product_category",
+            "unit_of_measure",
+        ]
+        ws_products.append(headers)
+
+        # Data validation for product_name (required, not blank)
+        name_dv = DataValidation(
+            type="custom",
+            formula1='=LEN(TRIM(A2))>0',
+            showErrorMessage=True,
+            errorTitle="Required Field",
+            error="Product name is required."
+        )
+        ws_products.add_data_validation(name_dv)
+        name_dv.add("A2:A1048576")
+
+        # Data validation for product_description (required, not blank)
+        desc_dv = DataValidation(
+            type="custom",
+            formula1='=LEN(TRIM(B2))>0',
+            showErrorMessage=True,
+            errorTitle="Required Field",
+            error="Product description is required."
+        )
+        ws_products.add_data_validation(desc_dv)
+        desc_dv.add("B2:B1048576")
+
+        # Data validation for product_category (dropdown, type-able, must match slugified value)
+        category_slugs = [slugify(choice[0]) for choice in PRODUCT_CATEGORY]
+        # Create a hidden sheet to store the list for dropdown
+        ws_hidden = wb.create_sheet(title="ValidationLists")
+        for idx, slug in enumerate(category_slugs, start=1):
+            ws_hidden[f"A{idx}"] = slug
+        ws_hidden.sheet_state = 'hidden'
+        # Reference for dropdown
+        category_range = f"ValidationLists!$A$1:$A${len(category_slugs)}"
+        cat_dv = DataValidation(
+            type="list",
+            formula1=f"={category_range}",
+            allow_blank=False,
+            showDropDown=True,
+            showErrorMessage=True,
+            errorTitle="Invalid Category",
+            error="Category must match one of the allowed slug values."
+        )
+        ws_products.add_data_validation(cat_dv)
+        cat_dv.add("C2:C1048576")
+
+        # Data validation for unit_of_measure (dropdown, must match existing unit name)
+        for idx, name in enumerate(unit_names, start=1):
+            ws_hidden[f"B{idx}"] = name
+        unit_range = f"ValidationLists!$B$1:$B${len(unit_names)}"
+        unit_dv = DataValidation(
+            type="list",
+            formula1=f"={unit_range}",
+            allow_blank=False,
+            showDropDown=True,
+            showErrorMessage=True,
+            errorTitle="Invalid Unit",
+            error="Unit of measure must match one of the available units."
+        )
+        ws_products.add_data_validation(unit_dv)
+        unit_dv.add("D2:D1048576")
+
+        # Save workbook to a BytesIO stream
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        response = HttpResponse(
+            output,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=product_import_template.xlsx'
+        return response
 
     @action(detail=False, methods=['DELETE'], permission_classes=[IsAdminUser], url_path='delete-all',
             url_name='delete_all_products')
