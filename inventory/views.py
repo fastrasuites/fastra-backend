@@ -10,7 +10,7 @@ from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSe
 from users.module_permissions import HasModulePermission
 
 from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location,
-                     MultiLocation, ReturnIncomingProduct, StockAdjustment, Scrap, IncomingProduct,
+                     MultiLocation, ReturnIncomingProduct, ScrapItem, StockAdjustment, Scrap, IncomingProduct,
                      IncomingProductItem, StockMove)
 from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer,
                           DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer,
@@ -176,6 +176,65 @@ class ScrapViewSet(SearchDeleteViewSet):
         if not scrap.can_edit:
             return Response({'error': 'This scrap has already been submitted and cannot be edited.'}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'editable'}, status=status.HTTP_200_OK)
+
+
+    def partial_update(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            instance = self.get_object()
+
+            instance.adjustment_type = data.get("adjustment_type", instance.adjustment_type) or instance.adjustment_type
+            instance.warehouse_location_id = data.get("warehouse_location", instance.warehouse_location)
+            instance.notes = data.get("notes", instance.notes)
+            instance.status = data.get("status", instance.status)
+            instance.can_edit = data.get("can_edit", instance.can_edit)
+            instance.is_done = data.get("is_done", instance.is_done)
+
+            with transaction.atomic():
+                items = data.get("scrap_items", [])
+                if items:
+                    for item in items:
+                        try:
+                            item_id = item.get('id', None)
+                            if item_id and ScrapItem.objects.filter(id=item_id, scrap_id=instance.id).exists():
+                                item_data = ScrapItem.objects.get(id=item_id, scrap_id=instance.id)
+                                item_data.product_id = item["product"][-2]
+                                item_data.scrap_quantity = item["scrap_quantity"]
+                                item_data.save()
+                            else:
+                                ScrapItem.objects.create(
+                                    scrap_id=instance.id,
+                                    product_id=item["product"][-2],
+                                    scrap_quantity=item["scrap_quantity"],
+                                )
+                        except KeyError as ke:
+                            return Response(
+                                {"error": f"Missing field in scrap item: {str(ke)}"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                        except ObjectDoesNotExist:
+                            return Response(
+                                {"error": f"One or all of the Products does not exist"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                        except Exception as e:
+                            return Response(
+                                {"error": f"Error processing delivery order item: {str(e)}"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+
+                instance.save()
+
+            return_serializer = ScrapSerializer(instance, many=False, context={'request': request})
+            return Response(return_serializer.data, status=status.HTTP_200_OK)
+
+        except ObjectDoesNotExist:
+            return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
+        except IntegrityError as e:
+            return Response({"error": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
     # @action(detail=True, methods=['post'])
     # def submit(self, request, pk=None):

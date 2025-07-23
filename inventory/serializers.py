@@ -198,6 +198,7 @@ class ScrapItemSerializer(serializers.HyperlinkedModelSerializer):
     product = serializers.HyperlinkedRelatedField(queryset=Product.objects.filter(is_hidden=False),
                                                   view_name='product-detail')
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
+    scrap_quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
 
     class Meta:
         model = ScrapItem
@@ -211,14 +212,14 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
         queryset=Location.get_active_locations().filter(is_hidden=False),
         required=False
     )
-
+    warehouse_location_details = LocationSerializer(source='warehouse_location', read_only=True)
     scrap_items = ScrapItemSerializer(many=True)
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
 
 
     class Meta:
         model = Scrap
-        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'notes', 'status',
+        fields = ['url', 'id', 'adjustment_type', 'warehouse_location', 'warehouse_location_details', 'notes', 'status',
                   'is_hidden', 'is_done', 'can_edit', 'scrap_items']
         read_only_fields = ['date_created', 'date_updated']
         extra_kwargs = {
