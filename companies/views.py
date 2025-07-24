@@ -765,7 +765,7 @@ class MarkOnboardedView(generics.GenericAPIView):
 
             if tenant:
                 with tenant_context(tenant):
-                    tenant.is_onboarded = not tenant.is_onboarded
+                    tenant.is_onboarded = True
                     tenant.save()
 
                     return Response({
