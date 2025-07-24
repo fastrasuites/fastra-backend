@@ -370,9 +370,10 @@ class PurchaseRequest(models.Model):
     pr_rejected = RejectedPRManager()
 
     @property
-    def total_price(self):
-        total_price = sum(item.total_price for item in self.items.all())
-        return total_price
+    def pr_total_price(self):
+        return PurchaseRequestItem.objects.filter(is_hidden=False, purchase_request=self).aggregate(
+            total=models.Sum('total_price')
+        )['total'] or 0.00
 
     class Meta:
         ordering = ['is_hidden', '-date_updated']
@@ -416,7 +417,10 @@ class PurchaseRequestItem(models.Model):
     unit_of_measure = models.ForeignKey("UnitOfMeasure", on_delete=models.SET_NULL, null=True, blank=True,
                                         related_name="purchase_requests")
     estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-    total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+
+    @property
+    def total_price(self):
+        return self.qty * self.estimated_unit_price
 
     objects = models.Manager()
 
@@ -427,18 +431,12 @@ class PurchaseRequestItem(models.Model):
         return self.product.product_name
 
     def save(self, *args, **kwargs):
-        self.total_price = self.qty * self.estimated_unit_price
         if not self.description:
             self.description = self.product.product_description
         if not self.unit_of_measure:
             self.unit_of_measure = self.product.unit_of_measure
         super(PurchaseRequestItem, self).save(*args, **kwargs)
 
-
-# this is a signal that calculates the qty times the unit price automatically
-@receiver(pre_save, sender=PurchaseRequestItem)
-def update_total_price(sender, instance, **kwargs):
-    instance.total_price = instance.qty * instance.estimated_unit_price
 
 
 # @receiver(post_save, sender=PurchaseRequest)
@@ -510,8 +508,9 @@ class RequestForQuotation(models.Model):
 
     @property
     def rfq_total_price(self):
-        rfq_total_price = sum(item.total_price for item in self.items.all())
-        return rfq_total_price
+        return RequestForQuotationItem.objects.filter(is_hidden=False, request_for_quotation=self).aggregate(
+            total=models.Sum('total_price')
+        )['total'] or 0.00
 
     @property
     def is_expired(self):
@@ -564,27 +563,14 @@ class RequestForQuotationItem(models.Model):
 
     class Meta:
         unique_together = ('request_for_quotation', 'product')
+        ordering = ['-date_created']
 
-
-    def __init__(self, *args, **kwargs):
-        self._total_price = None
-        super(RequestForQuotationItem, self).__init__(*args, **kwargs)
-
-    def get_total_price(self, *args, **kwargs):
-        if self._total_price is None:
-            self.set_total_price()
-        return self._total_price
-
-    def set_total_price(self, *args, **kwargs):
-        self._total_price = self.estimated_unit_price * self.qty
-
-    total_price = property(get_total_price, set_total_price, doc="total price property")
+    @property
+    def total_price(self):
+        return self.qty * self.estimated_unit_price
 
     def __str__(self):
         return self.product.product_name
-
-    class Meta:
-        ordering = ['-date_created']
 
     def save(self, *args, **kwargs):
         if not self.description:
@@ -657,8 +643,9 @@ class PurchaseOrder(models.Model):
 
     @property
     def po_total_price(self):
-        po_total_price = sum(item.total_price for item in self.items.all())
-        return po_total_price
+        return PurchaseOrderItem.objects.filter(is_hidden=False, purchase_order=self).aggregate(
+            total=models.Sum('total_price')
+        )['total'] or 0.00
 
     def send_email(self):
         """
@@ -708,19 +695,9 @@ class PurchaseOrderItem(models.Model):
     class Meta:
         ordering = ['-date_created']
 
-    def __init__(self, *args, **kwargs):
-        self._total_price = None
-        super(PurchaseOrderItem, self).__init__(*args, **kwargs)
-
-    def get_total_price(self, *args, **kwargs):
-        if self._total_price is None:
-            self.set_total_price()
-        return self._total_price
-
-    def set_total_price(self, *args, **kwargs):
-        self._total_price = self.estimated_unit_price * self.qty
-
-    total_price = property(get_total_price, set_total_price, doc="total price property")
+    @property
+    def total_price(self):
+        return self.qty * self.estimated_unit_price
 
     def __str__(self):
         return f"{self.product.product_name} || {self.total_price}"

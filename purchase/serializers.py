@@ -155,7 +155,6 @@ class PurchaseRequestItemSerializer(serializers.ModelSerializer):
         allow_null=True,
         allow_empty=True
     )
-    total_price = serializers.ReadOnlyField()
     product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
@@ -207,13 +206,12 @@ class PurchaseRequestSerializer(serializers.HyperlinkedModelSerializer):
     vendor_details = VendorSerializer(source='vendor', read_only=True)
     items = PurchaseRequestItemSerializer(many=True, allow_empty=False)
     requester_details = TenantUserSerializer(source='requester', read_only=True)
-    total_price = serializers.ReadOnlyField()
 
     class Meta:
         model = PurchaseRequest
         fields = [
             'url', 'id', 'status', 'date_created', 'date_updated', 'currency', 'requester', 'requester_details',
-            'requesting_location', 'purpose', 'vendor', 'items', 'total_price', 'can_edit',
+            'requesting_location', 'purpose', 'vendor', 'items', 'pr_total_price', 'can_edit',
             'is_submitted', 'is_hidden', 'requesting_location_details', 'currency_details', 'vendor_details'
         ]
 
@@ -367,14 +365,12 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
     request_for_quotation = serializers.PrimaryKeyRelatedField(
         read_only=True
     )
-    # This field is a custom property on the model, not a serializer field.
-    get_total_price = serializers.ReadOnlyField()
     product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = RequestForQuotationItem
         fields = ['id', 'url', 'request_for_quotation', 'product', 'product_details', 'description',
-                  'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
+                  'qty', 'unit_of_measure', 'estimated_unit_price', 'total_price']
 
     def validate(self, data):
         if data.get('qty') is None or data['qty'] <= 0:
@@ -413,7 +409,6 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
     vendor = serializers.PrimaryKeyRelatedField(
         queryset=Vendor.objects.filter(is_hidden=False),
     )
-    rfq_total_price = serializers.ReadOnlyField()
     items = RequestForQuotationItemSerializer(many=True)
     currency_details = CurrencySerializer(source='currency', read_only=True)
     vendor_details = VendorSerializer(source='vendor', read_only=True)
@@ -421,7 +416,7 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = RequestForQuotation
         fields = ['url', 'id', 'expiry_date', 'vendor', 'purchase_request', 'currency',
-                  'status', 'rfq_total_price', 'items', 'is_hidden', 'is_expired', 'is_submitted',
+                  'status', 'items', 'is_hidden', 'is_expired', 'is_submitted',
                   'can_edit', 'vendor_details', 'currency_details']
         read_only_fields = ['date_created', 'date_updated', 'rfq_total_price']
 
@@ -564,14 +559,12 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
         allow_null=True,
         allow_empty=True
     )
-    # This field is a custom property on the model, not a serializer field.
-    get_total_price = serializers.ReadOnlyField()
     product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = PurchaseOrderItem
         fields = ['id', 'url', 'purchase_order', 'product', 'description', 'product_details',
-                  'qty', 'unit_of_measure', 'estimated_unit_price', 'get_total_price']
+                  'qty', 'unit_of_measure', 'estimated_unit_price', 'total_price']
 
     def validate(self, data):
         if data.get('qty') is None or data['qty'] <= 0:
@@ -623,8 +616,6 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         queryset=Currency.objects.filter(is_hidden=False),
     )
     created_by_details = TenantUserSerializer(source='created_by', read_only=True)
-    # This field is a custom property on the model, not a serializer field.
-    po_total_price = serializers.ReadOnlyField()
     currency_details = CurrencySerializer(source='currency', read_only=True)
     destination_location_details = LocationSerializer(source='destination_location', read_only=True)
     vendor_details = VendorSerializer(source='vendor', read_only=True)
