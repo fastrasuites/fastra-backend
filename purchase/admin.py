@@ -19,8 +19,7 @@ class RFQAdmin(admin.ModelAdmin):
 # admin.site.register(RequestForQuotationItem)
 @admin.register(RequestForQuotationItem)
 class RFQItemAdmin(admin.ModelAdmin):
-    list_display = ('id', 'request_for_quotation', 'product', 'qty', 'estimated_unit_price',
-                    'get_total_price', )
+    list_display = ('id', 'request_for_quotation', 'product', 'qty', 'estimated_unit_price', )
 
     class Meta:
         model = RequestForQuotationItem

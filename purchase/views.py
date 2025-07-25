@@ -110,10 +110,9 @@ class VendorViewSet(SearchDeleteViewSet):
         if serializer.is_valid():
             validated_data = self.handle_profile_picture(serializer.validated_data)
             vendor = Vendor.objects.create(**validated_data)
-            vendor_serializer = VendorSerializer(instance=vendor, context={'request': request})
             return Response({
                 "message": "Vendor created successfully",
-                "vendor": vendor_serializer.data
+                "vendor": VendorSerializer(vendor).data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -130,12 +129,7 @@ class VendorViewSet(SearchDeleteViewSet):
             instance.save()
             return Response({
                 "message": "Vendor updated successfully",
-                "vendor": {
-                    "company_name": instance.company_name,
-                    "email": instance.email,
-                    "address": instance.address,
-                    "profile_picture": instance.profile_picture,
-                }
+                "vendor": VendorSerializer(instance).data
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
