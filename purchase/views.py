@@ -112,12 +112,7 @@ class VendorViewSet(SearchDeleteViewSet):
             vendor = Vendor.objects.create(**validated_data)
             return Response({
                 "message": "Vendor created successfully",
-                "vendor": {
-                    "company_name": vendor.company_name,
-                    "email": vendor.email,
-                    "address": vendor.address,
-                    "profile_picture": vendor.profile_picture
-                }
+                "vendor": VendorSerializer(vendor).data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -134,12 +129,7 @@ class VendorViewSet(SearchDeleteViewSet):
             instance.save()
             return Response({
                 "message": "Vendor updated successfully",
-                "vendor": {
-                    "company_name": instance.company_name,
-                    "email": instance.email,
-                    "address": instance.address,
-                    "profile_picture": instance.profile_picture,
-                }
+                "vendor": VendorSerializer(instance).data
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
