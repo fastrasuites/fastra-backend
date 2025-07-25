@@ -110,14 +110,10 @@ class VendorViewSet(SearchDeleteViewSet):
         if serializer.is_valid():
             validated_data = self.handle_profile_picture(serializer.validated_data)
             vendor = Vendor.objects.create(**validated_data)
+            vendor_serializer = VendorSerializer(instance=vendor, context={'request': request})
             return Response({
                 "message": "Vendor created successfully",
-                "vendor": {
-                    "company_name": vendor.company_name,
-                    "email": vendor.email,
-                    "address": vendor.address,
-                    "profile_picture": vendor.profile_picture
-                }
+                "vendor": vendor_serializer.data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
