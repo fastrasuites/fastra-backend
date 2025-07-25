@@ -112,7 +112,7 @@ class VendorViewSet(SearchDeleteViewSet):
             vendor = Vendor.objects.create(**validated_data)
             return Response({
                 "message": "Vendor created successfully",
-                "vendor": VendorSerializer(vendor).data
+                "vendor": VendorSerializer(vendor, context={'request': request}).data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
