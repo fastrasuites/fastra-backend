@@ -120,7 +120,8 @@ class VendorViewSet(SearchDeleteViewSet):
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
-        serializer = VendorSerializer(instance, data=request.data, partial=partial)
+        serializer = VendorSerializer(instance, data=request.data, partial=partial,
+                                      context={'request': request, 'skip_validation': True})
 
         if serializer.is_valid():
             validated_data = self.handle_profile_picture(serializer.validated_data)
@@ -129,7 +130,7 @@ class VendorViewSet(SearchDeleteViewSet):
             instance.save()
             return Response({
                 "message": "Vendor updated successfully",
-                "vendor": VendorSerializer(instance).data
+                "vendor": VendorSerializer(instance, context={'request': request}).data
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

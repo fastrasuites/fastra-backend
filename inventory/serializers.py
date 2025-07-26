@@ -195,8 +195,11 @@ class ScrapItemSerializer(serializers.HyperlinkedModelSerializer):
         lookup_field='id',  # ✅ use 'id' as lookup field
         lookup_url_kwarg='id',
     )
-    product = serializers.HyperlinkedRelatedField(queryset=Product.objects.filter(is_hidden=False),
-                                                  view_name='product-detail')
+    # product = serializers.HyperlinkedRelatedField(queryset=Product.objects.filter(is_hidden=False),
+    #                                               view_name='product-detail')
+    product = serializers.PrimaryKeyRelatedField(
+    queryset=Product.objects.filter(is_hidden=False)
+    )
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
     scrap_quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
 
@@ -243,6 +246,7 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
                 raise serializers.ValidationError("Invalid Product")
         return data
 
+    @transaction.atomic
     def create(self, validated_data):
         """
         Create a new Scrap with its associated items.
@@ -255,7 +259,8 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
         for item_data in items_data:
             product = item_data['product']
             scrap_quantity = item_data['scrap_quantity']
-            ScrapItem.objects.create(scrap=scrap, **item_data)
+            item_data.pop('product')
+            ScrapItem.objects.create(scrap=scrap, product=product, **item_data)
             # Update per-location stock
             # Update product quantity if done
             if scrap.status == "done":
