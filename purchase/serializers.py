@@ -162,7 +162,8 @@ class PurchaseRequestItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseRequestItem
         fields = ['id', 'purchase_request', 'product', 'product_details', 'description', 'qty', 'unit_of_measure',
-                  'estimated_unit_price', 'total_price']
+                  'estimated_unit_price']
+        read_only_fields = ['total_price']
 
     def validate(self, data):
         if data.get('qty') is None or data['qty'] <= 0:
