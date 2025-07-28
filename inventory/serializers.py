@@ -199,7 +199,7 @@ class ScrapItemSerializer(serializers.HyperlinkedModelSerializer):
     # product = serializers.HyperlinkedRelatedField(queryset=Product.objects.filter(is_hidden=False),
     #                                               view_name='product-detail')
     product = serializers.PrimaryKeyRelatedField(
-    queryset=Product.objects.filter(is_hidden=False)
+        queryset=Product.objects.filter(is_hidden=False)
     )
     id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
     scrap_quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
@@ -356,7 +356,9 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     related_po = serializers.PrimaryKeyRelatedField(
         many=False,
         queryset=PurchaseOrder.objects.filter(is_hidden=False, status='completed'),
-        allow_null=True
+        allow_null=True,
+        allow_empty=True,
+        required=False,
     )
     receipt_type = serializers.ChoiceField(choices=INCOMING_PRODUCT_RECEIPT_TYPES)
     user_choice = serializers.DictField(
@@ -374,8 +376,8 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = IncomingProduct
         fields = ['incoming_product_id', 'receipt_type', 'related_po', 'backorder_of', 'user_choice',
-                  'supplier', 'source_location', 'source_location_details', 'incoming_product_items', 'destination_location',
-                   'destination_location_details', 'status',
+                  'supplier', 'source_location', 'source_location_details', 'incoming_product_items',
+                  'destination_location', 'destination_location_details', 'status',
                   'is_validated', 'can_edit', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated', "source_location_details", "destination_location_details"]
 
