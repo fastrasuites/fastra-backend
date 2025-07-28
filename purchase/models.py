@@ -371,8 +371,8 @@ class PurchaseRequest(models.Model):
 
     @property
     def pr_total_price(self):
-        return PurchaseRequestItem.objects.filter(is_hidden=False, purchase_request=self).aggregate(
-            total=models.Sum('total_price')
+        return PurchaseRequestItem.objects.filter(purchase_request=self).aggregate(
+            total=models.Sum(models.F('qty') * models.F('estimated_unit_price'))
         )['total'] or 0.00
 
     class Meta:
@@ -508,8 +508,8 @@ class RequestForQuotation(models.Model):
 
     @property
     def rfq_total_price(self):
-        return RequestForQuotationItem.objects.filter(is_hidden=False, request_for_quotation=self).aggregate(
-            total=models.Sum('total_price')
+        return RequestForQuotationItem.objects.filter(request_for_quotation=self).aggregate(
+            total=models.Sum(models.F('qty') * models.F('estimated_unit_price'))
         )['total'] or 0.00
 
     @property
@@ -519,33 +519,33 @@ class RequestForQuotation(models.Model):
             return timezone.now() > self.expiry_date
         return False
 
-    def send_email(self):
-        """
-        A function to send an email containing the RFQ to the vendor when a RFQ is created.
-        """
-        subject = f"Request for Quotation: {self.id}"
-        rfq_data = {
-            'id': self.id,
-            'date_created': self.date_created.strftime('%Y-%m-%d'),
-            'date_updated': self.date_updated.strftime('%Y-%m-%d'),
-            'expiry_date': self.expiry_date.strftime('%Y-%m-%d') if self.expiry_date else None,
-            'vendor': self.vendor.company_name,
-            'status': self.status,
-            'items': [
-                {
-                    'product': item.product.product_name,
-                    'description': item.product.product_description,
-                    'qty': item.qty,
-                    'estimated_unit_price': str(item.estimated_unit_price),
-                    'actual_unit_price': str(item.actual_unit_price),
-                    'total_price': str(item.total_price)
-                }
-                for item in self.items.all()
-            ],
-            'rfq_total_price': str(self.rfq_total_price)
-        }
-        message = json.dumps(rfq_data)
-        self.vendor.send_email(subject, message)
+    # def send_email(self):
+    #     """
+    #     A function to send an email containing the RFQ to the vendor when a RFQ is created.
+    #     """
+    #     subject = f"Request for Quotation: {self.id}"
+    #     rfq_data = {
+    #         'id': self.id,
+    #         'date_created': self.date_created.strftime('%Y-%m-%d'),
+    #         'date_updated': self.date_updated.strftime('%Y-%m-%d'),
+    #         'expiry_date': self.expiry_date.strftime('%Y-%m-%d') if self.expiry_date else None,
+    #         'vendor': self.vendor.company_name,
+    #         'status': self.status,
+    #         'items': [
+    #             {
+    #                 'product': item.product.product_name,
+    #                 'description': item.product.product_description,
+    #                 'qty': item.qty,
+    #                 'estimated_unit_price': str(item.estimated_unit_price),
+    #                 'actual_unit_price': str(item.actual_unit_price),
+    #                 'total_price': str(item.total_price)
+    #             }
+    #             for item in self.items.all()
+    #         ],
+    #         'rfq_total_price': str(self.rfq_total_price)
+    #     }
+    #     message = json.dumps(rfq_data)
+    #     self.vendor.send_email(subject, message)
 
 
 class RequestForQuotationItem(models.Model):
@@ -643,8 +643,8 @@ class PurchaseOrder(models.Model):
 
     @property
     def po_total_price(self):
-        return PurchaseOrderItem.objects.filter(is_hidden=False, purchase_order=self).aggregate(
-            total=models.Sum('total_price')
+        return PurchaseOrderItem.objects.filter(purchase_order=self).aggregate(
+            total=models.Sum(models.F('qty') * models.F('estimated_unit_price'))
         )['total'] or 0.00
 
     def send_email(self):
@@ -665,7 +665,7 @@ class PurchaseOrder(models.Model):
             'delivery_terms': self.delivery_terms,
             'items': [
                 {
-                    'product': item.product.name,
+                    'product': item.product.product_name,
                     'description': item.description,
                     'qty': item.qty,
                     'estimated_unit_price': str(item.estimated_unit_price),
