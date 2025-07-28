@@ -109,16 +109,19 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         """
         Validate the Stock Adjustment data.
         """
-        items_data = attrs.get('stock_adjustment_items', [])
-        if not items_data:
-            raise serializers.ValidationError("At least one item is required to create a Stock Adjustment.")
-        for item in items_data:
-            product = item.get('product')
-            adjusted_quantity = item.get('adjusted_quantity', 0)
-            if adjusted_quantity < 0:
-                raise serializers.ValidationError("Adjusted quantity cannot be negative.")
-            if not Product.objects.filter(id=product.id, is_hidden=False).exists():
-                raise serializers.ValidationError("Invalid Product")
+        if attrs.get('adjustment_type'):
+            raise serializers.ValidationError("Field Adjustment type cannot be updated")
+        if not self.instance:
+            items_data = attrs.get('stock_adjustment_items', [])
+            if not items_data:
+                raise serializers.ValidationError("At least one item is required to create a Stock Adjustment.")
+            for item in items_data:
+                product = item.get('product')
+                adjusted_quantity = item.get('adjusted_quantity', 0)
+                if adjusted_quantity < 0:
+                    raise serializers.ValidationError("Adjusted quantity cannot be negative.")
+                if not Product.objects.filter(id=product.id, is_hidden=False).exists():
+                    raise serializers.ValidationError("Invalid Product")
         return attrs
 
     def create(self, validated_data):
@@ -128,8 +131,6 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         if not validated_data.get('warehouse_location') and MultiLocation.objects.filter(is_activated=False).exists():
             validated_data['warehouse_location'] = Location.get_active_locations().first()
         items_data = validated_data.pop('stock_adjustment_items')
-        if not items_data:
-            raise serializers.ValidationError("At least one item is required to create a Stock Adjustment.")
         stock_adjustment = StockAdjustment.objects.create(**validated_data)
         warehouse_location = stock_adjustment.warehouse_location
 
