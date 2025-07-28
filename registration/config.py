@@ -3,6 +3,8 @@
 DESIRED_APP_LABELS = ['inventory', 'purchase']
 
 DESIRED_INVENTORY_MODELS = [
+    'location', #DONE
+    'multilocation', #DONE
     'stockmove', #DONE
     'incomingproduct', #DONE
     'deliveryorder', #DONE
