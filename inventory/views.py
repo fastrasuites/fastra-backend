@@ -198,13 +198,13 @@ class ScrapViewSet(SearchDeleteViewSet):
                             item_id = item.get('id', None)
                             if item_id and ScrapItem.objects.filter(id=item_id, scrap_id=instance.id).exists():
                                 item_data = ScrapItem.objects.get(id=item_id, scrap_id=instance.id)
-                                item_data.product_id = item["product"][-2]
+                                item_data.product_id = item["product"]
                                 item_data.scrap_quantity = item["scrap_quantity"]
                                 item_data.save()
                             else:
                                 ScrapItem.objects.create(
                                     scrap_id=instance.id,
-                                    product_id=item["product"][-2],
+                                    product_id=item["product"],
                                     scrap_quantity=item["scrap_quantity"],
                                 )
                         except KeyError as ke:

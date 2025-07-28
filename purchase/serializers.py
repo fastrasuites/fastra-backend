@@ -78,6 +78,8 @@ class VendorSerializer(serializers.HyperlinkedModelSerializer):
         extra_kwargs = {'profile_picture': {'read_only': True}}
 
     def validate(self, data):
+        if self.context.get('skip_validation', False):
+            return data
         if Vendor.objects.filter(company_name=data['company_name']).exclude(
                 pk=self.instance.pk if self.instance else None).exists():
             raise serializers.ValidationError('A vendor with this company name already exists.')
