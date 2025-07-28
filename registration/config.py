@@ -22,3 +22,12 @@ DESIRED_PURCHASE_MODELS = [
     'requestforquotation', #DONE
     'unitofmeasure', #DONE
 ]
+
+RIGHTS = [
+    "view",
+    "create",
+    "edit",
+    "approve",
+    "delete",
+    "reject"
+    ]

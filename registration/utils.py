@@ -10,7 +10,8 @@ from contextlib import contextmanager
 
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from registration.models import Tenant
+from registration.config import RIGHTS
+from registration.models import AccessRight, Tenant
 from users.models import TenantUser
 from django_tenants.utils import schema_context
 import logging
@@ -95,3 +96,10 @@ def make_authentication(userid):
         
         return None  
 
+
+def conditional_rights_population():
+    if not AccessRight.objects.exists():
+        rights_obj_list = [AccessRight(name=right) for right in RIGHTS]
+        created_rights = AccessRight.objects.bulk_create(rights_obj_list)
+        return created_rights
+    return None
