@@ -420,7 +420,7 @@ class RequestForQuotationSerializer(serializers.HyperlinkedModelSerializer):
         model = RequestForQuotation
         fields = ['url', 'id', 'expiry_date', 'vendor', 'purchase_request', 'currency',
                   'status', 'items', 'is_hidden', 'is_expired', 'is_submitted',
-                  'can_edit', 'vendor_details', 'currency_details']
+                  'can_edit', 'vendor_details', 'currency_details', 'date_created', 'date_updated', 'rfq_total_price']
         read_only_fields = ['date_created', 'date_updated', 'rfq_total_price']
 
     def validate_create(self, data):
@@ -642,7 +642,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         return super().to_internal_value(data)
 
     def validate_create(self, data):
-        required_fields = ['items', 'created_by', 'currency', 'vendor',  'related_rfq', 'created_by']
+        required_fields = ['items', 'created_by', 'currency', 'vendor', 'created_by']
         if data.get('related_rfq'):
             rfq = data['related_rfq']
             if rfq.status != "approved":
@@ -656,11 +656,10 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
                 raise serializers.ValidationError(
                     f"{field.replace('_', ' ').capitalize()} is required to create a purchase request."
                 )
-        if data['destination_location'] and data.get('destination_location') is None and not MultiLocation.objects.filter(is_activated=False).exists():
+        if (not data.get('destination_location') or data.get('destination_location') is None) and not MultiLocation.objects.filter(is_activated=False).exists():
             raise serializers.ValidationError("Destination location is required when multi-location is activated.")
         if PurchaseOrder.objects.filter(
             created_by=data.get('created_by'),
-            related_rfq=data.get('related_rfq'),
             destination_location=data.get('destination_location'),
             vendor=data.get('vendor'),
             status__in=['draft', 'pending'],
