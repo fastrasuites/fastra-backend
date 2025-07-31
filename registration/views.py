@@ -15,7 +15,7 @@ from users.serializers import AccessGroupRightSerializer
 from .models import Tenant, Domain
 from .serializers import AccessRightSerializer, TenantRegistrationSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .utils import Util, make_authentication, set_tenant_schema
+from .utils import Util, conditional_rights_population, make_authentication, set_tenant_schema
 from django.contrib.sites.shortcuts import get_current_site
 import jwt
 from django.conf import settings
@@ -188,6 +188,7 @@ class LoginView(APIView):
         refresh['schema_name'] = tenant_schema_name
 
         try:
+            conditional_rights_population()
             data = self.get_access_groups(tenant_schema_name, user)
         except Exception as e:
             return Response({'detail': f'Failed to fetch user access groups: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

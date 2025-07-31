@@ -266,7 +266,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
     queryset = IncomingProduct.objects.all()
     serializer_class = IncomingProductSerializer
     app_label = "inventory"
-    model_name = "stockmove"
+    model_name = "incomingproduct"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     search_fields = ['date_created', 'status', 'destination_location']
     lookup_field = 'incoming_product_id'
