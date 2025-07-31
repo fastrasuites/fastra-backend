@@ -248,6 +248,13 @@ class Product(models.Model):
         if text.slugify(self.product_category) not in valid_categories:
             raise ValidationError(
                 f"Invalid category '{self.product_category}'. Valid categories are: {', '.join(valid_categories)}.")
+        if Product.objects.exclude(
+                pk=self.pk if self.pk else None
+        ).filter(
+            product_name__iexact=self.product_name,
+            product_category__iexact=text.slugify(self.product_category) if self.product_category else None
+        ).exists():
+            raise ValidationError('A product with this name and category already exists.')
 
     def save(self, *args, **kwargs):
         self.clean()  # Call clean method before saving

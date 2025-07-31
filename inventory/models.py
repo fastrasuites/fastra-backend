@@ -473,9 +473,16 @@ class StockAdjustmentItem(models.Model):
         decimal_places=2,
         verbose_name='Adjusted Quantity'
     )
+    current_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='Current Quantity',
+        null=True,
+        blank=True
+    )
 
     @property
-    def current_quantity(self):
+    def effective_quantity(self):
         location = self.stock_adjustment.warehouse_location
         if self.product.location_stocks.filter(location=location).exists():
             return self.product.location_stocks.filter(location=location).first().quantity
@@ -495,6 +502,11 @@ class StockAdjustmentItem(models.Model):
                 raise ValidationError("Adjusted quantity cannot be negative")
         else:
             raise ValidationError("Invalid Product")
+        current_stock = self.product.location_stocks.filter(location=self.stock_adjustment.warehouse_location).first()
+        if not current_stock:
+            self.current_quantity = Decimal('0')
+        else:
+            self.current_quantity = current_stock.quantity
         super().save(*args, **kwargs)
 
     class Meta:
@@ -569,17 +581,23 @@ class ScrapItem(models.Model):
     scrap_quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        editable=False,
         verbose_name='Scrap Quantity'
     )
+    adjusted_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name='Adjusted Quantity',
+    )
 
-    @property
-    def adjusted_quantity(self):
-        """Calculate the adjusted quantity based on the current stock level"""
-        product_in_location = self.product.location_stocks.filter(location=self.scrap.warehouse_location).first()
-        if product_in_location:
-            return product_in_location.quantity - self.scrap_quantity
-        return Decimal('0')
+    # @property
+    # def adjusted_quantity(self):
+    #     """Calculate the adjusted quantity based on the current stock level"""
+    #     product_in_location = self.product.location_stocks.filter(location=self.scrap.warehouse_location).first()
+    #     if product_in_location:
+    #         return product_in_location.quantity - self.scrap_quantity
+    #     return Decimal('0')
 
     objects = models.Manager()
 
@@ -592,6 +610,12 @@ class ScrapItem(models.Model):
                 raise ValidationError("Scrap quantity is required")
             if self.adjusted_quantity < 0:
                 raise ValidationError("Adjusted quantity cannot be negative")
+            current_stock = self.product.location_stocks.filter(location=self.scrap.warehouse_location).first()
+            if not current_stock:
+                raise ValidationError("The product in this Scrap item does not exist")
+            if current_stock.quantity - self.scrap_quantity < 0:
+                raise ValidationError("Scrap quantity cannot be greater than current stock quantity")
+            self.adjusted_quantity = current_stock.quantity - self.scrap_quantity
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
