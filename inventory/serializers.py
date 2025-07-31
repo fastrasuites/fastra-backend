@@ -476,7 +476,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
                     "Set 'backorder' in user_choice to True if this is intentional."
                 )
         # Ensure that the user_choice is a dictionary if provided
-        user_choice = data.get('user_choice', {})
+        user_choice = data.get('user_choice', None)
         if not isinstance(user_choice, dict):
             raise serializers.ValidationError("User choice must be a dictionary.")
         if user_choice:
