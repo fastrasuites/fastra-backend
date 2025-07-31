@@ -73,14 +73,20 @@ class StockAdjustmentItemSerializer(serializers.ModelSerializer):
         lookup_field='id',  # ✅ use 'id' as lookup field
         lookup_url_kwarg='id',
     )
-    product = serializers.HyperlinkedRelatedField(queryset=Product.objects.filter(is_hidden=False),
-                                                  view_name='product-detail')
-    id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.filter(is_hidden=False),
+    )
+    current_quantity = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True,
+        help_text="Current quantity in the warehouse location before adjustment."
+    )
+    product_details = ProductSerializer(source='product', read_only=True)
+    id = serializers.CharField(required=False)
 
     class Meta:
         model = StockAdjustmentItem
-        fields = ['id', 'product', 'unit_of_measure', 'adjusted_quantity', 'stock_adjustment']
-        read_only_fields = ['current_quantity']
+        fields = ['id', 'product', 'unit_of_measure', 'adjusted_quantity', 'stock_adjustment',
+                  'effective_quantity', 'current_quantity', 'product_details']
 
 
 class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
@@ -91,9 +97,9 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         queryset=Location.get_active_locations().filter(is_hidden=False),
         required=False
     )
-    warehouse_location_details = LocationSerializer(source = 'warehouse_location', read_only=True)
+    warehouse_location_details = LocationSerializer(source='warehouse_location', read_only=True)
     stock_adjustment_items = StockAdjustmentItemSerializer(many=True)
-    id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
+    id = serializers.CharField(required=False)  # Make the id field read-only
 
     class Meta:
         model = StockAdjustment
@@ -158,33 +164,75 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
         """
         Update an existing instance with validated data.
         """
+        partial = self.context.get('partial', False)
         items_data = validated_data.pop('stock_adjustment_items', None)
+        status = validated_data.get('status', None)
+        was_validated = instance.status == 'done'
+        is_now_validated = status == 'done'
+        if status and status != instance.status:
+            if status not in ['draft', 'done']:
+                raise serializers.ValidationError("Invalid status value. Must be one of: draft, done.")
+        if was_validated:
+            raise serializers.ValidationError(
+                "Stock Adjustment cannot be updated once the status is set to 'done'."
+            )
         warehouse_location = validated_data.get('warehouse_location', instance.warehouse_location)
-        if items_data:
-            instance.stock_adjustment_items.all().delete()
-            for item_data in items_data:
-                product = item_data['product']
-                adjusted_quantity = item_data['adjusted_quantity']
-                StockAdjustmentItem.objects.create(stock_adjustment=instance, **item_data)
-                # Update per-location stock
-                # Only update stock if the status is being changed to done in this update
-                was_validated = getattr(instance, 'status', None) == 'done'
-                is_now_validated = validated_data.get('status', None) == 'done'
-                if not was_validated and is_now_validated:
-                    location_stock, created = LocationStock.objects.get_or_create(
-                        location=warehouse_location, product=product,
-                        defaults={'quantity': 0}
-                    )
-                    if location_stock:
-                        location_stock.quantity = adjusted_quantity
-                        location_stock.save()
-                    else:
-                        raise serializers.ValidationError(
-                            "Product does not exist in the specified warehouse location."
-                        )
+
+        # Update instance fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
+        if items_data:
+            existing_items = {item.id: item for item in instance.stock_adjustment_items.all()}
+            incoming_item_ids = set(item_data.get('id') for item_data in items_data if item_data.get('id'))
+
+            if partial:
+                # Only update or add provided items, do not delete others
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        stock_adjustment_item = existing_items[item_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(stock_adjustment_item, attr, value)
+                        stock_adjustment_item.save()
+                    else:
+                        StockAdjustmentItem.objects.create(stock_adjustment=instance, **item_data)
+            else:
+                # Full update: delete items not present, update/add others
+                for item_id in set(existing_items.keys()) - incoming_item_ids:
+                    existing_items[item_id].delete()
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        stock_adjustment_item = existing_items[item_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(stock_adjustment_item, attr, value)
+                        stock_adjustment_item.save()
+                    else:
+                        StockAdjustmentItem.objects.create(stock_adjustment=instance, **item_data)
+
+
+        # Update per-location stock
+        # Only update stock if the status is being changed to done in this update
+
+        if not was_validated and is_now_validated:
+            for item in instance.stock_adjustment_items.all():
+                product = item.product
+                adjusted_quantity = item.adjusted_quantity
+                location_stock, created = LocationStock.objects.get_or_create(
+                    location=warehouse_location, product=product,
+                    defaults={'quantity': 0}
+                )
+                if location_stock:
+                    location_stock.quantity = adjusted_quantity
+                    location_stock.save()
+                else:
+                    raise serializers.ValidationError(
+                        "Product does not exist in the specified warehouse location."
+                    )
         return instance
 
 
@@ -201,13 +249,14 @@ class ScrapItemSerializer(serializers.HyperlinkedModelSerializer):
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.filter(is_hidden=False)
     )
-    id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
+    id = serializers.CharField(required=False)  # Make the id field read-only
     scrap_quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
+    adjusted_quantity = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    product_details = ProductSerializer(source='product', read_only=True)
 
     class Meta:
         model = ScrapItem
-        fields = ['id', 'scrap', 'product', 'scrap_quantity']
-        read_only_fields = ['adjusted_quantity']
+        fields = ['id', 'scrap', 'product', 'scrap_quantity', 'adjusted_quantity', 'product_details']
 
 
 class ScrapSerializer(serializers.HyperlinkedModelSerializer):
@@ -218,7 +267,7 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
     )
     warehouse_location_details = LocationSerializer(source='warehouse_location', read_only=True)
     scrap_items = ScrapItemSerializer(many=True)
-    id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
+    id = serializers.CharField(required=False)  # Make the id field read-only
 
 
     class Meta:
@@ -280,7 +329,15 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
     def update(self, instance, validated_data):
         partial = self.context.get('partial', False)
         items_data = validated_data.pop('scrap_items', None)
+        status = validated_data.get('status', None)
+        was_validated = instance.status == 'done'
+        is_now_validated = status == 'done'
         warehouse_location = validated_data.get('warehouse_location', instance.warehouse_location)
+
+        if was_validated:
+            raise serializers.ValidationError(
+                "Scrap cannot be updated once the status is set to 'done'."
+            )
 
         # Update instance fields
         for attr, value in validated_data.items():
@@ -318,22 +375,20 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
                     else:
                         ScrapItem.objects.create(scrap=instance, **item_data)
 
-            # Update location stock if status changed to "done"
-            was_validated = getattr(instance, 'status', None) == 'done'
-            is_now_validated = validated_data.get('status', None) == 'done'
-            if not was_validated and is_now_validated:
-                for item_data in items_data:
-                    product = item_data['product']
-                    scrap_quantity = item_data['scrap_quantity']
-                    location_stock = LocationStock.objects.filter(
-                        location=warehouse_location, product=product
-                    ).first()
-                    if not location_stock:
-                        raise serializers.ValidationError("Location stock not found for the product.")
-                    if location_stock.quantity < scrap_quantity:
-                        raise serializers.ValidationError("Insufficient stock to scrap this quantity.")
-                    location_stock.quantity -= scrap_quantity
-                    location_stock.save()
+        # Update location stock if status changed to "done"
+        if not was_validated and is_now_validated:
+            for item in instance.scrap_items.all():
+                product = item.product
+                scrap_quantity = item.scrap_quantity
+                location_stock = LocationStock.objects.filter(
+                    location=warehouse_location, product=product
+                ).first()
+                if not location_stock:
+                    raise serializers.ValidationError("Location stock not found for the product.")
+                if location_stock.quantity < scrap_quantity:
+                    raise serializers.ValidationError("Insufficient stock to scrap this quantity.")
+                location_stock.quantity -= scrap_quantity
+                location_stock.save()
 
         return instance
 
@@ -369,7 +424,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         help_text="Valid keys are: 'backorder', 'overpay'."
     )
     backorder_of = serializers.ReadOnlyField()
-    incoming_product_id = serializers.CharField(required=False, read_only=True)  # Make the id field read-only
+    incoming_product_id = serializers.CharField(required=False)  # Make the id field read-only
     source_location_details = LocationSerializer(source='source_location', read_only=True)
     destination_location_details = LocationSerializer(source='destination_location', read_only=True)
 
@@ -393,31 +448,51 @@ class IncomingProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("At least one item is required.")
         for item in items_data:
             product = item.get('product')
-            expected_quantity = item.get('expected_quantity', None)
+            expected_quantity = item.get('expected_quantity', 0)
             quantity_received = item.get('quantity_received', 0)
             if not product:
                 raise serializers.ValidationError("Invalid Product")
             if related_po:
                 # Set expected_quantity from the corresponding PO item
                 po_item = related_po.items.filter(product_id=product.id).first()
-                if not po_item:
-                    raise serializers.ValidationError("Product not found in related purchase order items.")
-                else:
+                if po_item:
                     if expected_quantity is None:
                         raise serializers.ValidationError("Expected quantity is required if there is no related "
                                                           "purchase order.")
+                    if po_item and expected_quantity != po_item.qty:
+                        raise serializers.ValidationError("Purchase Order Item quantity mismatch.")
+                else:
+                    raise serializers.ValidationError("Product not found in related purchase order items.")
             if quantity_received < 0 or expected_quantity < 0:
                 raise serializers.ValidationError("Quantities cannot be negative.")
+            if quantity_received > expected_quantity:
+                raise serializers.ValidationError(
+                    "Received quantity exceeds expected quantity. "
+                    "Set 'overpay' in user_choice to True if this is intentional."
+                )
+            elif quantity_received < expected_quantity:
+                raise serializers.ValidationError(
+                    "Received quantity is less than expected quantity. "
+                    "Set 'backorder' in user_choice to True if this is intentional."
+                )
         # Ensure that the user_choice is a dictionary if provided
         user_choice = data.get('user_choice', {})
         if not isinstance(user_choice, dict):
             raise serializers.ValidationError("User choice must be a dictionary.")
         if user_choice:
+            # Ensure that user_choice is either one of the valid options or none
+            if len(user_choice) not in (0, 1):
+                raise serializers.ValidationError(
+                    "User choice must contain only one key-value pair or be empty."
+                )
+            if not all(key in ['backorder', 'overpay'] for key in user_choice.keys()):
+                raise serializers.ValidationError(
+                    "User choice keys must be 'backorder' or 'overpay'."
+                )
             # Ensure that the user_choice contains valid keys
-            valid_keys = ['backorder', 'overpay']
-            for key in user_choice.keys():
-                if key not in valid_keys:
-                    raise serializers.ValidationError(f"Invalid user choice key: {key}. Valid keys are: {', '.join(valid_keys)}")
+            # Ensure that the user_choice values are boolean
+            if not all(isinstance(value, bool) for value in user_choice.values()):
+                raise serializers.ValidationError(f"Value for the User choice key must be a boolean.")
 
         # Ensure that the receipt type is one of the allowed types
         receipt_type = data.get('receipt_type')
@@ -436,27 +511,6 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         if not data.get('destination_location'):
             raise serializers.ValidationError("Destination location is required.")
 
-        # Ensure when validated, all required fields are present
-        if data.get('is_validated') and not data.get('destination_location'):
-            raise serializers.ValidationError("Destination location is required when the incoming product is validated.")
-        if data.get('is_validated') and not data.get('incoming_product_items'):
-            raise serializers.ValidationError("At least one incoming product item is required when the incoming"
-                                              "product is validated.")
-        if data.get('is_validated') and not data.get('source_location'):
-            raise serializers.ValidationError("Source location is required when the incoming product is validated.")
-        if data.get('is_validated') and not data.get('supplier'):
-            raise serializers.ValidationError("Supplier is required when the incoming product is validated.")
-        if data.get('is_validated') and not data.get('receipt_type'):
-            raise serializers.ValidationError("Receipt type is required when the incoming product is validated.")
-        if data.get('is_validated') and not data.get('related_po'):
-            raise serializers.ValidationError("Related purchase order is required when the incoming product is "
-                                              "validated.")
-        if data.get('is_validated') and data.get('related_po') and not PurchaseOrder.objects.filter(id=data['related_po'].id, is_hidden=False).exists():
-            raise serializers.ValidationError("Related purchase order does not exist or is hidden.")
-        if data.get('is_validated') and data.get('related_po') and not data.get('incoming_product_items'):
-            raise serializers.ValidationError("At least one incoming product item is required when the incoming "
-                                              "product is validated with a related purchase order.")
-
         return data
 
     def create(self, validated_data):
@@ -467,19 +521,10 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         user_choice = validated_data.pop('user_choice', {})
         related_po = validated_data.get('related_po', None)
         incoming_product = IncomingProduct.objects.create(**validated_data)
-        backorder = incoming_product.process_receipt(items_data, user_choice)
         location = validated_data['destination_location']
         for item_data in items_data:
             product = item_data.get('product')
-            expected_quantity = item_data.get('expected_quantity', None)
             quantity_received = item_data.get('quantity_received', 0)
-            # Set expected_quantity from the corresponding PO item
-            if related_po:
-                po_item = related_po.items.filter(product_id=product.id).first()
-                if po_item:
-                    item_data['expected_quantity'] = po_item.qty
-            else:
-                item_data['expected_quantity'] = expected_quantity
             ip_item = IncomingProductItem.objects.create(incoming_product=incoming_product, **item_data)
             if not ip_item:
                 raise serializers.ValidationError("Failed to create Incoming Product Item.")
@@ -496,8 +541,11 @@ class IncomingProductSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         "Product does not exist in the specified warehouse location."
                     )
-            if backorder:
-                return {"incoming_product": incoming_product, "backorder": backorder}
+            if user_choice and user_choice['backorder']:
+            # If backorder is True, create a backorder record
+                backorder = incoming_product.process_receipt(items_data, user_choice)
+                if backorder:
+                    return {"incoming_product": incoming_product, "backorder": backorder}
         # If no backorder, just return the incoming product
         return incoming_product
 
@@ -509,46 +557,88 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         user_choice = validated_data.pop('user_choice', {})
         related_po = validated_data.get('related_po', getattr(instance, 'related_po', None))
         destination_location = validated_data.get('destination_location', instance.destination_location)
-        if items_data:
-            # Clear existing items and add new ones
-            instance.incoming_product_items.all().delete()
-            for item_data in items_data:
-                product = item_data.get('product')
-                expected_quantity = item_data.get('expected_quantity', None)
-                quantity_received = item_data.get('quantity_received', 0)
-                # Set expected_quantity from PO if related_po exists
-                if related_po:
-                    po_item = related_po.items.filter(product_id=product.id).first()
-                    if po_item:
-                        item_data['expected_quantity'] = po_item.qty
-                    else:
-                        raise serializers.ValidationError("Product not found in related purchase order items.")
-                else:
-                    item_data['expected_quantity'] = expected_quantity
-                ip_item = IncomingProductItem.objects.create(incoming_product=instance, **item_data)
-                if not ip_item:
-                    raise serializers.ValidationError("Failed to create Incoming Product Item.")
-                # Update product quantity if validated
-                # Only update stock if the status is being changed to validated in this update
-                was_validated = getattr(instance, 'status', None) == 'validated'
-                is_now_validated = validated_data.get('status', None) == 'validated'
-                if not was_validated and is_now_validated:
-                    location_stock, created = LocationStock.objects.get_or_create(
-                        location=destination_location, product=product,
-                        defaults={'quantity': 0}
-                    )
-                    if location_stock:
-                        location_stock.quantity += quantity_received
-                        location_stock.save()
-                    else:
-                        raise serializers.ValidationError(
-                            "Product does not exist in the specified warehouse location."
-                        )
+        partial = self.context.get('partial', False)
+        status = validated_data.get('status', None)
+        was_validated = instance.status == 'validated'
+        is_now_validated = status == 'validated'
+
+        if was_validated:
+            raise serializers.ValidationError(
+                "Incoming Product cannot be updated once the status is set to 'validated'."
+            )
 
         # Update the instance fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
+        if items_data:
+            existing_items = {item.id: item for item in instance.incoming_product_items.all()}
+            incoming_item_ids = set(item_data.get('id') for item_data in items_data if item_data.get('id'))
+
+            if partial:
+                # Only update or add provided items, do not delete others
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        ip_item = existing_items[item_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(ip_item, attr, value)
+                        ip_item.save()
+                    else:
+                        IncomingProductItem.objects.create(incoming_product=instance, **item_data)
+            else:
+                # Full update: delete items not present, update/add others
+                for item_id in set(existing_items.keys()) - incoming_item_ids:
+                    existing_items[item_id].delete()
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        ip_item = existing_items[item_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(ip_item, attr, value)
+                        ip_item.save()
+                    else:
+                        IncomingProductItem.objects.create(incoming_product=instance, **item_data)
+            # # Clear existing items and add new ones
+            # instance.incoming_product_items.all().delete()
+            # for item_data in items_data:
+            #     product = item_data.get('product')
+            #     expected_quantity = item_data.get('expected_quantity', None)
+            #     quantity_received = item_data.get('quantity_received', 0)
+            #     # Set expected_quantity from PO if related_po exists
+            #     if related_po:
+            #         po_item = related_po.items.filter(product_id=product.id).first()
+            #         if po_item:
+            #             item_data['expected_quantity'] = po_item.qty
+            #         else:
+            #             raise serializers.ValidationError("Product not found in related purchase order items.")
+            #     else:
+            #         item_data['expected_quantity'] = expected_quantity
+            #     ip_item = IncomingProductItem.objects.create(incoming_product=instance, **item_data)
+            #     if not ip_item:
+            #         raise serializers.ValidationError("Failed to create Incoming Product Item.")
+                # Update product quantity if validated
+                # Only update stock if the status is being changed to validated in this update
+
+        if not was_validated and is_now_validated:
+            for item in instance.incoming_product_items.all():
+                product = item.product
+                quantity_received = item.quantity_received
+                location_stock, created = LocationStock.objects.get_or_create(
+                    location=destination_location, product=product,
+                    defaults={'quantity': 0}
+                )
+                if location_stock:
+                    location_stock.quantity += quantity_received
+                    location_stock.save()
+                else:
+                    raise serializers.ValidationError(
+                        "Product does not exist in the specified warehouse location."
+                    )
+
         return instance
 
 
