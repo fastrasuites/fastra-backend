@@ -10,7 +10,7 @@ from django.utils import timezone
 from decimal import Decimal
 
 from users.models import TenantUser
-from purchase.models import Product, Vendor, PurchaseOrder
+from purchase.models import Product, UnitOfMeasure, Vendor, PurchaseOrder
 from decimal import Decimal, ROUND_HALF_UP
 
 
@@ -801,17 +801,15 @@ class StockMove(models.Model):
         decimal_places=3,
         validators=[MinValueValidator(Decimal('0.001'))]
     )
+    unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.PROTECT,
+        related_name='unit_of_measures_stock_moves')
     move_type = models.CharField(max_length=10, choices=STOCK_MOVE_TYPES)
 
     # Generic foreign key to link to different inventory record types
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.CharField(max_length=20)  # Changed from PositiveIntegerField to CharField
-    inventory_record = GenericForeignKey('content_type', 'object_id')
     source_document_id = models.CharField(
         max_length=50,
         help_text="Reference number of the source document"
     )
-
     source_location = models.ForeignKey(
         'Location',
         on_delete=models.PROTECT,
@@ -826,23 +824,13 @@ class StockMove(models.Model):
         null=True,
         blank=True
     )
-    status = models.CharField(
-        max_length=20,
-        choices=STOCK_MOVE_STATUS,
-        default='draft'
-    )
     date_moved = models.DateTimeField(
         null=True,
         blank=True,
         help_text="Actual date when the stock movement occurred"
-    )
+    )    
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(
-        TenantUser,
-        on_delete=models.PROTECT,
-        related_name='stock_moves_created'
-    )
     moved_by = models.ForeignKey(
         TenantUser,
         on_delete=models.PROTECT,
@@ -856,8 +844,7 @@ class StockMove(models.Model):
     class Meta:
         ordering = ['-date_created']
         indexes = [
-            models.Index(fields=['content_type', 'object_id']),
-            models.Index(fields=['status', 'move_type']),
+            models.Index(fields=['move_type']),
             models.Index(fields=['date_moved']),
             models.Index(fields=['source_document_id']),
         ]

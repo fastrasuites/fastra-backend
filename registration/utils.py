@@ -86,7 +86,8 @@ def make_authentication(userid):
             try:
                 with schema_context(tenant.schema_name):
                     if TenantUser.objects.filter(user_id=userid).exists():
-                        return tenant.id, tenant.schema_name, tenant.company_name
+                        tenant_user_id = TenantUser.objects.get(user_id=userid).id
+                        return tenant_user_id, tenant.schema_name, tenant.company_name
             except TenantUser.DoesNotExist:
                 logger.warning(f"User {userid} not found in schema {tenant.schema_name}")
                 continue
