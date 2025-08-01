@@ -1,27 +1,94 @@
 
 
-from inventory.models import IncomingProduct, IncomingProductItem, StockMove
+from inventory.models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, IncomingProduct, IncomingProductItem, StockMove
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
 
 
 @receiver(post_save, sender=IncomingProduct)
 def create_incoming_product_stock_move(sender, instance, created, **kwargs):
-    """Create stock move when an incoming inventory record item is created"""
-    if created:
-        if instance.status == "done":
-            items = IncomingProductItem.objects.filter(incoming_product_id=instance.incoming_product_id)
-            product_item_list = [
-                StockMove(
-                    product=item.product,
-                    unit_of_measure=item.product.unit_of_measure,
-                    quantity=item.quantity_received,
-                    move_type='IN',
-                    source_document_id=item.incoming_product_id,  # replace with the appropriate inventory record id
-                    source_location=instance.source_location,
-                    destination_location=instance.destination_location,
-                    # replace with the appropriate inventory record location
-                    moved_by=instance.incoming_record.created_by  # replace with the appropriate inventory record creator
-                ) for item in items 
-            ]
-            IncomingProductItem.objects.bulk_create(product_item_list)
+    """First make a check to know if this record does not exists so as to prevent unnecessary duplications"""
+    if StockMove.objects.filter(
+            source_document_id=instance.incoming_product_id,
+            destination_location=instance.destination_location,
+            move_type='IN'
+        ).exists():
+            print(f"The Stock Move of this source document {instance.incoming_product_id} and move type of IN already exists")
+            return  
+
+    """Create stock move when an incoming inventory record item is validated"""
+    if instance.status == "validated":
+        items = IncomingProductItem.objects.filter(incoming_product_id=instance.incoming_product_id)
+        for item in items:
+            stock_move = StockMove(
+                product=item.product,
+                unit_of_measure=item.product.unit_of_measure,
+                quantity=item.quantity_received,
+                move_type='IN',
+                source_document_id=item.incoming_product_id, 
+                source_location=instance.source_location,
+                destination_location=instance.destination_location,
+                date_created=timezone.now(),
+                date_moved=timezone.now(),
+            )
+            stock_move.save()
+
+
+@receiver(post_save, sender=DeliveryOrder)
+def create_delivery_order_stock_move(sender, instance, created, **kwargs):
+    """First make a check to know if this record does not exists so as to prevent unnecessary duplications"""
+    if StockMove.objects.filter(
+            source_document_id=instance.order_unique_id,
+            delivery_address=instance.delivery_address,
+            move_type='OUT'
+        ).exists():
+            print(f"The Stock Move of this source document {instance.order_unique_id} and move type of OUT already exists")
+            return  
+
+    """Create stock move when a delivery order record item is done"""
+    if instance.status == "done":
+        items = DeliveryOrderItem.objects.filter(delivery_order_id=instance.id)
+        for item in items:
+            stock_move = StockMove(
+                product=item.product_item,
+                unit_of_measure=item.product_item.unit_of_measure,
+                quantity=item.quantity_to_deliver,
+                move_type='OUT',
+                source_document_id=instance.order_unique_id, 
+                source_location=instance.source_location,
+                delivery_address=instance.delivery_address,
+                date_created=timezone.now(),
+                date_moved=timezone.now(),
+            )
+            stock_move.save()
+
+
+
+"""This is a different scenario of the signals. It had to be explicitly called in the serializers where it needed to be triggered"""
+def create_delivery_order_returns_stock_move(instance):
+    """First make a check to know if this record does not exists so as to prevent unnecessary duplications"""
+    if StockMove.objects.filter(
+            source_document_id=instance.unique_record_id,
+            destination_location=instance.return_warehouse_location,
+            move_type='RETURN'
+        ).exists():
+            print(f"The Stock Move of this source document {instance.unique_record_id} and move type of RETURN already exists")
+            return  
+
+    """Create stock move when a delivery order returns record item is done"""
+    items = DeliveryOrderReturnItem.objects.filter(delivery_order_return_id=instance.id)
+    for item in items:
+        stock_move = StockMove(
+            product=item.returned_product_item,
+            unit_of_measure=item.returned_product_item.unit_of_measure,
+            quantity=item.returned_quantity,
+            move_type='RETURN',
+            source_document_id=instance.unique_record_id, 
+            source_location=instance.source_location,
+            destination_location=instance.return_warehouse_location,
+            date_created=timezone.now(),
+            date_moved=timezone.now(),
+        )
+        stock_move.save()
+

@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.db import IntegrityError, transaction
 from datetime import datetime
 
+from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product, PurchaseOrder
 from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOrderSerializer
 
@@ -711,6 +712,22 @@ class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
                 one_product = DeliveryOrderReturnItem(delivery_order_return=delivery_order_return, **product_data)
                 returned_product_list.append(one_product)
             DeliveryOrderReturnItem.objects.bulk_create(returned_product_list)
+            create_delivery_order_returns_stock_move(delivery_order_return)
+
+            """This is to update by adding the Quantity returned to the inventory"""
+            delivery_order_return_items = DeliveryOrderReturnItem.objects.filter(delivery_order_return_id=delivery_order_return.id)
+            for item in delivery_order_return_items:
+                # Update product quantity if done
+                location_stock = LocationStock.objects.filter(
+                    location=delivery_order_return.source_location, product_id=item.returned_product_item,
+                ).first()
+                if location_stock:
+                    location_stock.quantity -= item.returned_quantity
+                    location_stock.save()
+                else:
+                    raise serializers.ValidationError(
+                        "Product does not exist in the specified warehouse location."
+                    )
             return delivery_order_return
         except IntegrityError as e:
             raise serializers.ValidationError(f"Database error occurred: {str(e)}")

@@ -788,21 +788,17 @@ class IncomingProductItem(models.Model):
 
 class StockMove(models.Model):
     """Records movement of products across different inventory operations"""
-    id = models.CharField(max_length=15, primary_key=True)
-    id_number = models.PositiveIntegerField(auto_created=True)
+    # id = models.CharField(max_length=15, primary_key=True)
+    id = models.BigAutoField(primary_key=True, null=False, blank=False)
     reference = models.CharField(max_length=20, unique=True)
     product = models.ForeignKey(
         Product,
         on_delete=models.PROTECT,
         related_name='stock_moves'
     )
-    quantity = models.DecimalField(
-        max_digits=15,
-        decimal_places=3,
-        validators=[MinValueValidator(Decimal('0.001'))]
-    )
+    quantity = models.IntegerField()
     unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.PROTECT,
-        related_name='unit_of_measures_stock_moves')
+        related_name='unit_of_measures_stock_moves', null=True, blank=True)
     move_type = models.CharField(max_length=10, choices=STOCK_MOVE_TYPES)
 
     # Generic foreign key to link to different inventory record types
@@ -838,6 +834,7 @@ class StockMove(models.Model):
         null=True,
         blank=True
     )
+    delivery_address = models.TextField(null=True, blank=True)
 
     objects = models.Manager()
 
@@ -857,7 +854,7 @@ class StockMove(models.Model):
             ).order_by('reference').last()
 
             if last_move:
-                last_number = int(last_move.reference.split('/')[1])
+                last_number = int(last_move.reference.split('/')[2])
                 new_number = last_number + 1
             else:
                 new_number = 1
