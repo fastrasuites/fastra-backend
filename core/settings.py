@@ -97,7 +97,7 @@ TENANT_APPS = [
 
     'accounting',
     'hr',
-    'inventory',
+    'inventory.apps.InventoryConfig',
     'project_costing',
     'purchase',
     'sales',

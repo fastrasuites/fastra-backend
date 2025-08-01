@@ -10,7 +10,7 @@ from django.utils import timezone
 from decimal import Decimal
 
 from users.models import TenantUser
-from purchase.models import Product, Vendor, PurchaseOrder
+from purchase.models import Product, UnitOfMeasure, Vendor, PurchaseOrder
 from decimal import Decimal, ROUND_HALF_UP
 
 
@@ -812,30 +812,24 @@ class IncomingProductItem(models.Model):
 
 class StockMove(models.Model):
     """Records movement of products across different inventory operations"""
-    id = models.CharField(max_length=15, primary_key=True)
-    id_number = models.PositiveIntegerField(auto_created=True)
+    # id = models.CharField(max_length=15, primary_key=True)
+    id = models.BigAutoField(primary_key=True, null=False, blank=False)
     reference = models.CharField(max_length=20, unique=True)
     product = models.ForeignKey(
         Product,
         on_delete=models.PROTECT,
         related_name='stock_moves'
     )
-    quantity = models.DecimalField(
-        max_digits=15,
-        decimal_places=3,
-        validators=[MinValueValidator(Decimal('0.001'))]
-    )
+    quantity = models.IntegerField()
+    unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.PROTECT,
+        related_name='unit_of_measures_stock_moves', null=True, blank=True)
     move_type = models.CharField(max_length=10, choices=STOCK_MOVE_TYPES)
 
     # Generic foreign key to link to different inventory record types
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.CharField(max_length=20)  # Changed from PositiveIntegerField to CharField
-    inventory_record = GenericForeignKey('content_type', 'object_id')
     source_document_id = models.CharField(
         max_length=50,
         help_text="Reference number of the source document"
     )
-
     source_location = models.ForeignKey(
         'Location',
         on_delete=models.PROTECT,
@@ -850,23 +844,13 @@ class StockMove(models.Model):
         null=True,
         blank=True
     )
-    status = models.CharField(
-        max_length=20,
-        choices=STOCK_MOVE_STATUS,
-        default='draft'
-    )
     date_moved = models.DateTimeField(
         null=True,
         blank=True,
         help_text="Actual date when the stock movement occurred"
-    )
+    )    
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(
-        TenantUser,
-        on_delete=models.PROTECT,
-        related_name='stock_moves_created'
-    )
     moved_by = models.ForeignKey(
         TenantUser,
         on_delete=models.PROTECT,
@@ -874,14 +858,14 @@ class StockMove(models.Model):
         null=True,
         blank=True
     )
+    delivery_address = models.TextField(null=True, blank=True)
 
     objects = models.Manager()
 
     class Meta:
         ordering = ['-date_created']
         indexes = [
-            models.Index(fields=['content_type', 'object_id']),
-            models.Index(fields=['status', 'move_type']),
+            models.Index(fields=['move_type']),
             models.Index(fields=['date_moved']),
             models.Index(fields=['source_document_id']),
         ]
@@ -894,7 +878,7 @@ class StockMove(models.Model):
             ).order_by('reference').last()
 
             if last_move:
-                last_number = int(last_move.reference.split('/')[1])
+                last_number = int(last_move.reference.split('/')[2])
                 new_number = last_number + 1
             else:
                 new_number = 1
