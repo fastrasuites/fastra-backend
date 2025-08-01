@@ -4,12 +4,13 @@ from django.db.utils import IntegrityError
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework import serializers
 
 from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet
 from users.module_permissions import HasModulePermission
 
-from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location,
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, LocationStock,
                      MultiLocation, ReturnIncomingProduct, ScrapItem, StockAdjustment, Scrap, IncomingProduct,
                      IncomingProductItem, StockMove)
 from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer,
@@ -529,9 +530,17 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
             """This is to update by deducting the Quantity to deliver from the available quantity of the Product"""
             delivery_order_items = DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id)
             for item in delivery_order_items:
-                product_item = item.product_item
-                product_item.available_product_quantity -= item.quantity_to_deliver
-                product_item.save()
+                # Update product quantity if done
+                location_stock = LocationStock.objects.filter(
+                    location=delivery_order.source_location, product_id=item.product_item,
+                ).first()
+                if location_stock:
+                    location_stock.quantity -= item.quantity_to_deliver
+                    location_stock.save()
+                else:
+                    raise serializers.ValidationError(
+                        "Product does not exist in the specified warehouse location."
+                    )
 
             serialized_order = DeliveryOrderSerializer(delivery_order, context={'request': request})
             return Response(serialized_order.data, status=status.HTTP_200_OK)
