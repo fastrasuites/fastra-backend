@@ -520,7 +520,10 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         id = kwargs.get('pk')
 
         delivery_order = DeliveryOrder.objects.filter(is_hidden=False, id=id).first()
-        if delivery_order.status.lower().strip() != "ready":
+        if delivery_order.status.lower().strip() == "done":
+            return Response({"detail": "You cannot confirm a delivery order that already have the status of DONE!!!"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        elif delivery_order.status.lower().strip() != "ready":
             return Response({"detail": "A Delivery Order cannot be Confirmed if the Status is not set to Ready"},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -628,7 +631,7 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
 
         delivery_order_id = validated_data.get('source_document').id
         if not delivery_order_id:
-            return Response({"detail": "Delivery order ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Delivery order ID is required for the source document."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             delivery_order = DeliveryOrder.objects.get(id=delivery_order_id)
