@@ -608,14 +608,14 @@ class ScrapItem(models.Model):
         if self.product:
             if not self.scrap_quantity:
                 raise ValidationError("Scrap quantity is required")
+            if self.adjusted_quantity < 0:
+                raise ValidationError("Adjusted quantity cannot be negative")
             current_stock = self.product.location_stocks.filter(location=self.scrap.warehouse_location).first()
             if not current_stock:
                 raise ValidationError("The product in this Scrap item does not exist")
             if current_stock.quantity - self.scrap_quantity < 0:
                 raise ValidationError("Scrap quantity cannot be greater than current stock quantity")
             self.adjusted_quantity = current_stock.quantity - self.scrap_quantity
-            if self.adjusted_quantity < 0:
-                raise ValidationError("Adjusted quantity cannot be negative")
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)
@@ -626,14 +626,6 @@ class IncomingProduct(models.Model):
     incoming_product_id = models.CharField(max_length=15, primary_key=True)
     id_number = models.PositiveIntegerField(auto_created=True)
     receipt_type = models.CharField(choices=INCOMING_PRODUCT_RECEIPT_TYPES, default="vendor_receipt")
-    backorder_of = models.ForeignKey(
-        'self',
-        to_field='incoming_product_id',
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name='backorders'
-    )
     related_po = models.OneToOneField(
         'purchase.PurchaseOrder',
         related_name='incoming_product',
@@ -744,18 +736,18 @@ class IncomingProduct(models.Model):
 
         # If backorder is needed, create a new IncomingProduct
         if backorder_items:
-            backorder = IncomingProduct.objects.create(
+            backorder = BackOrder.objects.create(
                 receipt_type=self.receipt_type,
-                related_po=self.related_po,
+                backorder_of=self,
                 supplier=self.supplier,
                 source_location=self.source_location,
                 destination_location=self.destination_location,
                 status='draft',
-                backorder_of=self,
             )
             for bo_item in backorder_items:
-                IncomingProductItem.objects.create(
-                    incoming_product=backorder,
+                # Create IncomingProductItem for backorder
+                BackOrderItem.objects.create(
+                    backorder=backorder,
                     product=bo_item['product'],
                     expected_quantity=bo_item['expected_quantity'],
                     quantity_received=0,
@@ -803,6 +795,179 @@ class IncomingProductItem(models.Model):
             else:
                 if not self.expected_quantity:
                     raise ValidationError("Expected quantity is required if there is no related purchase order.")
+            if self.expected_quantity < 0 or self.quantity_received < 0:
+                raise ValidationError("Quantity cannot be negative")
+        else:
+            raise ValidationError("Invalid Product")
+        super().save(*args, **kwargs)
+
+
+class BackOrder(models.Model):
+    """Records incoming products from suppliers"""
+    backorder_id = models.CharField(max_length=15, primary_key=True)
+    id_number = models.PositiveIntegerField(auto_created=True)
+    receipt_type = models.CharField(choices=INCOMING_PRODUCT_RECEIPT_TYPES, default="vendor_receipt")
+    backorder_of = models.OneToOneField(
+        'IncomingProduct',
+        related_name='backorder',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True
+    )
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_updated = models.DateTimeField(auto_now=True)
+    supplier = models.ForeignKey(
+        'purchase.Vendor',
+        on_delete=models.PROTECT,
+        related_name='backorders'
+    )
+    source_location = models.ForeignKey(
+        'Location',
+        on_delete=models.PROTECT,
+        related_name='backorders_from_source',
+        default="SUPP00001"
+    )
+    destination_location = models.ForeignKey(
+        'Location',
+        on_delete=models.PROTECT,
+        related_name='backorders_to_destination',
+    )
+    status = models.CharField(choices=INCOMING_PRODUCT_STATUS, max_length=15, default='draft')
+    is_validated = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=True)
+    is_hidden = models.BooleanField(default=False)
+
+    objects = models.Manager()
+
+    draft_backorders = DraftIncomingProductManager()
+    validated_backorders = ValidatedIncomingProductManager()
+    canceled_backorders = CanceledIncomingProductManager()
+
+    vendor_receipt_backorders = VendorReceiptIPManager()
+    manufacturing_receipt_backorders = ManufacturingIPManager()
+    internal_transfer_backorders = InternalTransferIPManager()
+    returns_backorders = ReturnsIPManager()
+    scrap_backorders = ScrapIPManager()
+
+    class Meta:
+        ordering = ['-date_updated', '-date_created']
+
+    def __str__(self):
+        return f"BO_ID: {self.pk:05d} (Backorder of {self.backorder_of.incoming_product_id if self.backorder_of else 'N/A'})"
+
+    def save(self, *args, **kwargs):
+        if not self.pk:  # Only perform these checks for new instances
+            if self.backorder_id and BackOrder.objects.filter(backorder_id=self.backorder_id).exists():
+                raise ValidationError(f"ID '{self.backorder_id}' already exists.")
+            # Ensure the id_number is auto-incremented based on location_code
+            with transaction.atomic():
+                if not self.id_number:
+                    last_bo = BackOrder.objects.filter(
+                        source_location__location_code=self.source_location.location_code
+                    ).order_by('-id_number').first()
+                    self.id_number = (last_bo.id_number + 1) if last_bo else 1
+                # Generate the id based on location_code and id_number
+                location_code = str(self.source_location.location_code)
+                self.incoming_product_id = f"{location_code}BO{self.id_number:05d}"
+        if self.is_validated:
+            self.can_edit = False
+        super(Backorder, self).save(*args, **kwargs)
+
+    def process_receipt(
+            self,
+            items_data,
+            user_choice=None
+    ):
+        """
+        items_data: list of dicts with 'product', 'expected_quantity', 'quantity_received'
+        user_choice: dict with keys 'backorder' (True/False), 'overpay' (True/False)
+        """
+        if user_choice is None:
+            user_choice = {'backorder': False, 'overpay': False}
+        backorder_items = []
+        over_received_items = []
+        for item in items_data:
+            expected = Decimal(item['expected_quantity'])
+            received = Decimal(item['quantity_received'])
+            if received == expected:
+                continue  # Scenario 1: All good
+            elif received < expected:
+                # Scenario 2: Less received
+                backorder_qty = expected - received
+                if user_choice and user_choice.get('backorder'):
+                    backorder_items.append({
+                        'product': item['product'],
+                        'expected_quantity': backorder_qty,
+                        'quantity_received': 0,
+                    })
+                else:
+                    # Discard remaining, update expected to received
+                    item['expected_quantity'] = received
+            else:
+                # Scenario 3: More received
+                continue
+                # extra_qty = received - expected
+                # if user_choice and user_choice.get('overpay'):
+                #     # Adjust expected to received, update cost as needed
+                #     item['expected_quantity'] = received
+                #     # You may want to update cost here
+                # else:
+                #     # User wants to return extra, set received to expected
+                #     item['quantity_received'] = expected
+
+        # If backorder is needed, create a new IncomingProduct
+        if backorder_items:
+            backorder = IncomingProduct.objects.create(
+                receipt_type=self.receipt_type,
+                related_po=self.related_po,
+                supplier=self.supplier,
+                source_location=self.source_location,
+                destination_location=self.destination_location,
+                status='draft',
+                backorder_of=self,
+            )
+            for bo_item in backorder_items:
+                # Create IncomingProductItem for backorder
+                IncomingProductItem.objects.create(
+                    incoming_product=backorder,
+                    product=bo_item['product'],
+                    expected_quantity=bo_item['expected_quantity'],
+                    quantity_received=0,
+                )
+            return backorder  # Return the backorder for further processing
+        return None
+
+
+class BackOrderItem(models.Model):
+    backorder = models.ForeignKey(
+        'BackOrder',
+        on_delete=models.CASCADE,
+        related_name='backorder_items'
+    )
+    product = models.ForeignKey(
+        'purchase.Product',
+        on_delete=models.PROTECT,
+        related_name='backorder_items'
+    )
+    expected_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='Expected Quantity',
+        default=0
+    )
+    quantity_received = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='Quantity Received',
+        default=0
+    )
+
+    objects = models.Manager()
+
+    def save(self, *args, **kwargs):
+        if self.product:
+            if not self.expected_quantity:
+                raise ValidationError("Expected quantity is required.")
             if self.expected_quantity < 0 or self.quantity_received < 0:
                 raise ValidationError("Quantity cannot be negative")
         else:

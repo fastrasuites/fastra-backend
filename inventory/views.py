@@ -3,19 +3,21 @@ from django.db import models
 from django.db.utils import IntegrityError
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
+from rest_framework.mixins import CreateModelMixin
 from rest_framework.response import Response
 
 from purchase.models import Product
-from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet
+from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet, NoCreateSearchViewSet
 from users.module_permissions import HasModulePermission
 
 from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location,
                      MultiLocation, ReturnIncomingProduct, ScrapItem, StockAdjustment, Scrap, IncomingProduct,
-                     IncomingProductItem, StockMove)
+                     IncomingProductItem, StockMove, BackOrder, BackOrderItem)
 from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer,
                           DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer,
-                          ReturnIncomingProductSerializer, StockAdjustmentSerializer,
-                          ScrapSerializer, IncomingProductSerializer, StockMoveSerializer)
+                          ReturnIncomingProductSerializer, StockAdjustmentSerializer, BackOrderSerializer,
+                          ScrapSerializer, IncomingProductSerializer, StockMoveSerializer,
+                          BackOrderConfirmationSerializer)
 
 from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id, generate_returned_incoming_product_unique_id
 from django.db import transaction
@@ -219,7 +221,7 @@ class ScrapViewSet(SearchDeleteViewSet):
                             )
                         except Exception as e:
                             return Response(
-                                {"error": f"Error processing scrap item: {str(e)}"},
+                                {"error": f"Error processing delivery order item: {str(e)}"},
                                 status=status.HTTP_400_BAD_REQUEST
                             )
 
@@ -274,7 +276,6 @@ class IncomingProductViewSet(SearchDeleteViewSet):
     action_permission_map = {
         **basic_action_permission_map,
         "check_editable": "view",
-        "list_backorders": "view"
     }
 
     def get_queryset(self):
@@ -289,21 +290,42 @@ class IncomingProductViewSet(SearchDeleteViewSet):
         serializer.is_valid(raise_exception=True)
         try:
             incoming_product = serializer.save()
-
             # Process receipt to handle backorders
             items_data = request.data.get('incoming_product_items', [])
-            user_choice = request.data.get('user_choice', {'backorder': False, 'overpay': False})
-            backorder = incoming_product.process_receipt(items_data, user_choice)
+            for item in items_data:
+                expected = Decimal(item['expected_quantity'])
+                received = Decimal(item['quantity_received'])
+                if received == expected:
+                    continue  # Scenario 1: All good
+                elif received < expected:
+                    # Scenario 2: Less received
+                    raise serializers.ValidationError(
+                        "Received quantity is less than expected quantity. "
+                        "Create a backorder to compensate for the missing quantity."
+                    )
+                else:
+                    # Scenario 3: More received
+                    raise serializers.ValidationError(
+                        "Received quantity exceeds expected quantity. "
+                        "You can choose to pay or issue a return for the excess quantity."
+                    )
             response_data = serializer.data
-            if backorder:
-                response_data = {
-                    "incoming_product": serializer.data,
-                    "backorder": f"Backorder created with ID {backorder.id}"
-                }
-
             return Response(response_data, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(methods=['get'], detail=True)
+    def get_backorder(self, request, pk=None):
+        """Get the backorder for a specific incoming product."""
+        try:
+            incoming_product = self.get_object()
+            backorder = BackOrder.objects.filter(backorder_of=incoming_product).first()
+            if not backorder:
+                return Response({"detail": "No backorder found for this incoming product."}, status=status.HTTP_404_NOT_FOUND)
+            serializer = BackOrderSerializer(backorder, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist:
+            return Response({"detail": "Incoming product not found."}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['get'])
     def check_editable(self, request, *args, **kwargs):
@@ -315,14 +337,6 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         return Response({'status': 'editable'}, status=status.HTTP_200_OK)
-
-    @action(detail=False, methods=['get'])
-    def list_backorders(self, request, *args, **kwargs):
-        """
-        List all backorders related to the given Incoming Product.
-        """
-        incoming_product = self.get_object()
-        return incoming_product.backorders.all()
 
     def partial_update(self, request, *args, **kwargs):
         try:
@@ -379,6 +393,49 @@ class IncomingProductViewSet(SearchDeleteViewSet):
             return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class BackOrderViewSet(SearchDeleteViewSet):
+    queryset = BackOrder.objects.all()
+    serializer_class = IncomingProductSerializer
+    app_label = "inventory"
+    model_name = "backorder"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = basic_action_permission_map
+    filterset_fields = ["backorder_of__incoming_product_id", 'status', "destination_location__id"]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            back_order = serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except IntegrityError as e:
+            return Response({"detail": "Error creating back order: " + str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": "An unexpected error occurred: " + str(e)},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ConfirmCreateBackOrderViewSet(viewsets.GenericViewSet, CreateModelMixin):
+    queryset = BackOrder.objects.all()
+    serializer_class = BackOrderConfirmationSerializer
+    app_label = "inventory"
+    model_name = "backorder"
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = basic_action_permission_map
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            back_order = serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except IntegrityError as e:
+            return Response({"detail": "Error creating back order: " + str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": "An unexpected error occurred: " + str(e)},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # class IncomingProductItemViewSet(viewsets.ModelViewSet):
 #     queryset = IncomingProductItem.objects.all()
