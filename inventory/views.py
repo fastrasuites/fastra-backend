@@ -5,12 +5,13 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.mixins import CreateModelMixin
 from rest_framework.response import Response
+from rest_framework import serializers
 
 from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet, NoCreateSearchViewSet
 from users.module_permissions import HasModulePermission
 
-from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location,
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, LocationStock,
                      MultiLocation, ReturnIncomingProduct, ScrapItem, StockAdjustment, Scrap, IncomingProduct,
                      IncomingProductItem, StockMove, BackOrder, BackOrderItem)
 from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer,
@@ -576,7 +577,10 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         id = kwargs.get('pk')
 
         delivery_order = DeliveryOrder.objects.filter(is_hidden=False, id=id).first()
-        if delivery_order.status.lower().strip() != "ready":
+        if delivery_order.status.lower().strip() == "done":
+            return Response({"detail": "You cannot confirm a delivery order that already have the status of DONE!!!"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        elif delivery_order.status.lower().strip() != "ready":
             return Response({"detail": "A Delivery Order cannot be Confirmed if the Status is not set to Ready"},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -586,9 +590,17 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
             """This is to update by deducting the Quantity to deliver from the available quantity of the Product"""
             delivery_order_items = DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id)
             for item in delivery_order_items:
-                product_item = item.product_item
-                product_item.available_product_quantity -= item.quantity_to_deliver
-                product_item.save()
+                # Update product quantity if done
+                location_stock = LocationStock.objects.filter(
+                    location=delivery_order.source_location, product_id=item.product_item,
+                ).first()
+                if location_stock:
+                    location_stock.quantity -= item.quantity_to_deliver
+                    location_stock.save()
+                else:
+                    raise serializers.ValidationError(
+                        "Product does not exist in the specified warehouse location."
+                    )
 
             serialized_order = DeliveryOrderSerializer(delivery_order, context={'request': request})
             return Response(serialized_order.data, status=status.HTTP_200_OK)
@@ -676,7 +688,7 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
 
         delivery_order_id = validated_data.get('source_document').id
         if not delivery_order_id:
-            return Response({"detail": "Delivery order ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Delivery order ID is required for the source document."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             delivery_order = DeliveryOrder.objects.get(id=delivery_order_id)
