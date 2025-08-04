@@ -104,27 +104,6 @@ class ProductSerializer(serializers.HyperlinkedModelSerializer):
                   'available_product_quantity', 'total_quantity_purchased', 'unit_of_measure',
                   'created_on', 'updated_on', 'is_hidden', 'check_for_duplicates', 'unit_of_measure_details']
 
-    # Check if the product_category is among the options available
-    def validate_product_category(self, value):
-        valid_categories = [choice[0] for choice in PRODUCT_CATEGORY]  # Extract the valid category keys
-        if slugify(value) not in valid_categories:
-            raise serializers.ValidationError(
-                f"Invalid category '{value}'. Valid categories are: {', '.join(valid_categories)}.")
-        return value
-
-    def validate(self, attrs):
-        if attrs['product_category'] is not None:
-            self.validate_product_category(attrs.get('product_category'))
-        # Check if product_name and product_category combination already exists
-        if Product.objects.filter(
-            product_name__iexact=attrs['product_name'],
-            product_category__iexact=slugify(attrs['product_category'])
-        ).exclude(
-            pk=self.instance.pk if self.instance else None
-        ).exists():
-            raise serializers.ValidationError('A product with this name and category already exists.')
-        return attrs
-
     def create(self, validated_data):
         check_for_duplicates = validated_data.pop('check_for_duplicates', False)
 
