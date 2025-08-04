@@ -698,17 +698,17 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
                 one_item = DeliveryOrderItem(delivery_order=delivery_order, **product_data)
                 delivery_order_items.append(one_item)
                 # Update product quantity if done
-                if delivery_order.status == "done":
-                    location_stock = LocationStock.objects.filter(
-                        location=source_location, product=product,
-                    ).first()
-                    if location_stock:
-                        location_stock.quantity -= quantity_to_deliver
-                        location_stock.save()
-                    else:
-                        raise serializers.ValidationError(
-                            "Product does not exist in the specified warehouse location."
-                        )
+                # if delivery_order.status == "done":
+                #     location_stock = LocationStock.objects.filter(
+                #         location=source_location, product=product,
+                #     ).first()
+                #     if location_stock:
+                #         location_stock.quantity -= quantity_to_deliver
+                #         location_stock.save()
+                #     else:
+                #         raise serializers.ValidationError(
+                #             "Product does not exist in the specified warehouse location."
+                #         )
             DeliveryOrderItem.objects.bulk_create(delivery_order_items)
             return delivery_order
         except IntegrityError as e:
