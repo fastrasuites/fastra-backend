@@ -98,3 +98,12 @@ class SearchViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class NoCreateSearchViewSet(SearchDeleteViewSet):
+    """
+    A viewset that inherits from `SearchDeleteViewSet` and removes the `create` action.
+    This is useful for read-only APIs where creation of new instances is not allowed.
+    """
+    def create(self, request, *args, **kwargs):
+        return Response({'error': 'Creation of new instances is not allowed.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
