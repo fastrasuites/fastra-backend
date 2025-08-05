@@ -625,17 +625,13 @@ class BackOrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BackOrder
-        fields = ['id', 'backorder_of', 'backorder_of_details', 'backorder_items', 'source_location',
+        fields = ['backorder_id', 'backorder_of', 'backorder_of_details', 'backorder_items', 'source_location',
                   'destination_location', 'supplier', 'status', 'receipt_type', 'date_created']
         read_only_fields = ['date_created', 'date_updated']
 
     def validate(self, attrs):
-        """
-        Validate the Back Order data.
-        """
         if not attrs.get('backorder_of'):
             raise serializers.ValidationError("Back Order must be linked to an Incoming Product.")
-
         items_data = attrs.get('backorder_items', [])
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a Back Order.")
@@ -648,80 +644,38 @@ class BackOrderSerializer(serializers.ModelSerializer):
             if expected_quantity < 0 or quantity_received < 0:
                 raise serializers.ValidationError("Quantities cannot be negative.")
         receipt_type = attrs.get('receipt_type')
-        # INCOMING_PRODUCT_RECEIPT_TYPES may be a list of tuples, so extract the valid values
-        valid_receipt_types = [choice[0] if isinstance(choice, tuple) else choice for choice in
-                               INCOMING_PRODUCT_RECEIPT_TYPES]
+        valid_receipt_types = [choice[0] if isinstance(choice, tuple)
+                               else choice for choice in INCOMING_PRODUCT_RECEIPT_TYPES]
         if receipt_type not in valid_receipt_types:
             raise serializers.ValidationError(
                 "Invalid receipt type. Must be one of: " + ", ".join(str(v) for v in valid_receipt_types)
             )
-
-        # Ensure that the supplier, source location, and destination location are provided
         if not attrs.get('supplier'):
             raise serializers.ValidationError("Supplier is required.")
         if not attrs.get('source_location'):
             raise serializers.ValidationError("Source location is required.")
         if not attrs.get('destination_location'):
             raise serializers.ValidationError("Destination location is required.")
-
         return attrs
 
-    def create(self, validated_data):
-        """
-        Create a new Incoming Product with its associated items.
-        """
-        items_data = validated_data.pop('backorder_items')
-        backorder = BackOrder.objects.create(**validated_data)
-        location = validated_data['destination_location']
-        for item_data in items_data:
-            product = item_data.get('product')
-            quantity_received = item_data.get('quantity_received', 0)
-            bo_item = BackOrderItem.objects.create(backorder=backorder, **item_data)
-            if not bo_item:
-                raise serializers.ValidationError("Failed to create BackOrder Item.")
-            # Update product quantity if validated
-            if backorder.status == "validated":
-                location_stock, created = LocationStock.objects.get_or_create(
-                    location=location, product=product,
-                    defaults={'quantity': 0}
-                )
-                if location_stock:
-                    location_stock.quantity += quantity_received
-                    location_stock.save()
-                else:
-                    raise serializers.ValidationError(
-                        "Product does not exist in the specified warehouse location."
-                    )
-        # Always return the model instance
-        return backorder
-
     def update(self, instance, validated_data):
-        """
-        Update an existing instance with validated data.
-        """
         items_data = validated_data.pop('backorder_items', None)
         destination_location = validated_data.get('destination_location', instance.destination_location)
         partial = self.context.get('partial', False)
         status = validated_data.get('status', None)
         was_validated = instance.status == 'validated'
         is_now_validated = status == 'validated'
-
         if was_validated:
             raise serializers.ValidationError(
                 "BackOrder cannot be updated once the status is set to 'validated'."
             )
-
-        # Update the instance fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-
         if items_data:
             existing_items = {item.id: item for item in instance.backorder_items.all()}
             incoming_item_ids = set(item_data.get('id') for item_data in items_data if item_data.get('id'))
-
             if partial:
-                # Only update or add provided items, do not delete others
                 for item_data in items_data:
                     item_id = item_data.get('id')
                     if item_id and item_id in existing_items:
@@ -733,7 +687,6 @@ class BackOrderSerializer(serializers.ModelSerializer):
                     else:
                         BackOrderItem.objects.create(backorder=instance, **item_data)
             else:
-                # Full update: delete items not present, update/add others
                 for item_id in set(existing_items.keys()) - incoming_item_ids:
                     existing_items[item_id].delete()
                 for item_data in items_data:
@@ -746,27 +699,6 @@ class BackOrderSerializer(serializers.ModelSerializer):
                         bo_item.save()
                     else:
                         BackOrderItem.objects.create(backorder=instance, **item_data)
-            # # Clear existing items and add new ones
-            # instance.incoming_product_items.all().delete()
-            # for item_data in items_data:
-            #     product = item_data.get('product')
-            #     expected_quantity = item_data.get('expected_quantity', None)
-            #     quantity_received = item_data.get('quantity_received', 0)
-            #     # Set expected_quantity from PO if related_po exists
-            #     if related_po:
-            #         po_item = related_po.items.filter(product_id=product.id).first()
-            #         if po_item:
-            #             item_data['expected_quantity'] = po_item.qty
-            #         else:
-            #             raise serializers.ValidationError("Product not found in related purchase order items.")
-            #     else:
-            #         item_data['expected_quantity'] = expected_quantity
-            #     ip_item = IncomingProductItem.objects.create(incoming_product=instance, **item_data)
-            #     if not ip_item:
-            #         raise serializers.ValidationError("Failed to create Incoming Product Item.")
-                # Update product quantity if validated
-                # Only update stock if the status is being changed to validated in this update
-
         if not was_validated and is_now_validated:
             for item in instance.backorder_items.all():
                 product = item.product
@@ -782,29 +714,31 @@ class BackOrderSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         "Product does not exist in the specified warehouse location."
                     )
-
         return instance
 
-
-class BackOrderConfirmationSerializer(serializers.Serializer):
+class BackOrderCreateSerializer(serializers.Serializer):
     response = serializers.BooleanField(default=False)
-    incoming_product_id = serializers.CharField(
+    incoming_product_id = serializers.PrimaryKeyRelatedField(
+        queryset=IncomingProduct.objects.filter(is_hidden=False),
         required=True,
         help_text="ID of the Incoming Product to confirm back order for."
     )
 
     def validate(self, attrs):
-        """
-        Validate the Back Order Confirmation data.
-        """
         if not attrs.get('response'):
             raise serializers.ValidationError("Response is required.")
         if not attrs.get('incoming_product_id'):
             raise serializers.ValidationError("Incoming Product ID is required.")
+        incoming_product_id = attrs.get('incoming_product_id')
+        if BackOrder.objects.filter(backorder_of=incoming_product_id).exists():
+            raise serializers.ValidationError("A back order already exists for this Incoming Product.")
         return attrs
 
     def create_backorder(self, incoming_product: IncomingProduct):
-        # Create a backorder as previously discussed
+        items = incoming_product.incoming_product_items.all()
+        equal_check = [item.expected_quantity == item.quantity_received for item in items]
+        if all(equal_check):
+            raise serializers.ValidationError("All items have been fully received. No backorder needed.")
         backorder = BackOrder.objects.create(
             backorder_of=incoming_product,
             source_location=incoming_product.source_location,
@@ -812,13 +746,10 @@ class BackOrderConfirmationSerializer(serializers.Serializer):
             supplier=incoming_product.supplier,
             status='draft',
             receipt_type=incoming_product.receipt_type,
-
         )
-        items = incoming_product.incoming_product_items
         for item in items:
             if item.quantity_received == item.expected_quantity:
                 continue
-            # Create a backorder item with the expected quantity minus the received quantity
             adjusted_quantity = item.expected_quantity - item.quantity_received
             BackOrderItem.objects.create(
                 backorder=backorder,
@@ -829,21 +760,15 @@ class BackOrderConfirmationSerializer(serializers.Serializer):
         return backorder
 
     def create(self, validated_data):
-        """
-        Create a new Back Order Confirmation.
-        """
         response = validated_data.get('response')
         incoming_product_id = validated_data.get('incoming_product_id')
         if not incoming_product_id:
             raise serializers.ValidationError("incoming_product_id is required.")
-
         incoming_product = IncomingProduct.objects.get(incoming_product_id=incoming_product_id)
-
         if response:
-            backorder = self.create_backorder(incoming_product);
+            backorder = self.create_backorder(incoming_product)
             return {"message": "Back Order created successfully.", "backorder_id": backorder.pk}
         else:
-            # Correct the expected quantity to match quantity received for all items
             for item in incoming_product.incoming_product_items.all():
                 item.expected_quantity = item.quantity_received
                 item.save()

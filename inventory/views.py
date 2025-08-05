@@ -1,4 +1,6 @@
 from datetime import timezone
+from decimal import Decimal
+
 from django.db import models
 from django.db.utils import IntegrityError
 from rest_framework import viewsets, status, permissions
@@ -18,7 +20,7 @@ from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturn
                           DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer,
                           ReturnIncomingProductSerializer, StockAdjustmentSerializer, BackOrderSerializer,
                           ScrapSerializer, IncomingProductSerializer, StockMoveSerializer,
-                          BackOrderConfirmationSerializer)
+                          BackOrderCreateSerializer)
 
 from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id, generate_returned_incoming_product_unique_id
 from django.db import transaction
@@ -394,7 +396,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
             return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class BackOrderViewSet(SearchDeleteViewSet):
+class BackOrderViewSet(NoCreateSearchViewSet):
     queryset = BackOrder.objects.all()
     serializer_class = IncomingProductSerializer
     app_label = "inventory"
@@ -403,23 +405,13 @@ class BackOrderViewSet(SearchDeleteViewSet):
     action_permission_map = basic_action_permission_map
     filterset_fields = ["backorder_of__incoming_product_id", 'status', "destination_location__id"]
 
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            back_order = serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        except IntegrityError as e:
-            return Response({"detail": "Error creating back order: " + str(e)},
-                            status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({"detail": "An unexpected error occurred: " + str(e)},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    # List, retrieve, update, archive handled by SearchDeleteViewSet
+    # Remove create method to delegate creation to ConfirmCreateBackOrderViewSet
 
 
 class ConfirmCreateBackOrderViewSet(viewsets.GenericViewSet, CreateModelMixin):
     queryset = BackOrder.objects.all()
-    serializer_class = BackOrderConfirmationSerializer
+    serializer_class = BackOrderCreateSerializer
     app_label = "inventory"
     model_name = "backorder"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]

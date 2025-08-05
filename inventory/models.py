@@ -672,7 +672,7 @@ class IncomingProduct(models.Model):
         ordering = ['-date_updated', '-date_created']
 
     def __str__(self):
-        return f"IP_ID: {self.pk:05d}"
+        return f"IP_ID: {self.pk}"
 
     def save(self, *args, **kwargs):
         if not self.pk:  # Only perform these checks for new instances
@@ -853,7 +853,7 @@ class BackOrder(models.Model):
         ordering = ['-date_updated', '-date_created']
 
     def __str__(self):
-        return f"BO_ID: {self.pk:05d} (Backorder of {self.backorder_of.incoming_product_id if self.backorder_of else 'N/A'})"
+        return f"BO_ID: {self.pk} (Backorder of {self.backorder_of.incoming_product_id if self.backorder_of else 'N/A'})"
 
     def save(self, *args, **kwargs):
         if not self.pk:  # Only perform these checks for new instances
@@ -868,7 +868,7 @@ class BackOrder(models.Model):
                     self.id_number = (last_bo.id_number + 1) if last_bo else 1
                 # Generate the id based on location_code and id_number
                 location_code = str(self.source_location.location_code)
-                self.incoming_product_id = f"{location_code}BO{self.id_number:05d}"
+                self.backorder_id = f"{location_code}BO{self.id_number:05d}"
         if self.is_validated:
             self.can_edit = False
         super(Backorder, self).save(*args, **kwargs)
