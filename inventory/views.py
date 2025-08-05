@@ -1,10 +1,12 @@
 from datetime import timezone
 from decimal import Decimal
+import json
 
 from django.db import models
 from django.db.utils import IntegrityError
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.mixins import CreateModelMixin
 from rest_framework.response import Response
 from rest_framework import serializers
@@ -302,10 +304,11 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                     continue  # Scenario 1: All good
                 elif received < expected:
                     # Scenario 2: Less received
-                    raise serializers.ValidationError(
-                        "Received quantity is less than expected quantity. "
-                        "Create a backorder to compensate for the missing quantity."
-                    )
+                    error = {
+                        "IP_ID": str(incoming_product.pk),
+                        "error": "Received quantity is less than expected quantity. Create a backorder to compensate for the missing quantity."
+                    }
+                    raise ValidationError(json.dumps(error), code="backorder_required")
                 else:
                     # Scenario 3: More received
                     raise serializers.ValidationError(
@@ -422,7 +425,7 @@ class ConfirmCreateBackOrderViewSet(viewsets.GenericViewSet, CreateModelMixin):
         serializer.is_valid(raise_exception=True)
         try:
             back_order = serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(back_order, status=status.HTTP_201_CREATED)
         except IntegrityError as e:
             return Response({"detail": "Error creating back order: " + str(e)},
                             status=status.HTTP_400_BAD_REQUEST)
