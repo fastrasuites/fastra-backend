@@ -8,6 +8,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth.models import Group, Permission, User
 
+from users.module_permissions import IsAdminOrIsSelf
+
 from .models import TenantUser
 from .serializers import ChangePasswordSerializer, NewTenantUserSerializer, UserSerializer, TenantUserSerializer, GroupSerializer, PermissionSerializer, \
     GroupPermissionSerializer, PasswordChangeSerializer
@@ -203,8 +205,16 @@ class PasswordChangeView(APIView):
 class NewTenantUserViewSet(SearchDeleteViewSet):
     queryset = TenantUser.objects.all()
     serializer_class = NewTenantUserSerializer
-    permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
     search_fields = ['user__username', 'user__email']
+
+    def get_permissions(self):
+        if self.action == 'retrieve':
+            return [IsAdminOrIsSelf()]
+        if self.action in ['list', 'create', 'destroy', 'update', 'partial_update']:
+            return [permissions.IsAdminUser()]
+        return super().get_permissions()
+
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())

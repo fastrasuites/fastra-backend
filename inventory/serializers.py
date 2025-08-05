@@ -400,10 +400,11 @@ class IPItemSerializer(serializers.ModelSerializer):
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.filter(is_hidden=False),
     )
+    product_details = ProductSerializer(source='product', read_only=True)
 
     class Meta:
         model = IncomingProductItem
-        fields = ['id', 'incoming_product', 'product',
+        fields = ['id', 'incoming_product', 'product', 'product_details',
                   'expected_quantity', 'quantity_received']
         extra_kwargs = {
             'id': {'required': False, 'allow_null': True},
@@ -424,14 +425,15 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     source_location_details = LocationSerializer(source='source_location', read_only=True)
     destination_location_details = LocationSerializer(source='destination_location', read_only=True)
     backorder_details = serializers.Serializer(source='backorder', read_only=True)
+    supplier_details = VendorSerializer(source='supplier', read_only=True)
 
     class Meta:
         model = IncomingProduct
         fields = ['incoming_product_id', 'receipt_type', 'related_po', 'supplier', 'source_location',
-                  'source_location_details', 'incoming_product_items',
+                  'source_location_details', 'incoming_product_items', 'supplier_details',
                   'destination_location', 'destination_location_details', 'status',
                   'is_validated', 'can_edit', 'is_hidden', 'backorder_details']
-        read_only_fields = ['date_created', 'date_updated', "source_location_details", "destination_location_details"]
+        read_only_fields = ['date_created', 'date_updated', "source_location_details", "destination_location_details", "supplier_details"]
 
     def validate(self, data):
         # validation to ensure that the related purchase order is not already linked to another incoming product.
