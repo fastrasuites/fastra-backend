@@ -1,5 +1,6 @@
 from rest_framework.permissions import BasePermission
 from .utils import user_has_permission
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 class HasModulePermission(BasePermission):
     """
@@ -22,3 +23,18 @@ class HasModulePermission(BasePermission):
             return False
 
         return user_has_permission(request.user, app, model, access_right)
+
+
+class IsAdminOrIsSelf(BasePermission):
+    """
+    Custom permission to allow users to retrieve their own data,
+    while only admins can access other users' data.
+    """
+    def has_object_permission(self, request, view, obj):
+        if not request.user.is_authenticated:
+            return False
+
+        if request.user.is_staff or request.user.is_superuser:
+            return True
+
+        return request.method in SAFE_METHODS and obj.user_id == request.user.id

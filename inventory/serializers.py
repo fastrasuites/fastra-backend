@@ -397,10 +397,11 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
 class IPItemSerializer(serializers.ModelSerializer):
     id = serializers.CharField(required=False)
     incoming_product = serializers.ReadOnlyField(source="incoming_product.incoming_product_id")
+    product_details = ProductSerializer(source='product', read_only=True)
 
     class Meta:
         model = IncomingProductItem
-        fields = ['id', 'incoming_product', 'product',
+        fields = ['id', 'incoming_product', 'product', 'product_details',
                   'expected_quantity', 'quantity_received']
         extra_kwargs = {
             'id': {'required': False, 'allow_null': True},
@@ -428,14 +429,15 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     incoming_product_id = serializers.CharField(required=False)  # Make the id field read-only
     source_location_details = LocationSerializer(source='source_location', read_only=True)
     destination_location_details = LocationSerializer(source='destination_location', read_only=True)
+    supplier_details = VendorSerializer(source='supplier', read_only=True)
 
     class Meta:
         model = IncomingProduct
         fields = ['incoming_product_id', 'receipt_type', 'related_po', 'backorder_of', 'user_choice',
-                  'supplier', 'source_location', 'source_location_details', 'incoming_product_items',
+                  'supplier', 'supplier_details', 'source_location', 'source_location_details', 'incoming_product_items',
                   'destination_location', 'destination_location_details', 'status',
                   'is_validated', 'can_edit', 'is_hidden']
-        read_only_fields = ['date_created', 'date_updated', "source_location_details", "destination_location_details"]
+        read_only_fields = ['date_created', 'date_updated', "source_location_details", "destination_location_details", "supplier_details"]
 
     def validate(self, data):
         # validation to ensure that the related purchase order is not already linked to another incoming product.
