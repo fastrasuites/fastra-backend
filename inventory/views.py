@@ -398,7 +398,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
 
 class BackOrderViewSet(NoCreateSearchViewSet):
     queryset = BackOrder.objects.all()
-    serializer_class = IncomingProductSerializer
+    serializer_class = BackOrderSerializer
     app_label = "inventory"
     model_name = "backorder"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]

@@ -423,13 +423,14 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     incoming_product_id = serializers.CharField(required=False)  # Make the id field read-only
     source_location_details = LocationSerializer(source='source_location', read_only=True)
     destination_location_details = LocationSerializer(source='destination_location', read_only=True)
+    backorder_details = serializers.Serializer(source='backorder', read_only=True)
 
     class Meta:
         model = IncomingProduct
         fields = ['incoming_product_id', 'receipt_type', 'related_po', 'supplier', 'source_location',
                   'source_location_details', 'incoming_product_items',
                   'destination_location', 'destination_location_details', 'status',
-                  'is_validated', 'can_edit', 'is_hidden']
+                  'is_validated', 'can_edit', 'is_hidden', 'backorder_details']
         read_only_fields = ['date_created', 'date_updated', "source_location_details", "destination_location_details"]
 
     def validate(self, data):
@@ -717,8 +718,8 @@ class BackOrderSerializer(serializers.ModelSerializer):
         return instance
 
 class BackOrderCreateSerializer(serializers.Serializer):
-    response = serializers.BooleanField(default=False)
-    incoming_product_id = serializers.PrimaryKeyRelatedField(
+    response = serializers.BooleanField(default=False, write_only=True)
+    incoming_product = serializers.PrimaryKeyRelatedField(
         queryset=IncomingProduct.objects.filter(is_hidden=False),
         required=True,
         help_text="ID of the Incoming Product to confirm back order for."
@@ -727,10 +728,12 @@ class BackOrderCreateSerializer(serializers.Serializer):
     def validate(self, attrs):
         if not attrs.get('response'):
             raise serializers.ValidationError("Response is required.")
-        if not attrs.get('incoming_product_id'):
+        if not attrs.get('incoming_product'):
             raise serializers.ValidationError("Incoming Product ID is required.")
-        incoming_product_id = attrs.get('incoming_product_id')
-        if BackOrder.objects.filter(backorder_of=incoming_product_id).exists():
+        incoming_product = attrs.get('incoming_product')
+        if not IncomingProduct.objects.filter(pk=incoming_product.pk).exists():
+            raise serializers.ValidationError("IncomingProduct does not exist.")
+        if BackOrder.objects.filter(backorder_of=incoming_product).exists():
             raise serializers.ValidationError("A back order already exists for this Incoming Product.")
         return attrs
 
@@ -761,10 +764,9 @@ class BackOrderCreateSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         response = validated_data.get('response')
-        incoming_product_id = validated_data.get('incoming_product_id')
-        if not incoming_product_id:
-            raise serializers.ValidationError("incoming_product_id is required.")
-        incoming_product = IncomingProduct.objects.get(incoming_product_id=incoming_product_id)
+        incoming_product = validated_data.get('incoming_product')
+        if not incoming_product:
+            raise serializers.ValidationError("Incoming_product is required.")
         if response:
             backorder = self.create_backorder(incoming_product)
             return {"message": "Back Order created successfully.", "backorder_id": backorder.pk}

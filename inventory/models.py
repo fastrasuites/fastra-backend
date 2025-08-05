@@ -871,7 +871,7 @@ class BackOrder(models.Model):
                 self.backorder_id = f"{location_code}BO{self.id_number:05d}"
         if self.is_validated:
             self.can_edit = False
-        super(Backorder, self).save(*args, **kwargs)
+        super(BackOrder, self).save(*args, **kwargs)
 
     def process_receipt(
             self,
