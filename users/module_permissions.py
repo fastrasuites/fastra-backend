@@ -12,6 +12,10 @@ class HasModulePermission(BasePermission):
     """
 
     def has_permission(self, request, view):
+        form_param = request.query_params.get("form")
+        if form_param == "true" and request.method == "GET":
+            return True
+
         app = getattr(view, "app_label", None)
         model = getattr(view, "model_name", None)
         permission_map = getattr(view, "action_permission_map", {})
