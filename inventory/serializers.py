@@ -728,8 +728,8 @@ class BackOrderCreateSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
-        if not attrs.get('response'):
-            raise serializers.ValidationError("Response is required.")
+        if 'response' not in attrs:
+                raise serializers.ValidationError("Response is required.")
         if not attrs.get('incoming_product'):
             raise serializers.ValidationError("Incoming Product ID is required.")
         incoming_product = attrs.get('incoming_product')

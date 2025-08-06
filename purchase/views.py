@@ -1102,7 +1102,7 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
 
     @action(methods=['get'], detail=False)
     def get_unrelated_po(self, request):
-        unrelated_po = PurchaseOrder.objects.filter(incoming_product__isnull=True).distinct()
+        unrelated_po = PurchaseOrder.objects.filter(incoming_product__isnull=True, status="completed").distinct()
         serializer = self.get_serializer(unrelated_po, many=True)
         return Response(serializer.data)
 
