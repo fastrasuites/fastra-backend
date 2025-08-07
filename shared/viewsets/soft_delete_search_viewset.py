@@ -23,11 +23,12 @@ class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin,
         page_size = int(request.query_params.get('page_size', 10))
         order = request.query_params.get('order', 'asc')
         ordering = '' if order == 'asc' else '-'
+        queryset = self.filter_queryset(self.get_queryset())
         # Assuming 'id' is the field to order by; change as needed
         # order_by = request.query_params.get('order_by', 'id')
         # if order_by not in ['id', 'created_at', 'updated_at']:
         #     return Response({'error': 'Invalid order_by field'}, status=status.HTTP_400_BAD_REQUEST)
-        queryset = self.get_queryset().order_by(f'{ordering}{self.queryset.model._meta.pk.name}')
+        queryset = queryset.order_by(f'{ordering}{self.queryset.model._meta.pk.name}')
         total_records = queryset.count()
         paginator = PageNumberPagination()
         paginator.page_size = page_size
