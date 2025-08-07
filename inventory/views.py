@@ -38,7 +38,8 @@ class LocationViewSet(SearchDeleteViewSet):
     serializer_class = LocationSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
-    search_fields = ['id', 'location_name', 'location_type', 'location_manager__username']
+    filterset_fields = ['location_name', 'location_type', "location_manager__user_id", "store_keeper__user_id"]
+    search_fields = ['id', 'location_name', 'location_type']
 
     @action(detail=False, methods=['GET'])
     def get_active_locations(self, request):
@@ -83,7 +84,8 @@ class StockAdjustmentViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
-    search_fields = ['date_created', 'status', 'warehouse_location']    
+    filterset_fields = ['date_created', 'status', "warehouse_location__id"]
+    search_fields = ['date_created', 'status', "warehouse_location__location_name", "stock_adjustment_items__product__product_name"]
     action_permission_map = {
         **basic_action_permission_map,
         "check_editable": "view",
@@ -154,7 +156,8 @@ class ScrapViewSet(SearchDeleteViewSet):
     app_label = "inventory"
     model_name = "scrap"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    search_fields = ['date_created', 'status', 'warehouse_location']
+    filterset_fields = ['date_created', 'status', "warehouse_location__id", 'adjustment_type']
+    search_fields = ['date_created', 'status', "warehouse_location__location_name", 'adjustment_type', 'scrap_items__product__product_name']
     lookup_field = 'id'
     lookup_url_kwarg = 'id'
     action_permission_map = {
@@ -275,7 +278,8 @@ class IncomingProductViewSet(SearchDeleteViewSet):
     app_label = "inventory"
     model_name = "incomingproduct"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    search_fields = ['date_created', 'status', 'destination_location']
+    search_fields = ['status', "supplier__company_name", "incoming_product_items__product__product_name", "source_location__location_name", "destination_location__location_name", "incoming_product_id"]
+    filterset_fields = ['date_created', 'status', "destination_location__id"]
     lookup_field = 'incoming_product_id'
     lookup_url_kwarg = 'incoming_product_id'
     action_permission_map = {
