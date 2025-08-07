@@ -19,7 +19,7 @@ from rest_framework import routers
 
 from .views import (DeliveryOrderReturnViewSet, DeliveryOrderViewSet, LocationViewSet, MultiLocationViewSet,
                     ReturnIncomingProductViewSet, StockAdjustmentViewSet, ScrapViewSet, StockMoveViewSet,
-                    IncomingProductViewSet)
+                    IncomingProductViewSet, BackOrderViewSet, ConfirmCreateBackOrderViewSet)
 
 router = routers.DefaultRouter()
 
@@ -27,6 +27,9 @@ router.register(r'location', LocationViewSet, basename='location')
 router.register(r'configuration/multi-location', MultiLocationViewSet, basename='multi-location')
 router.register(r'stock-adjustment', StockAdjustmentViewSet, basename='stock-adjustment')
 router.register(r'scrap', ScrapViewSet, basename='scrap')
+router.register(r'back-order', BackOrderViewSet, basename='back-order')
+router.register(r'create-back-order', ConfirmCreateBackOrderViewSet, basename='create-back-order')
+
 # FOR THE DELIVERY ORDERS
 router.register(r'delivery-orders', DeliveryOrderViewSet, basename='delivery-orders')
 

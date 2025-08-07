@@ -1029,7 +1029,8 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
         "draft_list": "view",
         "awaiting_list": "view",
         "cancelled_list": "view",
-        "completed_list": "view"
+        "completed_list": "view",
+        "get_unrelated_po": "view"
     }
 
     def perform_create(self, serializer):
@@ -1098,6 +1099,12 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
             # return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(methods=['get'], detail=False)
+    def get_unrelated_po(self, request):
+        unrelated_po = PurchaseOrder.objects.filter(incoming_product__isnull=True, status="completed").distinct()
+        serializer = self.get_serializer(unrelated_po, many=True)
+        return Response(serializer.data)
 
 
     @action(detail=True, methods=['post'])
