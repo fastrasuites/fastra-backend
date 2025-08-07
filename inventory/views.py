@@ -388,7 +388,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
 
                 instance.save()
 
-            return_serializer = IncomingProductSerializer(instance, many=False)
+            return_serializer = IncomingProductSerializer(instance, context={'request': request}, many=False)
             return Response(return_serializer.data, status=status.HTTP_200_OK)
 
         except ObjectDoesNotExist:

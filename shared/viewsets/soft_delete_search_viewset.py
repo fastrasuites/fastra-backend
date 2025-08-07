@@ -1,5 +1,6 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, filters, viewsets, mixins
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -16,6 +17,49 @@ class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin,
         # # Filter out hidden instances by default
         # return self.queryset.filter(is_hidden=False)
         return super().get_queryset()
+
+    def list(self, request, *args, **kwargs):
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 10))
+        order = request.query_params.get('order', 'asc')
+        ordering = '' if order == 'asc' else '-'
+        # Assuming 'id' is the field to order by; change as needed
+        # order_by = request.query_params.get('order_by', 'id')
+        # if order_by not in ['id', 'created_at', 'updated_at']:
+        #     return Response({'error': 'Invalid order_by field'}, status=status.HTTP_400_BAD_REQUEST)
+        queryset = self.get_queryset().order_by(f'{ordering}{self.queryset.model._meta.pk.name}')
+        total_records = queryset.count()
+        paginator = PageNumberPagination()
+        paginator.page_size = page_size
+        paginated_queryset = paginator.paginate_queryset(queryset, request)
+        total_page_records = len(paginated_queryset)
+        serializer = self.get_serializer(paginated_queryset, many=True)
+        return Response({
+            "page": str(page),
+            "total": str(total_page_records),
+            "records": str(total_records),
+            "rows": serializer.data
+        }, status=status.HTTP_200_OK)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        current_id = instance.pk
+        # Find the next instance by id
+        next_instance = self.get_queryset().filter(pk__gt=current_id).order_by(f'{self.queryset.model._meta.pk.name}').first()
+        next_id = next_instance.pk if next_instance else None
+        data = serializer.data
+        data['next_id'] = next_id
+        return Response(data, status=status.HTTP_200_OK)
+
+
+    # def list(self, request, *args, **kwargs):
+    #     queryset = self.get_queryset()
+    #     paginator = PageNumberPagination()
+    #     paginator.page_size = 10  # Items per page
+    #     paginated_queryset = paginator.paginate_queryset(queryset, request)
+    #     serializer = self.get_serializer(paginated_queryset, many=True)
+    #     return paginator.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=['put', 'patch'])
     def toggle_hidden_status(self, request, pk=None, *args, **kwargs):
