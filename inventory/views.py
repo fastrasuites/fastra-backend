@@ -559,21 +559,27 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         """This is to check for the availability of the Product Items in a Delievery Order. Append the delievery order id(pk) to the request"""
         id = kwargs.get('pk')
         all_confirmed = True
+        instance = self.get_object()
+
 
         if not DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id).exists():
             return Response({"detail": "This delivery order does not exist"},
                             status=status.HTTP_400_BAD_REQUEST)
         delivery_order_items = DeliveryOrderItem.objects.filter(is_hidden=False, delivery_order_id=id)
         for item in delivery_order_items:
-            if item.product_item.available_product_quantity < item.quantity_to_deliver:
+            location_stock_item = LocationStock.objects.filter(
+                    location=instance.source_location, product=item.product_item,
+                ).first()
+            if location_stock_item.quantity < item.quantity_to_deliver:          
                 item.is_available = False
                 all_confirmed = False
+                item.save()
 
-        delivery_order = DeliveryOrder.objects.filter(is_hidden=False, id=id).first()
+        # delivery_order = DeliveryOrder.objects.filter(is_hidden=False, id=id).first()
         try:
-            delivery_order.status = "ready" if all_confirmed else "waiting"
-            delivery_order.save()
-            serialized_order = DeliveryOrderSerializer(delivery_order, context={'request': request})
+            instance.status = "ready" if all_confirmed else "waiting"
+            instance.save()
+            serialized_order = DeliveryOrderSerializer(instance, context={'request': request})
             return Response(serialized_order.data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
