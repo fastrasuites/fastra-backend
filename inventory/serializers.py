@@ -801,10 +801,11 @@ class DeliveryOrderSerializer(serializers.ModelSerializer):
     delivery_order_items = DeliveryOrderItemSerializer(many=True)
     order_unique_id = serializers.CharField(read_only=True)
     id = serializers.IntegerField(read_only=True)
+    source_location_details = LocationSerializer(source='source_location', read_only=True)
 
     class Meta:
         model = DeliveryOrder
-        fields = ['id', 'order_unique_id', 'customer_name', 'source_location', 
+        fields = ['id', 'order_unique_id', 'customer_name', 'source_location', 'source_location_details',
                   'delivery_address', 'delivery_date', 'shipping_policy', 
                   'return_policy', 'assigned_to', 'delivery_order_items', 'status', 'date_created']
 
@@ -920,6 +921,7 @@ class DeliveryOrderReturnItemSerializer(serializers.ModelSerializer):
 class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
     unique_record_id = serializers.CharField(read_only=True)
     delivery_order_return_items = DeliveryOrderReturnItemSerializer(many=True)
+    return_warehouse_location_details = LocationSerializer(source='return_warehouse_location', read_only=True)
 
     class Meta:
         model = DeliveryOrderReturn
@@ -929,6 +931,7 @@ class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
             'date_of_return',
             'source_location',
             'return_warehouse_location',
+            'return_warehouse_location_details',
             'reason_for_return',
             'delivery_order_return_items',
         ]
