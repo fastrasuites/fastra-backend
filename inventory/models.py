@@ -1159,15 +1159,15 @@ class DeliveryOrderItem(models.Model):
         return "{:.2f}".format(self.unit_price * self.quantity_to_deliver)
     
     
-    def save(self, *args, **kwargs):
-        for field in self._meta.fields:
-            value = getattr(self, field.name)
-            if isinstance(value, str):
-                setattr(self, field.name, value.strip())
-        if self.delivery_order.status == "done":
-            self.product_item -= self.quantity_to_deliver
-            self.product_item.save()
-        super().save(*args, **kwargs)
+    # def save(self, *args, **kwargs):
+    #     for field in self._meta.fields:
+    #         value = getattr(self, field.name)
+    #         if isinstance(value, str):
+    #             setattr(self, field.name, value.strip())
+    #     if self.delivery_order.status == "done":
+    #         self.product_item.available_product_quantity -= self.quantity_to_deliver
+    #         self.product_item.save()
+    #     super().save(*args, **kwargs)
 # END DELIVERY ORDERS
 
 

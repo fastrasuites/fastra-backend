@@ -506,6 +506,11 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
         "confirm_delivery": "approve"
     }
 
+    def get_permissions(self):
+        if self.action == 'get_backorder':
+            return []  # No permissions required
+        return super().get_permissions()
+
     def create(self, request, *args, **kwargs):
         """This is to create a new Delivery Order."""
         # Logic to create a new delivery order
@@ -631,12 +636,14 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
                                 item_data = DeliveryOrderItem.objects.get(id=item_id, delivery_order_id=instance.id)
                                 item_data.product_item_id = item["product_item"]
                                 item_data.quantity_to_deliver = item["quantity_to_deliver"]
+                                item_data.unit_price = item["unit_price"]
                                 item_data.save()
                             else:
                                 DeliveryOrderItem.objects.create(
                                     delivery_order_id=instance.id,
                                     product_item_id=item["product_item"],
                                     quantity_to_deliver=item["quantity_to_deliver"],
+                                    unit_price = item["unit_price"]
                                 )
                         except KeyError as ke:
                             return Response(
