@@ -287,6 +287,11 @@ class IncomingProductViewSet(SearchDeleteViewSet):
         "check_editable": "view",
     }
 
+    def get_permissions(self):
+        if self.action == 'get_backorder':
+            return []  # No permissions required
+        return super().get_permissions()
+
     def get_queryset(self):
         queryset = super().get_queryset()
         incoming_product_status = self.request.query_params.get('status')
@@ -325,7 +330,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(methods=['get'], detail=True)
-    def get_backorder(self, request, pk=None):
+    def get_backorder(self, request, incoming_product_id=None):
         """Get the backorder for a specific incoming product."""
         try:
             incoming_product = self.get_object()
