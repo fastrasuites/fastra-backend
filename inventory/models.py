@@ -608,7 +608,7 @@ class ScrapItem(models.Model):
         if self.product:
             if not self.scrap_quantity:
                 raise ValidationError("Scrap quantity is required")
-            if self.adjusted_quantity < 0:
+            if self.adjusted_quantity is not None and  self.adjusted_quantity < 0:
                 raise ValidationError("Adjusted quantity cannot be negative")
             current_stock = self.product.location_stocks.filter(location=self.scrap.warehouse_location).first()
             if not current_stock:

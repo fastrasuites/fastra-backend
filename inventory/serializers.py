@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.db import IntegrityError, transaction
 from datetime import datetime
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product, PurchaseOrder
@@ -311,7 +312,12 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
             product = item_data['product']
             scrap_quantity = item_data['scrap_quantity']
             item_data.pop('product')
-            ScrapItem.objects.create(scrap=scrap, product=product, **item_data)
+            try:
+                ScrapItem.objects.create(scrap=scrap, product=product, **item_data)
+            except DjangoValidationError as e:
+                raise serializers.ValidationError({
+                    'detail': [f"Error for product {product.id}: {e.message}"]
+                })
             # Update per-location stock
             # Update product quantity if done
             if scrap.status == "done":
