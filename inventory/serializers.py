@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product, PurchaseOrder
 from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOrderSerializer
+from shared.serializers import GenericModelSerializer
 
 from users.models import TenantUser
 from users.serializers import TenantUserSerializer
@@ -15,7 +16,7 @@ from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, Deli
                      MultiLocation, ReturnIncomingProduct, ReturnIncomingProductItem, StockAdjustment,
                      StockAdjustmentItem, BackOrder, BackOrderItem,
                      Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES, StockMove,
-                     LocationStock)
+                     LocationStock, InternalTransfer, InternalTransferItem)
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
@@ -287,15 +288,16 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
         Validate the Scrap data.
         """
         items_data = data.get('scrap_items', [])
-        if not items_data:
+        if not self.instance and not items_data:
             raise serializers.ValidationError("At least one item is required to create a Scrap.")
-        for item in items_data:
-            product = item.get('product')
-            scrap_quantity = item.get('scrap_quantity', 0)
-            if scrap_quantity <= 0:
-                raise serializers.ValidationError("Scrap quantity cannot be zero or negative.")
-            if not Product.objects.filter(id=product.id, is_hidden=False).exists():
-                raise serializers.ValidationError("Invalid Product")
+        if items_data:
+            for item in items_data:
+                product = item.get('product')
+                scrap_quantity = item.get('scrap_quantity', 0)
+                if scrap_quantity <= 0:
+                    raise serializers.ValidationError("Scrap quantity cannot be zero or negative.")
+                if not Product.objects.filter(id=product.id, is_hidden=False).exists():
+                    raise serializers.ValidationError("Invalid Product")
         return data
 
     @transaction.atomic
@@ -449,32 +451,34 @@ class IncomingProductSerializer(serializers.ModelSerializer):
 
         # Ensure that the items data is present and valid
         items_data = data.get('incoming_product_items', [])
-        if not items_data:
+        if not items_data and not self.instance:
             raise serializers.ValidationError("At least one item is required.")
-        for item in items_data:
-            product = item.get('product')
-            expected_quantity = item.get('expected_quantity', 0)
-            quantity_received = item.get('quantity_received', 0)
-            if not product:
-                raise serializers.ValidationError("Invalid Product")
-            if related_po:
-                # Set expected_quantity from the corresponding PO item
-                po_item = related_po.items.filter(product_id=product.id).first()
-                if po_item:
-                    if expected_quantity is None:
-                        raise serializers.ValidationError("Expected quantity is required if there is no related "
-                                                          "purchase order.")
-                    if po_item and expected_quantity != po_item.qty:
-                        raise serializers.ValidationError("Purchase Order Item quantity mismatch.")
-                else:
-                    raise serializers.ValidationError("Product not found in related purchase order items.")
-            if quantity_received < 0 or expected_quantity < 0:
-                raise serializers.ValidationError("Quantities cannot be negative.")
+
+        if items_data:
+            for item in items_data:
+                product = item.get('product')
+                expected_quantity = item.get('expected_quantity', 0)
+                quantity_received = item.get('quantity_received', 0)
+                if not product:
+                    raise serializers.ValidationError("Invalid Product")
+                if related_po:
+                    # Set expected_quantity from the corresponding PO item
+                    po_item = related_po.items.filter(product_id=product.id).first()
+                    if po_item:
+                        if expected_quantity is None:
+                            raise serializers.ValidationError("Expected quantity is required if there is no related "
+                                                              "purchase order.")
+                        if po_item and expected_quantity != po_item.qty:
+                            raise serializers.ValidationError("Purchase Order Item quantity mismatch.")
+                    else:
+                        raise serializers.ValidationError("Product not found in related purchase order items.")
+                if quantity_received < 0 or expected_quantity < 0:
+                    raise serializers.ValidationError("Quantities cannot be negative.")
         # Ensure that the receipt type is one of the allowed types
         receipt_type = data.get('receipt_type')
         # INCOMING_PRODUCT_RECEIPT_TYPES may be a list of tuples, so extract the valid values
         valid_receipt_types = [choice[0] if isinstance(choice, tuple) else choice for choice in INCOMING_PRODUCT_RECEIPT_TYPES]
-        if receipt_type not in valid_receipt_types:
+        if receipt_type and receipt_type not in valid_receipt_types:
             raise serializers.ValidationError(
                 "Invalid receipt type. Must be one of: " + ", ".join(str(v) for v in valid_receipt_types)
             )
@@ -625,9 +629,9 @@ class BackOrderItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'backorder', 'product_details']
 
 
-class BackOrderSerializer(serializers.ModelSerializer):
+class BackOrderNotCreateSerializer(serializers.ModelSerializer):
     backorder_of = serializers.PrimaryKeyRelatedField(
-        queryset=IncomingProduct.objects.filter(is_hidden=False),
+        read_only=True,  # This field is read-only in this serializer
     )
     backorder_items = BackOrderItemSerializer(many=True)
     backorder_of_details = IncomingProductSerializer(source='backorder_of', read_only=True)
@@ -639,8 +643,8 @@ class BackOrderSerializer(serializers.ModelSerializer):
         read_only_fields = ['date_created', 'date_updated']
 
     def validate(self, attrs):
-        if not attrs.get('backorder_of'):
-            raise serializers.ValidationError("Back Order must be linked to an Incoming Product.")
+        # if not attrs.get('backorder_of'):
+        #     raise serializers.ValidationError("Back Order must be linked to an Incoming Product.")
         items_data = attrs.get('backorder_items', [])
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a Back Order.")
@@ -1013,7 +1017,6 @@ class ReturnIncomingProductSerializer(serializers.ModelSerializer):
 # END RETURN INCOMING PRODUCT
 
 
-
 # START STOCK MOVE
 class StockMoveSerializer(serializers.ModelSerializer):
     date_created = serializers.DateTimeField(read_only=True)
@@ -1024,3 +1027,182 @@ class StockMoveSerializer(serializers.ModelSerializer):
         fields = ["id", "product", "quantity", "source_document_id",
                   "source_location", "destination_location", "date_created", "date_moved"]
 # END STOCK MOVE
+
+
+class InternalTransferItemSerializer(serializers.ModelSerializer):
+    internal_transfer = serializers.ReadOnlyField(source="internal_transfer.pk")
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.filter(is_hidden=False),
+        write_only=True
+    )
+    product_details = ProductSerializer(source='product', read_only=True)
+
+    class Meta:
+        model = InternalTransferItem
+        fields = ['id', 'product', 'product_details', 'quantity_requested', 'internal_transfer']
+        read_only_fields = ['id', 'product_details']
+
+
+class InternalTransferSerializer(GenericModelSerializer):
+    internal_transfer_items = InternalTransferItemSerializer(many=True)
+    source_location = serializers.PrimaryKeyRelatedField(
+        queryset=Location.objects.filter(is_hidden=False),
+    )
+    destination_location = serializers.PrimaryKeyRelatedField(
+        queryset=Location.objects.filter(is_hidden=False),
+    )
+    source_location_details = LocationSerializer(source='source_location', read_only=True)
+    destination_location_details = LocationSerializer(source='destination_location', read_only=True)
+
+    class Meta:
+        model = InternalTransfer
+        fields = ['id', 'internal_transfer_items', 'source_location', 'source_location_details',
+                  'destination_location', 'destination_location_details', 'status', 'date_created',
+                  'date_updated', 'created_by', 'updated_by', 'is_hidden']
+        read_only_fields = ['id', 'date_created', 'date_updated', 'created_by', 'updated_by']
+
+    def validate(self, data):
+        if not self.instance:
+            if not data.get('internal_transfer_items'):
+                raise serializers.ValidationError("At least one item is required for the transfer.")
+            items_data = data.get('internal_transfer_items', [])
+            if data.get('status') != 'draft':
+                for item_data in items_data:
+                    product = item_data.get('product')
+                    quantity_requested = item_data.get('quantity_requested', 0)
+                    if not product or not Product.objects.filter(id=product, is_hidden=False).exists():
+                        raise serializers.ValidationError("Invalid Product")
+                    if LocationStock.objects.filter(product=product, location=data['source_location']).count() < quantity_requested:
+                        raise serializers.ValidationError("Insufficient stock for the product in the source location.")
+                    if quantity_requested <= 0:
+                        raise serializers.ValidationError("Quantity requested must be greater than zero.")
+            if not data.get('source_location'):
+                raise serializers.ValidationError("Source location is required.")
+            if not data.get('destination_location'):
+                raise serializers.ValidationError("Destination location is required.")
+            user = self.context['request'].user
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
+            except TenantUser.DoesNotExist:
+                raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
+            store_keeper = None
+            location_manager = None
+            if 'source_location' in data:
+                source_location_pk = data.get('source_location', None)
+                if source_location_pk:
+                    try:
+                        source_location_obj = Location.objects.get(pk=source_location_pk)
+                        store_keeper = source_location_obj.store_keeper.pk if source_location_obj.store_keeper else None
+                        location_manager = source_location_obj.location_manager.pk if source_location_obj.location_manager else None
+                    except Location.DoesNotExist:
+                        store_keeper = None
+                # Check if the store_keeper is the same as the current user
+                if (store_keeper and store_keeper == tenant_user.pk) or (
+                        location_manager and location_manager == tenant_user.pk):
+                    raise serializers.ValidationError(
+                        "You do not have permission to transfer items from your own location.")
+            if data['source_location'] == data['destination_location']:
+                raise serializers.ValidationError("Source and destination locations cannot be the same.")
+        return data
+
+    @transaction.atomic
+    def create(self, validated_data):
+        items_data = validated_data.pop('internal_transfer_items')
+        internal_transfer = InternalTransfer.objects.create(**validated_data)
+        try:
+            InternalTransferItem.objects.bulk_create(
+                [InternalTransferItem(internal_transfer=internal_transfer, **item_data) for item_data in items_data]
+            )
+        except IntegrityError as e:
+            raise serializers.ValidationError({"detail": "Error creating internal transfer items: " + str(e)})
+
+        status = validated_data.get('status', 'draft')
+        if status not in ['draft', 'awaiting_approval']:
+            raise serializers.ValidationError("Internal Transfer status can not be validated on creation.")
+        return internal_transfer
+
+    # def make_gradual_status_change(self, instance, status):
+    #     status_choices = ['draft', 'awaiting_approval', 'released', 'done',]
+    #     if status not in status_choices:
+    #         raise serializers.ValidationError(f"Invalid status: {status}. Must be one of {status_choices}.")
+    #     # Ensure the status change is gradual
+    #     current_status_index = status_choices.index(instance.status)
+    #     new_status_index = status_choices.index(status)
+    #     if new_status_index - current_status_index != 1:
+    #         raise serializers.ValidationError(
+    #             f"Cannot change status from {instance.status} to {status}. Status changes must be gradual."
+    #         )
+
+
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('internal_transfer_items', None)
+        partial = self.context.get('partial', False)
+        status = validated_data.get('status', None)
+        was_validated = instance.status == 'done'
+        was_cancelled = instance.status == 'cancelled'
+        is_now_validated = status == 'done'
+
+        if was_cancelled and (status and status != 'draft'):
+            raise serializers.ValidationError(
+                "Internal Transfer cannot be updated once the status is set to 'cancelled'. Reset to Draft first."
+            )
+        if was_validated:
+            raise serializers.ValidationError(
+                "Internal Transfer cannot be updated once the status is set to 'done'."
+            )
+
+        # Update the instance fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if items_data:
+            existing_items = {item.id: item for item in instance.internal_transfer_items.all()}
+            internal_item_ids = set(item_data.get('id') for item_data in items_data if item_data.get('id'))
+
+            if partial:
+                # Only update or add provided items, do not delete others
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        it_item = existing_items[item_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(it_item, attr, value)
+                        it_item.save()
+                    else:
+                        InternalTransferItem.objects.create(internal_transfer=instance, **item_data)
+            else:
+                # Full update: delete items not present, update/add others
+                for item_id in set(existing_items.keys()) - internal_item_ids:
+                    existing_items[item_id].delete()
+                for item_data in items_data:
+                    item_id = item_data.get('id')
+                    if item_id and item_id in existing_items:
+                        it_item = existing_items[item_id]
+                        for attr, value in item_data.items():
+                            if attr != 'id':
+                                setattr(it_item, attr, value)
+                        it_item.save()
+                    else:
+                        InternalTransferItem.objects.create(internal_transfer=instance, **item_data)
+
+        if not was_validated and is_now_validated:
+            for item in instance.internal_transfer_items.all():
+                product = item.product
+                quantity_requested = item.quantity_requested
+                source_stock = LocationStock.objects.get(location=instance.source_location, product=product)
+                destination_stock, created = LocationStock.objects.get_or_create(
+                    location=instance.destination_location, product=product,
+                    defaults={'quantity': 0}
+                )
+                if source_stock and destination_stock:
+                    source_stock.quantity -= quantity_requested
+                    destination_stock.quantity += quantity_requested
+                    source_stock.save()
+                    destination_stock.save()
+                else:
+                    raise serializers.ValidationError(
+                        "Product does not exist in the specified warehouse location."
+                    )
+        return instance
