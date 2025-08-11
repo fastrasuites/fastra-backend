@@ -302,8 +302,9 @@ class Location(models.Model):
         # Generate the id based on location_code and id_number
         self.id = f"{self.location_code}{self.id_number:05d}"
         # Check the maximum number of locations if MultiLocation is not activated
-        if not MultiLocation.objects.filter(is_activated=True).exists() and Location.objects.filter(is_hidden=False).count() > 3:
-            raise Exception("Maximum number of locations reached")
+        if not self.pk:
+            if not MultiLocation.objects.filter(is_activated=True).exists() and Location.objects.filter(is_hidden=False).count() >= 3:
+                raise Exception("Maximum number of locations reached")
         super().save(*args, **kwargs)
 
 
