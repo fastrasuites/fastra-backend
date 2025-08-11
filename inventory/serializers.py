@@ -6,7 +6,6 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product, PurchaseOrder
 from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOrderSerializer
-from shared.serializers import GenericModelSerializer
 
 from users.models import TenantUser
 from users.serializers import TenantUserSerializer
@@ -16,7 +15,7 @@ from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, Deli
                      MultiLocation, ReturnIncomingProduct, ReturnIncomingProductItem, StockAdjustment,
                      StockAdjustmentItem, BackOrder, BackOrderItem,
                      Scrap, ScrapItem, IncomingProductItem, IncomingProduct, INCOMING_PRODUCT_RECEIPT_TYPES, StockMove,
-                     LocationStock, InternalTransfer, InternalTransferItem)
+                     LocationStock)
 
 
 class LocationSerializer(serializers.HyperlinkedModelSerializer):
