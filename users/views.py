@@ -209,7 +209,10 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
     search_fields = ['user__username', 'user__email']
 
     def get_permissions(self):
-        if self.action == 'retrieve':
+        form_param = self.request.query_params.get('form', '').lower() == 'true'
+
+        if self.action == 'retrieve' or form_param:
+            """If the query parameter of ?form=true is added, then there will be acccess to the views of the request"""
             return [IsAdminOrIsSelf()]
         if self.action in ['list', 'create', 'destroy', 'update', 'partial_update']:
             return [permissions.IsAdminUser()]
