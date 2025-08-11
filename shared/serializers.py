@@ -1,8 +1,10 @@
 from inventory.models import Location
 from purchase.models import Product, Vendor, Currency
+from users.models import TenantUser
 
 from rest_framework import serializers
 
+# Used for patches and updates
 class LocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Location
@@ -22,3 +24,4 @@ class CurrencySerializer(serializers.ModelSerializer):
     class Meta:
         model = Currency
         fields = '__all__'
+

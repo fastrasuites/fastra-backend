@@ -13,6 +13,7 @@ from rest_framework import serializers
 
 from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet, NoCreateSearchViewSet
+from users.models import TenantUser
 from users.module_permissions import HasModulePermission
 
 from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, LocationStock,
@@ -20,7 +21,7 @@ from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, Deli
                      IncomingProductItem, StockMove, BackOrder, BackOrderItem)
 from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer,
                           DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer,
-                          ReturnIncomingProductSerializer, StockAdjustmentSerializer, BackOrderSerializer,
+                          ReturnIncomingProductSerializer, StockAdjustmentSerializer, BackOrderNotCreateSerializer,
                           ScrapSerializer, IncomingProductSerializer, StockMoveSerializer,
                           BackOrderCreateSerializer)
 
@@ -45,6 +46,22 @@ class LocationViewSet(SearchDeleteViewSet):
     def get_active_locations(self, request):
         queryset = Location.get_active_locations()
         return Response(queryset.values())
+
+    @action(detail=False, methods=['GET'])
+    def get_locations_for_manager(self, request):
+        """
+        Returns the locations that the current user has access to.
+        """
+        user = request.user
+        if not user.is_authenticated:
+            return Response({"error": "User is not authenticated."}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            tenant_user = TenantUser.objects.get(user_id=user.id)
+            locations = Location.get_managed_locations_for_user(tenant_user)
+            serializer = self.get_serializer(locations, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist as e:
+            return Response({"error": f"{e}"}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['GET'])
     def location_stock_levels(self, request, *args, **kwargs):
@@ -329,6 +346,29 @@ class IncomingProductViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        for incoming_product in serializer.data:
+            backorder = BackOrder.objects.filter(backorder_of__incoming_product_id=incoming_product['incoming_product_id']).first()
+            if backorder:
+                incoming_product['backorder'] = BackOrderNotCreateSerializer(backorder, context={'request': request}).data
+            else:
+                incoming_product['backorder'] = None
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def retrieve(self, request, *args, **kwargs):
+        # add backorder information to the incoming product
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+        backorder = BackOrder.objects.filter(backorder_of__incoming_product_id=data['incoming_product_id']).first()
+        if backorder:
+            data['backorder'] = BackOrderNotCreateSerializer(backorder, context={'request': request}).data
+        else:
+            data['backorder'] = None
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     @action(methods=['get'], detail=True)
     def get_backorder(self, request, incoming_product_id=None):
         """Get the backorder for a specific incoming product."""
@@ -337,7 +377,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
             backorder = BackOrder.objects.filter(backorder_of=incoming_product).first()
             if not backorder:
                 return Response({"detail": "No backorder found for this incoming product."}, status=status.HTTP_404_NOT_FOUND)
-            serializer = BackOrderSerializer(backorder, context={'request': request})
+            serializer = BackOrderNotCreateSerializer(backorder, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
         except ObjectDoesNotExist:
             return Response({"detail": "Incoming product not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -410,7 +450,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
 
 class BackOrderViewSet(NoCreateSearchViewSet):
     queryset = BackOrder.objects.all()
-    serializer_class = BackOrderSerializer
+    serializer_class = BackOrderNotCreateSerializer
     app_label = "inventory"
     model_name = "backorder"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]

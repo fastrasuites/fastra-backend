@@ -287,15 +287,16 @@ class ScrapSerializer(serializers.HyperlinkedModelSerializer):
         Validate the Scrap data.
         """
         items_data = data.get('scrap_items', [])
-        if not items_data:
+        if not self.instance and not items_data:
             raise serializers.ValidationError("At least one item is required to create a Scrap.")
-        for item in items_data:
-            product = item.get('product')
-            scrap_quantity = item.get('scrap_quantity', 0)
-            if scrap_quantity <= 0:
-                raise serializers.ValidationError("Scrap quantity cannot be zero or negative.")
-            if not Product.objects.filter(id=product.id, is_hidden=False).exists():
-                raise serializers.ValidationError("Invalid Product")
+        if items_data:
+            for item in items_data:
+                product = item.get('product')
+                scrap_quantity = item.get('scrap_quantity', 0)
+                if scrap_quantity <= 0:
+                    raise serializers.ValidationError("Scrap quantity cannot be zero or negative.")
+                if not Product.objects.filter(id=product.id, is_hidden=False).exists():
+                    raise serializers.ValidationError("Invalid Product")
         return data
 
     @transaction.atomic
@@ -430,7 +431,6 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     incoming_product_id = serializers.CharField(required=False)  # Make the id field read-only
     source_location_details = LocationSerializer(source='source_location', read_only=True)
     destination_location_details = LocationSerializer(source='destination_location', read_only=True)
-    backorder_details = serializers.Serializer(source='backorder', read_only=True)
     supplier_details = VendorSerializer(source='supplier', read_only=True)
 
     class Meta:
@@ -438,7 +438,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         fields = ['incoming_product_id', 'receipt_type', 'related_po', 'supplier', 'source_location',
                   'source_location_details', 'incoming_product_items', 'supplier_details',
                   'destination_location', 'destination_location_details', 'status',
-                  'is_validated', 'can_edit', 'is_hidden', 'backorder_details']
+                  'is_validated', 'can_edit', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated', "source_location_details", "destination_location_details", "supplier_details"]
 
     def validate(self, data):
@@ -449,32 +449,34 @@ class IncomingProductSerializer(serializers.ModelSerializer):
 
         # Ensure that the items data is present and valid
         items_data = data.get('incoming_product_items', [])
-        if not items_data:
+        if not items_data and not self.instance:
             raise serializers.ValidationError("At least one item is required.")
-        for item in items_data:
-            product = item.get('product')
-            expected_quantity = item.get('expected_quantity', 0)
-            quantity_received = item.get('quantity_received', 0)
-            if not product:
-                raise serializers.ValidationError("Invalid Product")
-            if related_po:
-                # Set expected_quantity from the corresponding PO item
-                po_item = related_po.items.filter(product_id=product.id).first()
-                if po_item:
-                    if expected_quantity is None:
-                        raise serializers.ValidationError("Expected quantity is required if there is no related "
-                                                          "purchase order.")
-                    if po_item and expected_quantity != po_item.qty:
-                        raise serializers.ValidationError("Purchase Order Item quantity mismatch.")
-                else:
-                    raise serializers.ValidationError("Product not found in related purchase order items.")
-            if quantity_received < 0 or expected_quantity < 0:
-                raise serializers.ValidationError("Quantities cannot be negative.")
+
+        if items_data:
+            for item in items_data:
+                product = item.get('product')
+                expected_quantity = item.get('expected_quantity', 0)
+                quantity_received = item.get('quantity_received', 0)
+                if not product:
+                    raise serializers.ValidationError("Invalid Product")
+                if related_po:
+                    # Set expected_quantity from the corresponding PO item
+                    po_item = related_po.items.filter(product_id=product.id).first()
+                    if po_item:
+                        if expected_quantity is None:
+                            raise serializers.ValidationError("Expected quantity is required if there is no related "
+                                                              "purchase order.")
+                        if po_item and expected_quantity != po_item.qty:
+                            raise serializers.ValidationError("Purchase Order Item quantity mismatch.")
+                    else:
+                        raise serializers.ValidationError("Product not found in related purchase order items.")
+                if quantity_received < 0 or expected_quantity < 0:
+                    raise serializers.ValidationError("Quantities cannot be negative.")
         # Ensure that the receipt type is one of the allowed types
         receipt_type = data.get('receipt_type')
         # INCOMING_PRODUCT_RECEIPT_TYPES may be a list of tuples, so extract the valid values
         valid_receipt_types = [choice[0] if isinstance(choice, tuple) else choice for choice in INCOMING_PRODUCT_RECEIPT_TYPES]
-        if receipt_type not in valid_receipt_types:
+        if receipt_type and receipt_type not in valid_receipt_types:
             raise serializers.ValidationError(
                 "Invalid receipt type. Must be one of: " + ", ".join(str(v) for v in valid_receipt_types)
             )
@@ -625,9 +627,9 @@ class BackOrderItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'backorder', 'product_details']
 
 
-class BackOrderSerializer(serializers.ModelSerializer):
+class BackOrderNotCreateSerializer(serializers.ModelSerializer):
     backorder_of = serializers.PrimaryKeyRelatedField(
-        queryset=IncomingProduct.objects.filter(is_hidden=False),
+        read_only=True,  # This field is read-only in this serializer
     )
     backorder_items = BackOrderItemSerializer(many=True)
     backorder_of_details = IncomingProductSerializer(source='backorder_of', read_only=True)
@@ -639,8 +641,8 @@ class BackOrderSerializer(serializers.ModelSerializer):
         read_only_fields = ['date_created', 'date_updated']
 
     def validate(self, attrs):
-        if not attrs.get('backorder_of'):
-            raise serializers.ValidationError("Back Order must be linked to an Incoming Product.")
+        # if not attrs.get('backorder_of'):
+        #     raise serializers.ValidationError("Back Order must be linked to an Incoming Product.")
         items_data = attrs.get('backorder_items', [])
         if not items_data:
             raise serializers.ValidationError("At least one item is required to create a Back Order.")
@@ -1011,7 +1013,6 @@ class ReturnIncomingProductSerializer(serializers.ModelSerializer):
 
 
 # END RETURN INCOMING PRODUCT
-
 
 
 # START STOCK MOVE
