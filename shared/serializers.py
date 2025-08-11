@@ -1,7 +1,6 @@
 from inventory.models import Location
 from purchase.models import Product, Vendor, Currency
 from users.models import TenantUser
-from .models import GenericModel
 
 from rest_framework import serializers
 
@@ -26,49 +25,3 @@ class CurrencySerializer(serializers.ModelSerializer):
         model = Currency
         fields = '__all__'
 
-
-class GenericModelSerializer(serializers.ModelSerializer):
-    """
-    A base serializer that can be used to create generic serializers.
-    """
-    created_by = serializers.PrimaryKeyRelatedField(read_only=True)
-    updated_by = serializers.PrimaryKeyRelatedField(read_only=True)
-    date_created = serializers.DateTimeField(read_only=True)
-    date_updated = serializers.DateTimeField(read_only=True)
-
-    class Meta:
-        model = GenericModel
-        fields = ('created_by', 'updated_by', 'date_created', 'date_updated', 'is_hidden')
-        abstract = True
-
-    def to_internal_value(self, data):
-        """
-        Override to_internal_value to handle the case where the data is None.
-        """
-        data = data.copy()
-        if data is None:
-            return {}
-        # add created_by fields if they are not present
-        user = self.context['request'].user
-        try:
-            tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
-            data['created_by'] = tenant_user.pk
-        except TenantUser.DoesNotExist:
-            data['created_by'] = None
-            raise serializers.ValidationError(
-                "TenantUser does not exist for the current user."
-            )
-        return super().to_internal_value(data)
-
-    def update(self, instance, validated_data):
-        request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            user = request.user
-            try:
-                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
-                validated_data['updated_by'] = tenant_user.pk
-            except TenantUser.DoesNotExist:
-                raise serializers.ValidationError(
-                    "TenantUser does not exist for the current user."
-                )
-        return super().update(instance, validated_data)
