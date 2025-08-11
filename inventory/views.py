@@ -347,16 +347,15 @@ class IncomingProductViewSet(SearchDeleteViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def list(self, request, *args, **kwargs):
-        # add backorder information to the incoming products
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         for incoming_product in serializer.data:
             backorder = BackOrder.objects.filter(backorder_of__incoming_product_id=incoming_product['incoming_product_id']).first()
             if backorder:
-                incoming_product['backorder'] = BackOrderNotCreateSerializer(backorder).data
+                incoming_product['backorder'] = BackOrderNotCreateSerializer(backorder, context={'request': request}).data
             else:
                 incoming_product['backorder'] = None
-        super().list(request, *args, **kwargs)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def retrieve(self, request, *args, **kwargs):
         # add backorder information to the incoming product
@@ -365,10 +364,10 @@ class IncomingProductViewSet(SearchDeleteViewSet):
         data = serializer.data
         backorder = BackOrder.objects.filter(backorder_of__incoming_product_id=data['incoming_product_id']).first()
         if backorder:
-            data['backorder'] = BackOrderNotCreateSerializer(backorder).data
+            data['backorder'] = BackOrderNotCreateSerializer(backorder, context={'request': request}).data
         else:
             data['backorder'] = None
-        super().retrieve(request, *args, **kwargs)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(methods=['get'], detail=True)
     def get_backorder(self, request, incoming_product_id=None):

@@ -431,7 +431,6 @@ class IncomingProductSerializer(serializers.ModelSerializer):
     incoming_product_id = serializers.CharField(required=False)  # Make the id field read-only
     source_location_details = LocationSerializer(source='source_location', read_only=True)
     destination_location_details = LocationSerializer(source='destination_location', read_only=True)
-    backorder_details = serializers.Serializer(source='backorder', read_only=True)
     supplier_details = VendorSerializer(source='supplier', read_only=True)
 
     class Meta:
@@ -439,7 +438,7 @@ class IncomingProductSerializer(serializers.ModelSerializer):
         fields = ['incoming_product_id', 'receipt_type', 'related_po', 'supplier', 'source_location',
                   'source_location_details', 'incoming_product_items', 'supplier_details',
                   'destination_location', 'destination_location_details', 'status',
-                  'is_validated', 'can_edit', 'is_hidden', 'backorder_details']
+                  'is_validated', 'can_edit', 'is_hidden']
         read_only_fields = ['date_created', 'date_updated', "source_location_details", "destination_location_details", "supplier_details"]
 
     def validate(self, data):
