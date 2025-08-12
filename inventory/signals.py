@@ -85,7 +85,7 @@ def create_delivery_order_returns_stock_move(instance):
             quantity=item.returned_quantity,
             move_type='RETURN',
             source_document_id=instance.unique_record_id, 
-            source_location=instance.source_location,
+            source_address=instance.source_location,  # Here, instance.source_location is a text field, so we mapped it to source_Address which is a text field too
             destination_location=instance.return_warehouse_location,
             date_created=timezone.now(),
             date_moved=timezone.now(),

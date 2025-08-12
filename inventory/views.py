@@ -789,7 +789,7 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
         # Auto set unique_record_id, source_document, source_location, return_warehouse_location
         validated_data['unique_record_id'] = generate_returned_record_unique_id(delivery_order.order_unique_id)
         validated_data['source_document'] = delivery_order
-        validated_data['source_location'] = delivery_order.source_location
+        validated_data['source_location'] = delivery_order.delivery_address
         validated_data['return_warehouse_location'] = delivery_order.source_location
 
         if DeliveryOrderReturn.objects.filter(is_hidden=False, unique_record_id=validated_data['unique_record_id']).exists():
