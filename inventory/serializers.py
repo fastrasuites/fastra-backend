@@ -935,7 +935,7 @@ class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
             'return_warehouse_location',
             'return_warehouse_location_details',
             'reason_for_return',
-            'delivery_order_return_items',
+            'delivery_order_return_items'
         ]
         
     @transaction.atomic
@@ -955,10 +955,10 @@ class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
             for item in delivery_order_return_items:
                 # Update product quantity if done
                 location_stock = LocationStock.objects.filter(
-                    location=delivery_order_return.source_location, product_id=item.returned_product_item,
+                    location=delivery_order_return.return_warehouse_location, product_id=item.returned_product_item,
                 ).first()
                 if location_stock:
-                    location_stock.quantity -= item.returned_quantity
+                    location_stock.quantity += item.returned_quantity
                     location_stock.save()
                 else:
                     raise serializers.ValidationError(
@@ -970,7 +970,8 @@ class DeliveryOrderReturnSerializer(serializers.ModelSerializer):
         except Exception as e:
             raise serializers.ValidationError(f"An error occurred: {str(e)}")
 
-# END THE RETURN REDORD
+
+# END THE RETURN RECORD
 
 
 # START RETURN INCOMING PRODUCT

@@ -11,6 +11,7 @@ from rest_framework.mixins import CreateModelMixin
 from rest_framework.response import Response
 from rest_framework import serializers
 
+from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet, NoCreateSearchViewSet
 from users.models import TenantUser
@@ -250,10 +251,25 @@ class ScrapViewSet(SearchDeleteViewSet):
                                 status=status.HTTP_400_BAD_REQUEST
                             )
 
+# =================================================================================
+                """This is to update by adding the Quantity returned to the inventory"""
+                scrap_items = ScrapItem.objects.filter(scrap_id=instance.id)
+                for item in scrap_items:
+                    # Update product quantity if done
+                    location_stock = LocationStock.objects.filter(
+                        location=instance.warehouse_location, product_id=item.product,
+                    ).first()
+                    if location_stock:
+                        location_stock.quantity -= item.scrap_quantity
+                        location_stock.save()
+                    else:
+                        raise serializers.ValidationError(
+                            "Product does not exist in the specified warehouse location."
+                        )
                 instance.save()
 
-            return_serializer = ScrapSerializer(instance, many=False, context={'request': request})
-            return Response(return_serializer.data, status=status.HTTP_200_OK)
+            scrap_serializer = ScrapSerializer(instance, many=False, context={'request': request})
+            return Response(scrap_serializer.data, status=status.HTTP_200_OK)
 
         except ObjectDoesNotExist:
             return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -435,6 +451,22 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                                 status=status.HTTP_400_BAD_REQUEST
                             )
 
+# =============================================================================
+                if instance.status == "validated":
+                    for item in instance.incoming_product_items.all():
+                        product = item.product
+                        quantity_received = item.quantity_received
+                        location_stock, created = LocationStock.objects.get_or_create(
+                            location=instance.destination_location, product=product,
+                            defaults={'quantity': 0}
+                        )
+                        if location_stock:
+                            location_stock.quantity += quantity_received
+                            location_stock.save()
+                        else:
+                            raise serializers.ValidationError(
+                                "Product does not exist in the specified warehouse location."
+                            )
                 instance.save()
 
             return_serializer = IncomingProductSerializer(instance, context={'request': request}, many=False)
@@ -773,7 +805,7 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
         # Auto set unique_record_id, source_document, source_location, return_warehouse_location
         validated_data['unique_record_id'] = generate_returned_record_unique_id(delivery_order.order_unique_id)
         validated_data['source_document'] = delivery_order
-        validated_data['source_location'] = delivery_order.source_location
+        validated_data['source_location'] = delivery_order.delivery_address
         validated_data['return_warehouse_location'] = delivery_order.source_location
 
         if DeliveryOrderReturn.objects.filter(is_hidden=False, unique_record_id=validated_data['unique_record_id']).exists():
@@ -783,6 +815,7 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+# END FOR THE DELIVERY ORDER RETURNS
 
 class DeliveryOrderReturnItemViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrderReturnItem.objects.all()
@@ -833,13 +866,18 @@ class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
 
                 return_serializer = ReturnIncomingProductSerializer(return_incoming_product, many=False, context={'request': request})
                 return_incoming_product_items = return_serializer.data.pop("return_incoming_product_items")
-                product_list = []
                 for item in return_incoming_product_items:
                     # This is where we deduct the returned quantity from the available quantity and then update the database. 
-                    product = Product.objects.filter(is_hidden=False, id=item["id"]).first()
-                    product.available_product_quantity -= item["quantity_to_be_returned"]
-                    product_list.append(product)
-                Product.objects.bulk_update(product_list, fields=["available_product_quantity"])
+                    location_stock = LocationStock.objects.filter(
+                        location=return_incoming_product.source_document.destination_location, product_id=item["product_details"]["id"],
+                    ).first()
+                    if location_stock:
+                        location_stock.quantity -= item["quantity_to_be_returned"]
+                        location_stock.save()
+                    else:
+                        raise serializers.ValidationError(
+                            "Product does not exist in the specified warehouse location."
+                        )
 
             serializer =  ReturnIncomingProductSerializer(return_incoming_product, many=False, context={'request': request})                    
             return Response(serializer.data, status=status.HTTP_201_CREATED)

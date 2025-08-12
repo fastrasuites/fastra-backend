@@ -993,7 +993,10 @@ class StockMove(models.Model):
         null=True,
         blank=True
     )
-    delivery_address = models.TextField(null=True, blank=True)
+    """These last wo fields are there such that if the destination or source location does not happen to be a Location Object,
+    we use this field so as to kee track of the data. """
+    delivery_address = models.TextField(null=True, blank=True) 
+    source_address = models.TextField(null=True, blank=True)
 
     objects = models.Manager()
 
