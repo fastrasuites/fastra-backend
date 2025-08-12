@@ -866,13 +866,18 @@ class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
 
                 return_serializer = ReturnIncomingProductSerializer(return_incoming_product, many=False, context={'request': request})
                 return_incoming_product_items = return_serializer.data.pop("return_incoming_product_items")
-                product_list = []
                 for item in return_incoming_product_items:
                     # This is where we deduct the returned quantity from the available quantity and then update the database. 
-                    product = Product.objects.filter(is_hidden=False, id=item["id"]).first()
-                    product.available_product_quantity -= item["quantity_to_be_returned"]
-                    product_list.append(product)
-                Product.objects.bulk_update(product_list, fields=["available_product_quantity"])
+                    location_stock = LocationStock.objects.filter(
+                        location=return_incoming_product.source_document.destination_location, product_id=item["product_details"]["id"],
+                    ).first()
+                    if location_stock:
+                        location_stock.quantity -= item["quantity_to_be_returned"]
+                        location_stock.save()
+                    else:
+                        raise serializers.ValidationError(
+                            "Product does not exist in the specified warehouse location."
+                        )
 
             serializer =  ReturnIncomingProductSerializer(return_incoming_product, many=False, context={'request': request})                    
             return Response(serializer.data, status=status.HTTP_201_CREATED)

@@ -42,5 +42,5 @@ def generate_returned_incoming_product_unique_id(location_code):
         
         id = f"{location_code}RET{max_unique_order_id}"
         return id
-    id = f"{location_code}RET0001"
+    id = f"{location_code}RET00001"
     return id

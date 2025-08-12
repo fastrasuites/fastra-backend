@@ -1,6 +1,6 @@
 
 
-from inventory.models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, IncomingProduct, IncomingProductItem, StockMove
+from inventory.models import DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, IncomingProduct, IncomingProductItem, ReturnIncomingProduct, ReturnIncomingProductItem, StockMove
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -92,3 +92,32 @@ def create_delivery_order_returns_stock_move(instance):
         )
         stock_move.save()
 
+
+
+@receiver(post_save, sender=ReturnIncomingProduct)
+def return_incoming_product_stock_move(sender, instance, created, **kwargs):
+    """First make a check to know if this record does not exists so as to prevent unnecessary duplications"""
+    if StockMove.objects.filter(
+            source_document_id=instance.unique_id,
+            destination_location=instance.source_document.source_location,  #For the Return, the destination location of the return becomes the source location of the source document
+            move_type='RETURN'
+        ).exists():
+            print(f"The Stock Move of this source document {instance.unique_id} and move type of RETURN already exists")
+            return  
+
+    """Create stock move when a return on incoming product record item is done"""
+    if instance.is_approved == True:
+        items = ReturnIncomingProductItem.objects.filter(return_incoming_product=instance)
+        for item in items:
+            stock_move = StockMove(
+                product=item.product,
+                unit_of_measure=item.product.unit_of_measure,
+                quantity=item.quantity_to_be_returned,
+                move_type='RETURN',
+                source_document_id=instance.unique_id, 
+                source_location=instance.source_document.destination_location, #The inversion in SOURCE AND DESTINATION was because the source location for the Return has to be the destination location of the soirce document
+                destination_location=instance.source_document.source_location,
+                date_created=timezone.now(),
+                date_moved=timezone.now(),
+            )
+            stock_move.save()
