@@ -435,6 +435,22 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                                 status=status.HTTP_400_BAD_REQUEST
                             )
 
+# =============================================================================
+                if instance.status == "validated":
+                    for item in instance.incoming_product_items.all():
+                        product = item.product
+                        quantity_received = item.quantity_received
+                        location_stock, created = LocationStock.objects.get_or_create(
+                            location=instance.destination_location, product=product,
+                            defaults={'quantity': 0}
+                        )
+                        if location_stock:
+                            location_stock.quantity += quantity_received
+                            location_stock.save()
+                        else:
+                            raise serializers.ValidationError(
+                                "Product does not exist in the specified warehouse location."
+                            )
                 instance.save()
 
             return_serializer = IncomingProductSerializer(instance, context={'request': request}, many=False)
