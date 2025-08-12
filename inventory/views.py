@@ -11,6 +11,7 @@ from rest_framework.mixins import CreateModelMixin
 from rest_framework.response import Response
 from rest_framework import serializers
 
+from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet, NoCreateSearchViewSet
 from users.models import TenantUser
@@ -752,7 +753,10 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
     app_label = "inventory"
     model_name = "deliveryorderreturn"
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    action_permission_map = basic_action_permission_map
+    action_permission_map = {
+        **basic_action_permission_map,
+        "approve": "approve"
+        }
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -799,6 +803,42 @@ class DeliveryOrderReturnViewSet(SoftDeleteWithModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+
+    @action(detail=True, methods=['GET'])
+    def approve(self, request, *args, **kwargs):
+            try:
+                id = kwargs.get('pk')
+                delivery_order_return = DeliveryOrderReturn.objects.filter(is_hidden=False, unique_record_id=id).first()
+                if delivery_order_return is None:
+                    return Response({'detail': "This  records does not exists in the Delivery Order Return records"}, status=status.HTTP_400_BAD_REQUEST)
+                if delivery_order_return.status == "approved":
+                    return Response({'detail': "You cannot approve an already Approved Delivery Order Return record"}, status=status.HTTP_400_BAD_REQUEST)
+                
+                with transaction.atomic():
+                    delivery_order_return.status = "approved"
+                    delivery_order_return.save()
+
+                    create_delivery_order_returns_stock_move(delivery_order_return)
+
+                    """This is to update by adding the Quantity returned to the inventory"""
+                    delivery_order_return_items = DeliveryOrderReturnItem.objects.filter(delivery_order_return_id=delivery_order_return.id)
+                    for item in delivery_order_return_items:
+                        # Update product quantity if done
+                        location_stock = LocationStock.objects.filter(
+                            location=delivery_order_return.return_warehouse_location, product_id=item.returned_product_item,
+                        ).first()
+                        if location_stock:
+                            location_stock.quantity += item.returned_quantity
+                            location_stock.save()
+                        else:
+                            raise serializers.ValidationError(
+                                "Product does not exist in the specified warehouse location."
+                            )
+                    serializer = self.get_serializer(delivery_order_return)                  
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+# END FOR THE DELIVERY ORDER RETURNS
 
 class DeliveryOrderReturnItemViewSet(SoftDeleteWithModelViewSet):
     queryset = DeliveryOrderReturnItem.objects.all()
