@@ -166,7 +166,7 @@ class LoginView(APIView):
         if tenant_info is None:
             return Response({'detail': 'User not found in any tenant schema.'}, status=status.HTTP_404_NOT_FOUND)
 
-        tenant_id, tenant_schema_name, tenant_company_name = tenant_info
+        tenant_id, tenant_schema_name, tenant_company_name, tenant_user_image = tenant_info
 
         if not check_password(password, user.password):
             return Response({'detail': 'Invalid email or password.'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -200,6 +200,7 @@ class LoginView(APIView):
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
+                'user_image': tenant_user_image,
             },
             "tenant_id": tenant_id,
             "tenant_schema_name": tenant_schema_name,
