@@ -485,8 +485,7 @@ class BackOrderViewSet(NoCreateSearchViewSet):
     serializer_class = BackOrderNotCreateSerializer
     app_label = "inventory"
     model_name = "backorder"
-    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
-    action_permission_map = basic_action_permission_map
+    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ["backorder_of__incoming_product_id", 'status', "destination_location__id"]
 
     # List, retrieve, update, archive handled by SearchDeleteViewSet
