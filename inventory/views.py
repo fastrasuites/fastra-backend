@@ -498,7 +498,6 @@ class ConfirmCreateBackOrderViewSet(viewsets.GenericViewSet, CreateModelMixin):
     app_label = "inventory"
     model_name = "backorder"
     permission_classes = [permissions.IsAuthenticated]
-    action_permission_map = basic_action_permission_map
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
