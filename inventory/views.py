@@ -657,10 +657,10 @@ class BackOrderViewSet(NoCreateSearchViewSet):
 
             new_status = data.get("status", instance.status)
             if isinstance(new_status, dict):
-                new_status = new_status.get("label", instance.status)
+                new_status = new_status.get("status", instance.status)
             old_status = instance.status
             if isinstance(old_status, dict):
-                old_status = old_status.get("label", "")
+                old_status = old_status.get("status", "")
 
             if str(old_status).lower() == "validated":
                 return Response({"error": "Cannot update a back order that has already been validated."},
