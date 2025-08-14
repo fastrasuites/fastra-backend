@@ -9,7 +9,7 @@ from purchase.serializers import ProductSerializer, VendorSerializer, PurchaseOr
 
 from users.models import TenantUser
 from users.serializers import TenantUserSerializer
-
+import json
 
 from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location,
                      MultiLocation, ReturnIncomingProduct, ReturnIncomingProductItem, StockAdjustment,
@@ -991,24 +991,44 @@ class ReturnIncomingProductItemSerializer(serializers.ModelSerializer):
 
 class ReturnIncomingProductSerializer(serializers.ModelSerializer):
     unique_id = serializers.CharField(read_only=True)
-    return_incoming_product_items = ReturnIncomingProductItemSerializer(many=True)
+    return_incoming_product_items = ReturnIncomingProductItemSerializer(many=True, required=False)
     is_approved = serializers.BooleanField(read_only=True)
-    source_document = serializers.PrimaryKeyRelatedField(queryset=IncomingProduct.objects.all(), write_only=True)
-    source_document_details = IncomingProductSerializer(source="source_document", read_only=True)
+    source_document = serializers.PrimaryKeyRelatedField(
+        queryset=IncomingProduct.objects.all(), write_only=True
+    )
+    source_document_details = IncomingProductSerializer(
+        source="source_document", read_only=True
+    )
+    email_subject = serializers.CharField(write_only=True, required=True)
+    email_body = serializers.CharField(write_only=True, required=True)
+    email_attachment = serializers.FileField(write_only=True, required=True)
+    supplier_email = serializers.CharField(write_only=True, required=True)
+
     class Meta:
         model = ReturnIncomingProduct
-        fields = ["unique_id", "return_incoming_product_items", "source_document_details",
-                  "source_document", "reason_for_return", "returned_date", "is_approved"]
+        fields = [
+            "unique_id", "return_incoming_product_items", "source_document_details",
+            "source_document", "reason_for_return", "returned_date", "is_approved",
+            "email_subject", "email_body", "email_attachment", "supplier_email"
+        ]
+
+    def validate_source_document(self, value):
+        if ReturnIncomingProduct.objects.filter(source_document=value).exists():
+            raise serializers.ValidationError(
+                f"A return already exists for source document '{value}'."
+            )
+        return value
 
     @transaction.atomic
     def create(self, validated_data):
-        return_products_data = validated_data.pop('return_incoming_product_items')
-        try:
-            
+        return_products_data = validated_data.pop('return_incoming_product_items', [])
+        try:            
             return_incoming_product = ReturnIncomingProduct.objects.create(**validated_data)
             returned_product_list = []
             for product_data in return_products_data:
-                one_product = ReturnIncomingProductItem(return_incoming_product=return_incoming_product, **product_data)
+                productId = product_data.pop("product")
+                one_product = ReturnIncomingProductItem(return_incoming_product=return_incoming_product,
+                                                        product_id=productId, **product_data)
                 returned_product_list.append(one_product)                
             ReturnIncomingProductItem.objects.bulk_create(returned_product_list)
             return return_incoming_product

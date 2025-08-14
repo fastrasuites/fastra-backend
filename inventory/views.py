@@ -10,6 +10,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.mixins import CreateModelMixin
 from rest_framework.response import Response
 from rest_framework import serializers
+from companies.utils import Util
 
 from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product
@@ -1115,19 +1116,43 @@ class ReturnIncomingProductViewSet(SoftDeleteWithModelViewSet):
     }
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        data = request.data.copy()
+        if "return_incoming_product_items" in data and isinstance(data["return_incoming_product_items"], str):
+            try:
+                data["return_incoming_product_items"] = json.loads(data["return_incoming_product_items"])
+            except json.JSONDecodeError:
+                return Response({"return_incoming_product_items": ["Invalid JSON format."]}, status=400)
+
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
 
         try:
             location_code = validated_data["source_document"].destination_location.location_code
             validated_data['unique_id'] = generate_returned_incoming_product_unique_id(location_code)
+            validated_data["return_incoming_product_items"] = data["return_incoming_product_items"]
+            email_subject = validated_data.pop("email_subject")
+            email_body = validated_data.pop("email_body")
+            email_attachment = validated_data.pop("email_attachment")
+            supplier_email = validated_data.pop("supplier_email")
+
             self.perform_create(serializer)
+
+            email_data = {
+                "email_subject": email_subject,
+                "email_body": email_body,
+                "email_attachment": email_attachment,
+                "supplier_email":  supplier_email
+            }
+            if supplier_email and email_subject:            
+                Util.send_mail_with_attachment(email_data)
             
-            # new_serializer = ReturnIncomingProductWithIncomingProductsSerializer(self.queryset[0], many=False, context={'request': request})
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            new_instance = serializer.instance
+            new_serializer = self.get_serializer(new_instance)
+            return Response(new_serializer.data, status=status.HTTP_201_CREATED)
         except ValueError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
     def approve(self, request, *args, **kwargs):
         try:
