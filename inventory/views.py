@@ -638,8 +638,6 @@ class IncomingProductViewSet(SearchDeleteViewSet):
             return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
         except IntegrityError as e:
             return Response({"error": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class BackOrderViewSet(NoCreateSearchViewSet):
@@ -649,6 +647,121 @@ class BackOrderViewSet(NoCreateSearchViewSet):
     model_name = "backorder"
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ["backorder_of__incoming_product_id", 'status', "destination_location__id"]
+
+    def partial_update(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            instance = self.get_object()
+
+            new_status = data.get("status", instance.status)
+            items = data.get("backorder_items", None)
+
+            old_status = instance.status
+            if old_status.lower() == "validated":
+                return Response({"error": "Cannot update a back order that has already been validated."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Only perform validation logic if status is being set to 'validated'
+            if new_status.lower() == "validated":
+                # If items are not provided in the request, use all existing items
+                if not items:
+                    items = [
+                        {
+                            "expected_quantity": str(item.expected_quantity),
+                            "quantity_received": str(item.quantity_received),
+                            "product": item.product_id,
+                            "id": item.id
+                        }
+                        for item in instance.incoming_product_items.all()
+                    ]
+                for item in items:
+                    expected = Decimal(item["expected_quantity"])
+                    received = Decimal(item["quantity_received"])
+                    if received < expected:
+                        error = {
+                            "IP_ID": str(instance.pk),
+                            "error": "Received quantity is less than expected quantity. Create a backorder to compensate for the missing quantity."
+                        }
+                        raise ValidationError(json.dumps(error), code="backorder_required")
+                    elif received > expected:
+                        error = {
+                            "IP_ID": str(instance.pk),
+                            "error": "Received quantity exceeds expected quantity. You can choose to pay or issue a return for the excess quantity."
+                        }
+                        raise ValidationError(json.dumps(error), code="return_required")
+
+                # If all quantities match, proceed to update status and location stock
+                instance.status = new_status
+
+                with transaction.atomic():
+                    if data.get("incoming_product_items"):
+                        for item in items:
+                            item_id = item.get('id', None)
+                            if item_id and IncomingProductItem.objects.filter(id=item_id,
+                                                                              incoming_product_id=instance.incoming_product_id).exists():
+                                item_data = IncomingProductItem.objects.get(id=item_id,
+                                                                            incoming_product_id=instance.incoming_product_id)
+                                item_data.product_id = item["product"]
+                                item_data.expected_quantity = item["expected_quantity"]
+                                item_data.quantity_received = item["quantity_received"]
+                                item_data.save()
+                            else:
+                                IncomingProductItem.objects.create(
+                                    incoming_product_id=instance.incoming_product_id,
+                                    expected_quantity=item["expected_quantity"],
+                                    quantity_received=item["quantity_received"],
+                                    product_id=item["product"]
+                                )
+                    # Update location stock
+                    for item in instance.incoming_product_items.all():
+                        product = item.product
+                        quantity_received = item.quantity_received
+                        location_stock, created = LocationStock.objects.get_or_create(
+                            location=instance.destination_location, product=product,
+                            defaults={'quantity': 0}
+                        )
+                        location_stock.quantity += quantity_received
+                        location_stock.save()
+                    instance.save()
+            else:
+                # Normal update, no validation or stock logic
+                instance.receipt_type = data.get("receipt_type", instance.receipt_type) or instance.receipt_type
+                instance.related_po_id = data.get("related_po", instance.related_po_id)
+                instance.supplier_id = data.get("supplier", instance.supplier_id)
+                instance.source_location_id = data.get("source_location", instance.source_location_id)
+                instance.destination_location_id = data.get("destination_location", instance.destination_location_id)
+                instance.status = new_status
+
+                with transaction.atomic():
+                    if data.get("incoming_product_items"):
+                        for item in data["incoming_product_items"]:
+                            item_id = item.get('id', None)
+                            if item_id and IncomingProductItem.objects.filter(id=item_id,
+                                                                              incoming_product_id=instance.incoming_product_id).exists():
+                                item_data = IncomingProductItem.objects.get(id=item_id,
+                                                                            incoming_product_id=instance.incoming_product_id)
+                                item_data.product_id = item["product"]
+                                item_data.expected_quantity = item["expected_quantity"]
+                                item_data.quantity_received = item["quantity_received"]
+                                item_data.save()
+                            else:
+                                IncomingProductItem.objects.create(
+                                    incoming_product_id=instance.incoming_product_id,
+                                    expected_quantity=item["expected_quantity"],
+                                    quantity_received=item["quantity_received"],
+                                    product_id=item["product"]
+                                )
+                    instance.save()
+
+            return_serializer = IncomingProductSerializer(instance, context={'request': request}, many=False)
+            return Response(return_serializer.data, status=status.HTTP_200_OK)
+
+        except ObjectDoesNotExist:
+            return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
+        except IntegrityError as e:
+            return Response({"error": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     # List, retrieve, update, archive handled by SearchDeleteViewSet
     # Remove create method to delegate creation to ConfirmCreateBackOrderViewSet
