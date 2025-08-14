@@ -421,23 +421,36 @@ class IncomingProductViewSet(SearchDeleteViewSet):
             new_status = data.get("status", instance.status)
             items = data.get("incoming_product_items", [])
 
+            old_status = instance.status
+            if old_status.lower() == "validated":
+                return Response({"error": "Cannot update an incoming product that has already been validated."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
             # Only perform validation logic if status is being set to 'validated'
             if new_status.lower() == "validated":
+                if not items or len(items) == 0:
+                    return Response({"error": "At least one incoming product item is required to validate."},
+                                    status=status.HTTP_400_BAD_REQUEST)
                 for item in items:
-                    expected = Decimal(item["expected_quantity"])
-                    received = Decimal(item["quantity_received"])
+                    try:
+                        expected = Decimal(item["expected_quantity"])
+                        received = Decimal(item["quantity_received"])
+                    except (KeyError, ValueError, TypeError):
+                        return Response({
+                                            "error": "Both expected_quantity and quantity_received must be provided and valid for all items."},
+                                        status=status.HTTP_400_BAD_REQUEST)
                     if received < expected:
                         error = {
                             "IP_ID": str(instance.pk),
                             "error": "Received quantity is less than expected quantity. Create a backorder to compensate for the missing quantity."
                         }
-                        return Response(error, status=status.HTTP_400_BAD_REQUEST)
+                        raise ValidationError(json.dumps(error), code="backorder_required")
                     elif received > expected:
-                        return Response(
-                            {
-                                "error": "Received quantity exceeds expected quantity. You can choose to pay or issue a return for the excess quantity."},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
+                        error = {
+                            "IP_ID": str(instance.pk),
+                            "error": "Received quantity exceeds expected quantity. You can choose to pay or issue a return for the excess quantity."
+                        }
+                        raise ValidationError(json.dumps(error), code="return_required")
                 # If all quantities match, proceed to update status and location stock
                 instance.status = new_status
 
@@ -508,6 +521,8 @@ class IncomingProductViewSet(SearchDeleteViewSet):
             return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
         except IntegrityError as e:
             return Response({"error": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -517,10 +532,26 @@ class IncomingProductViewSet(SearchDeleteViewSet):
             instance = self.get_object()
 
             new_status = data.get("status", instance.status)
-            items = data.get("incoming_product_items", [])
+            items = data.get("incoming_product_items", None)
+
+            old_status = instance.status
+            if old_status.lower() == "validated":
+                return Response({"error": "Cannot update an incoming product that has already been validated."},
+                                status=status.HTTP_400_BAD_REQUEST)
 
             # Only perform validation logic if status is being set to 'validated'
             if new_status.lower() == "validated":
+                # If items are not provided in the request, use all existing items
+                if not items:
+                    items = [
+                        {
+                            "expected_quantity": str(item.expected_quantity),
+                            "quantity_received": str(item.quantity_received),
+                            "product": item.product_id,
+                            "id": item.id
+                        }
+                        for item in instance.incoming_product_items.all()
+                    ]
                 for item in items:
                     expected = Decimal(item["expected_quantity"])
                     received = Decimal(item["quantity_received"])
@@ -540,7 +571,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                 instance.status = new_status
 
                 with transaction.atomic():
-                    if items:
+                    if data.get("incoming_product_items"):
                         for item in items:
                             item_id = item.get('id', None)
                             if item_id and IncomingProductItem.objects.filter(id=item_id,
@@ -579,8 +610,8 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                 instance.status = new_status
 
                 with transaction.atomic():
-                    if items:
-                        for item in items:
+                    if data.get("incoming_product_items"):
+                        for item in data["incoming_product_items"]:
                             item_id = item.get('id', None)
                             if item_id and IncomingProductItem.objects.filter(id=item_id,
                                                                               incoming_product_id=instance.incoming_product_id).exists():
