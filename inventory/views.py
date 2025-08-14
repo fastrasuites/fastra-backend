@@ -560,13 +560,14 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                             "IP_ID": str(instance.pk),
                             "error": "Received quantity is less than expected quantity. Create a backorder to compensate for the missing quantity."
                         }
-                        return Response(error, status=status.HTTP_400_BAD_REQUEST)
+                        raise ValidationError(json.dumps(error), code="backorder_required")
                     elif received > expected:
-                        return Response(
-                            {
-                                "error": "Received quantity exceeds expected quantity. You can choose to pay or issue a return for the excess quantity."},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
+                        error = {
+                            "IP_ID": str(instance.pk),
+                            "error": "Received quantity exceeds expected quantity. You can choose to pay or issue a return for the excess quantity."
+                        }
+                        raise ValidationError(json.dumps(error), code="return_required")
+
                 # If all quantities match, proceed to update status and location stock
                 instance.status = new_status
 
