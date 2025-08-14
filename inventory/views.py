@@ -336,7 +336,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            incoming_product = serializer.save()
+            incoming_product = serializer.save(status='draft')
             # Only perform quantity comparison if status is 'validated'
             status_value = request.data.get('status', '').lower()
             if status_value == 'validated':
@@ -345,6 +345,7 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                     expected = Decimal(item['expected_quantity'])
                     received = Decimal(item['quantity_received'])
                     if received == expected:
+                        incoming_product = serializer.save(status='validated')
                         continue  # Scenario 1: All good
                     elif received < expected:
                         # Scenario 2: Less received
@@ -355,10 +356,11 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                         raise ValidationError(json.dumps(error), code="backorder_required")
                     else:
                         # Scenario 3: More received
-                        raise serializers.ValidationError(
-                            "Received quantity exceeds expected quantity. "
-                            "You can choose to pay or issue a return for the excess quantity."
-                        )
+                        error = {
+                            "IP_ID": str(incoming_product.pk),
+                            "error": "Received quantity exceeds expected quantity. You can choose to pay or issue a return for the excess quantity."
+                        }
+                        raise ValidationError(json.dumps(error), code="return_required")
             response_data = serializer.data
             return Response(response_data, status=status.HTTP_201_CREATED)
         except Exception as e:
@@ -410,6 +412,104 @@ class IncomingProductViewSet(SearchDeleteViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         return Response({'status': 'editable'}, status=status.HTTP_200_OK)
+
+    def update(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            instance = self.get_object()
+
+            new_status = data.get("status", instance.status)
+            items = data.get("incoming_product_items", [])
+
+            # Only perform validation logic if status is being set to 'validated'
+            if new_status.lower() == "validated":
+                for item in items:
+                    expected = Decimal(item["expected_quantity"])
+                    received = Decimal(item["quantity_received"])
+                    if received < expected:
+                        error = {
+                            "IP_ID": str(instance.pk),
+                            "error": "Received quantity is less than expected quantity. Create a backorder to compensate for the missing quantity."
+                        }
+                        return Response(error, status=status.HTTP_400_BAD_REQUEST)
+                    elif received > expected:
+                        return Response(
+                            {
+                                "error": "Received quantity exceeds expected quantity. You can choose to pay or issue a return for the excess quantity."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                # If all quantities match, proceed to update status and location stock
+                instance.status = new_status
+
+                with transaction.atomic():
+                    if items:
+                        for item in items:
+                            item_id = item.get('id', None)
+                            if item_id and IncomingProductItem.objects.filter(id=item_id,
+                                                                              incoming_product_id=instance.incoming_product_id).exists():
+                                item_data = IncomingProductItem.objects.get(id=item_id,
+                                                                            incoming_product_id=instance.incoming_product_id)
+                                item_data.product_id = item["product"]
+                                item_data.expected_quantity = item["expected_quantity"]
+                                item_data.quantity_received = item["quantity_received"]
+                                item_data.save()
+                            else:
+                                IncomingProductItem.objects.create(
+                                    incoming_product_id=instance.incoming_product_id,
+                                    expected_quantity=item["expected_quantity"],
+                                    quantity_received=item["quantity_received"],
+                                    product_id=item["product"]
+                                )
+                    # Update location stock
+                    for item in instance.incoming_product_items.all():
+                        product = item.product
+                        quantity_received = item.quantity_received
+                        location_stock, created = LocationStock.objects.get_or_create(
+                            location=instance.destination_location, product=product,
+                            defaults={'quantity': 0}
+                        )
+                        location_stock.quantity += quantity_received
+                        location_stock.save()
+                    instance.save()
+            else:
+                # Normal update, no validation or stock logic
+                instance.receipt_type = data.get("receipt_type", instance.receipt_type) or instance.receipt_type
+                instance.related_po_id = data.get("related_po", instance.related_po_id)
+                instance.supplier_id = data.get("supplier", instance.supplier_id)
+                instance.source_location_id = data.get("source_location", instance.source_location_id)
+                instance.destination_location_id = data.get("destination_location", instance.destination_location_id)
+                instance.status = new_status
+
+                with transaction.atomic():
+                    if items:
+                        for item in items:
+                            item_id = item.get('id', None)
+                            if item_id and IncomingProductItem.objects.filter(id=item_id,
+                                                                              incoming_product_id=instance.incoming_product_id).exists():
+                                item_data = IncomingProductItem.objects.get(id=item_id,
+                                                                            incoming_product_id=instance.incoming_product_id)
+                                item_data.product_id = item["product"]
+                                item_data.expected_quantity = item["expected_quantity"]
+                                item_data.quantity_received = item["quantity_received"]
+                                item_data.save()
+                            else:
+                                IncomingProductItem.objects.create(
+                                    incoming_product_id=instance.incoming_product_id,
+                                    expected_quantity=item["expected_quantity"],
+                                    quantity_received=item["quantity_received"],
+                                    product_id=item["product"]
+                                )
+                    instance.save()
+
+            return_serializer = IncomingProductSerializer(instance, context={'request': request}, many=False)
+            return Response(return_serializer.data, status=status.HTTP_200_OK)
+
+        except ObjectDoesNotExist:
+            return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
+        except IntegrityError as e:
+            return Response({"error": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def partial_update(self, request, *args, **kwargs):
         try:
