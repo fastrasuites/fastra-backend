@@ -775,6 +775,9 @@ class BackOrderCreateSerializer(serializers.Serializer):
                 expected_quantity=adjusted_quantity,
                 quantity_received=adjusted_quantity
             )
+        for item in incoming_product.incoming_product_items.all():
+            item.expected_quantity = item.quantity_received
+            item.save()
         return backorder
 
     def create(self, validated_data):
