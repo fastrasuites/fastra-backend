@@ -271,9 +271,3 @@ class AccessRightViewSet(SoftDeleteWithModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
-class LoginDetailsView(APIView):
-
-    def get(self, request, *args, **kwargs):
-        pass
-
-
