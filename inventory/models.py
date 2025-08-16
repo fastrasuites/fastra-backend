@@ -165,6 +165,8 @@ STOCK_MOVE_TYPES = [
     ('RETURN', 'Return'),
     ('INTERNAL', 'Internal Transfer'),
     ('ADJUSTMENT', 'Inventory Adjustment'),
+    ('SCRAP', 'Scrap'),
+    ('BACKORDER', 'Back Order'),
 ]
 
 class IncomingStockMoveManager(models.Manager):
@@ -949,7 +951,7 @@ class StockMove(models.Model):
     """Records movement of products across different inventory operations"""
     # id = models.CharField(max_length=15, primary_key=True)
     id = models.BigAutoField(primary_key=True, null=False, blank=False)
-    reference = models.CharField(max_length=20, unique=True)
+    reference = models.CharField(max_length=50, unique=True)
     product = models.ForeignKey(
         Product,
         on_delete=models.PROTECT,
