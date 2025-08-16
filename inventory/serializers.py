@@ -133,6 +133,7 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
                         raise serializers.ValidationError("Invalid Product")
         return attrs
 
+    @transaction.atomic
     def create(self, validated_data):
         """
         Create a new Stock Adjustment with its associated items.
@@ -163,6 +164,8 @@ class StockAdjustmentSerializer(serializers.HyperlinkedModelSerializer):
                         )
         return stock_adjustment
 
+
+    @transaction.atomic
     def update(self, instance, validated_data):
         """
         Update an existing instance with validated data.
