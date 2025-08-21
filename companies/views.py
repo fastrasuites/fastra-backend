@@ -352,7 +352,7 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
             # Notify tenant admin
                 # schema_name = connection.schema_name
 
-                _, schema_name, _ = make_authentication(user.id)
+                _, schema_name, _, _ = make_authentication(user.id)
                 try:
                     tenant_details = Tenant.objects.get(schema_name=schema_name)
                 except Tenant.DoesNotExist:
