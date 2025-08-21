@@ -78,7 +78,7 @@ def generate_tokens(user):
 
 logger = logging.getLogger(__name__)
 
-def make_authentication(userid):
+def make_authentication(userid, all_user_details=False):
     with schema_context('public'):
         all_tenants = Tenant.objects.all()
         
@@ -87,6 +87,8 @@ def make_authentication(userid):
                 with schema_context(tenant.schema_name):
                     if TenantUser.objects.filter(user_id=userid).exists():
                         tenant_user = TenantUser.objects.get(user_id=userid)
+                        if all_user_details:
+                            return tenant_user
                         return tenant_user.id, tenant.schema_name, tenant.company_name, tenant_user.user_image
             except TenantUser.DoesNotExist:
                 logger.warning(f"User {userid} not found in schema {tenant.schema_name}")

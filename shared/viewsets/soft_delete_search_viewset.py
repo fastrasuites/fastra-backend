@@ -46,7 +46,7 @@ class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin,
     #     instance = self.get_object()
     #     serializer = self.get_serializer(instance)
     #     current_id = instance.pk
-    #     # Find the next instance by id
+    #     # Find the next instance by pk
     #     next_instance = self.get_queryset().filter(pk__gt=current_id).order_by(f'{self.queryset.model._meta.pk.name}').first()
     #     prev_instance = self.get_queryset().filter(pk__lt=current_id).order_by(f'-{self.queryset.model._meta.pk.name}').first()
     #     total_records = self.get_queryset().count()
