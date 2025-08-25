@@ -433,7 +433,7 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
                     print(traceback.format_exc())
                     return Response({'error': 'Error sending email to tenant admin.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                return Response({'detail': 'Request sent to tenant admin for approval.'}, status=status.HTTP_200_OK)
+                return Response({'detail': 'Request sent to tenant admin for approval.', 'role': 'employee'}, status=status.HTTP_200_OK)
             
             if not user.profile.is_verified:
                 return Response({'error': 'Email is not verified.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -482,7 +482,7 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
                 print(traceback.format_exc())
                 return Response({'error': 'Error sending email, please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             request.session['forgotten_password_email'] = email  # Store email in session
-            return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
+            return Response({'detail': 'OTP has been sent to your email.', 'role': 'admin'}, status=status.HTTP_200_OK)
             #except User.DoesNotExist:
                 #return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
