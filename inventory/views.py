@@ -974,6 +974,19 @@ class DeliveryOrderViewSet(SoftDeleteWithModelViewSet):
             return Response({"detail": "An error occurred while updating the delivery order status: " + str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    def retrieve(self, request, *args, **kwargs):
+        # add backorder information to the incoming product
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+        delivery_order_return = DeliveryOrderReturn.objects.filter(source_document__order_unique_id=data['order_unique_id']).first()
+        if delivery_order_return:
+            data['delivery_order_return'] = DeliveryOrderReturnSerializer(delivery_order_return, context={'request': request}).data
+        else:
+            data['delivery_order_return'] = None
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 
     def partial_update(self, request, *args, **kwargs):
         try:

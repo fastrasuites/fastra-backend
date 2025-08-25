@@ -179,14 +179,13 @@ class VendorViewSet(SearchDeleteViewSet):
         # Phone number validation (digits only, length 7-15)
         phone_dv = DataValidation(
             type="custom",
-            formula1='=AND(ISNUMBER(--INDIRECT("RC",FALSE)),LEN(INDIRECT("RC",FALSE))>=7,LEN(INDIRECT("RC",FALSE))<=15)',
+            formula1='=AND(ISNUMBER(MATCH(TRUE,ISNUMBER(MID(INDIRECT("RC",FALSE),ROW(INDIRECT("1:"&LEN(INDIRECT("RC",FALSE)))),1)*1),0)),LEN(INDIRECT("RC",FALSE))>=7,LEN(INDIRECT("RC",FALSE))<=15)',
             showErrorMessage=True,
             errorTitle="Invalid Phone Number",
-            error="Phone number must be digits only, 7-15 characters."
+            error="Phone number must be a string of digits only, 7-15 characters, and may start with zero."
         )
         ws_vendors.add_data_validation(phone_dv)
-        phone_dv.add(f"D2:D1048576")
-
+        phone_dv.add("D2:D1048576")
         # Save workbook to a BytesIO stream
         output = io.BytesIO()
         wb.save(output)
