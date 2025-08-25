@@ -262,6 +262,8 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
                     data["first_name"] = ""
                     data["last_name"] = ""
                     data["last_login"] = None
+
+        tenant_users = sorted(tenant_users, key=lambda x: x['first_name'])
         return Response(tenant_users)
 
 
