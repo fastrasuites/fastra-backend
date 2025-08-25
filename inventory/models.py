@@ -236,41 +236,57 @@ class Location(models.Model):
         return cls.objects.exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
 
     @classmethod
-    def get_user_locations(cls, user):
+    def get_user_locations(cls, tenant_user: TenantUser):
         """
         Returns locations that the user can access based on their role.
         """
-        if user.is_superuser:
+        if tenant_user.user.is_superuser:
             return cls.objects.all()
-        elif user.is_staff:
+        elif tenant_user.user.is_staff:
             return cls.objects.filter(is_hidden=False)
         else:
             # For regular users, filter by their managed locations
             return cls.objects.filter(
-                models.Q(location_manager=user) | models.Q(store_keeper=user)
+                models.Q(location_manager=tenant_user) | models.Q(store_keeper=tenant_user)
             ).distinct()
 
-
     @classmethod
-    def get_managed_locations_for_user(cls, user: TenantUser):
-        """
-        Returns locations that the user can access based on their role.
-        """
-        # For regular users, filter by their managed locations
-        return cls.objects.filter(location_manager=user).distinct()
-
-    @classmethod
-    def get_store_locations_for_user(cls, user):
-        """
-        Returns locations that the user can access based on their role.
-        """
-        if user.is_superuser:
+    def get_other_locations_for_user(cls, tenant_user: TenantUser):
+        if tenant_user.user.is_superuser:
             return cls.objects.all()
-        elif user.is_staff:
+        elif tenant_user.user.is_staff:
+            return cls.objects.filter(is_hidden=False)
+        else:
+            # For regular users, filter by locations that are not managed by them
+            return cls.objects.exclude(
+                models.Q(location_manager=tenant_user) | models.Q(store_keeper=tenant_user)
+            ).distinct()
+
+    @classmethod
+    def get_managed_locations_for_user(cls, tenant_user: TenantUser):
+        """
+        Returns locations that the user can access based on their role.
+        """
+        if tenant_user.user.is_superuser:
+            return cls.objects.all()
+        elif tenant_user.user.is_staff:
+            return cls.objects.filter(is_hidden=False)
+        else:
+            # For regular users, filter by their managed locations
+            return cls.objects.filter(location_manager=tenant_user).distinct()
+
+    @classmethod
+    def get_store_locations_for_user(cls, tenant_user: TenantUser):
+        """
+        Returns locations that the user can access based on their role.
+        """
+        if tenant_user.user.is_superuser:
+            return cls.objects.all()
+        elif tenant_user.user.is_staff:
             return cls.objects.filter(is_hidden=False)
         else:
             # For regular users, filter by their store keeper locations
-            return cls.objects.filter(store_keeper=user).distinct()
+            return cls.objects.filter(store_keeper=tenant_user).distinct()
 
     def get_stock_levels(self):
         return [
@@ -520,7 +536,7 @@ class Scrap(models.Model):
                 ).order_by('-id_number').first()
                 self.id_number = (last_scrap.id_number + 1) if last_scrap else 1
             # Generate the id based on location_code and id_number
-            self.id = f"{self.warehouse_location.location_code}ADJ{self.id_number:05d}"
+            self.id = f"{self.warehouse_location.location_code}SP{self.id_number:05d}"
         if self.is_done:
             self.can_edit = False
         super(Scrap, self).save(*args, **kwargs)

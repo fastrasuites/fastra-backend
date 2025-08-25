@@ -1089,13 +1089,16 @@ class InternalTransferSerializer(GenericModelSerializer):
             location_manager = None
             if 'source_location' in data:
                 source_location_pk = data.get('source_location', None)
-                if source_location_pk:
-                    try:
-                        source_location_obj = Location.objects.get(pk=source_location_pk)
-                        store_keeper = source_location_obj.store_keeper.pk if source_location_obj.store_keeper else None
-                        location_manager = source_location_obj.location_manager.pk if source_location_obj.location_manager else None
-                    except Location.DoesNotExist:
-                        store_keeper = None
+                try:
+                    source_location_obj = Location.objects.get(pk=source_location_pk)
+                    store_keeper = source_location_obj.store_keeper.pk if source_location_obj.store_keeper else None
+                    location_manager = source_location_obj.location_manager.pk if source_location_obj.location_manager else None
+                except Location.DoesNotExist:
+                    raise serializers.ValidationError("Source location does not exist.")
+                except store_keeper is None:
+                    raise serializers.ValidationError("Source location does not have a store keeper assigned.")
+                except location_manager is None:
+                    raise serializers.ValidationError("Source location does not have a location manager assigned.")
                 # Check if the store_keeper is the same as the current user
                 if (store_keeper and store_keeper == tenant_user.pk) or (
                         location_manager and location_manager == tenant_user.pk):

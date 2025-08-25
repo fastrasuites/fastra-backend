@@ -16,14 +16,15 @@ from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSe
 from users.models import TenantUser
 from users.module_permissions import HasModulePermission
 
-from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location, LocationStock,
+from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, DeliveryOrderReturnItem, Location,
+                     LocationStock,
                      MultiLocation, ReturnIncomingProduct, ScrapItem, StockAdjustment, Scrap, IncomingProduct,
-                     IncomingProductItem, StockMove, BackOrder, BackOrderItem)
+                     IncomingProductItem, StockMove, BackOrder, BackOrderItem, InternalTransfer)
 from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer,
                           DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer,
                           ReturnIncomingProductSerializer, StockAdjustmentSerializer, BackOrderNotCreateSerializer,
                           ScrapSerializer, IncomingProductSerializer, StockMoveSerializer,
-                          BackOrderCreateSerializer)
+                          BackOrderCreateSerializer, InternalTransferSerializer)
 
 from .utilities.utils import generate_delivery_order_unique_id, generate_returned_record_unique_id, generate_returned_incoming_product_unique_id
 from django.db import transaction
@@ -47,7 +48,23 @@ class LocationViewSet(SearchDeleteViewSet):
         queryset = Location.get_active_locations()
         return Response(queryset.values())
 
-    @action(detail=False, methods=['GET'])
+    @action(methods=['GET'], detail=False, url_path='get-user-store-locations')
+    def get_locations_for_store_keeper(self, request):
+        """
+        Returns the locations that the current user has access to as a store keeper.
+        """
+        user = request.user
+        if not user.is_authenticated:
+            return Response({"error": "User is not authenticated."}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            tenant_user = TenantUser.objects.get(user_id=user.id)
+            locations = Location.get_store_locations_for_user(tenant_user)
+            serializer = self.get_serializer(locations, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist as e:
+            return Response({"error": f"{e}"}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=False, methods=['GET'], url_path='get-user-managed-locations')
     def get_locations_for_manager(self, request):
         """
         Returns the locations that the current user has access to.
@@ -58,6 +75,38 @@ class LocationViewSet(SearchDeleteViewSet):
         try:
             tenant_user = TenantUser.objects.get(user_id=user.id)
             locations = Location.get_managed_locations_for_user(tenant_user)
+            serializer = self.get_serializer(locations, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist as e:
+            return Response({"error": f"{e}"}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(methods=['GET'], detail=False, url_path='get-all-user-locations')
+    def get_all_user_locations(self, request):
+        """
+        Returns all locations assigned to the user in the system.
+        """
+        user = request.user
+        if not user.is_authenticated:
+            return Response({"error": "User is not authenticated."}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            tenant_user = TenantUser.objects.get(user_id=user.id)
+            locations = Location.get_user_locations(tenant_user)
+            serializer = self.get_serializer(locations, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist as e:
+            return Response({"error": f"{e}"}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(methods=['GET'], detail=False, url_path='get-other-locations-for-user')
+    def get_other_locations(self, request):
+        """
+        Returns the locations that the current user does not have access to.
+        """
+        user = request.user
+        if not user.is_authenticated:
+            return Response({"error": "User is not authenticated."}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            tenant_user = TenantUser.objects.get(user_id=user.id)
+            locations = Location.get_other_locations_for_user(tenant_user)
             serializer = self.get_serializer(locations, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except ObjectDoesNotExist as e:
@@ -862,3 +911,31 @@ class StockMoveViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
     action_permission_map = basic_action_permission_map
 
 # END STOCK MOVES
+
+
+class InternalTransferViewSet(SearchDeleteViewSet):
+    queryset = InternalTransfer.objects.filter(is_hidden=False)
+    serializer_class = InternalTransferSerializer
+    app_label = "inventory"
+    model_name = "internaltransfer"
+    search_fields = ['status', "source_location__location_name", "destination_location__location_name", "internal_transfer_id"]
+    filterset_fields = ['date_created', 'status', "source_location__id", "destination_location__id"]
+    permission_classes = [permissions.IsAuthenticated, HasModulePermission]
+    action_permission_map = {
+        **basic_action_permission_map,
+        # "check_availability": "edit",
+        # "confirm_delivery": "approve"
+    }
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_create(serializer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except IntegrityError as e:
+            return Response({"detail": "Error creating internal transfer: " + str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": "An unexpected error occurred: " + str(e)},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
