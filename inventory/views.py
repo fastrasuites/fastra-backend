@@ -1276,8 +1276,6 @@ class InternalTransferViewSet(SearchDeleteViewSet):
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     action_permission_map = {
         **basic_action_permission_map,
-        # "check_availability": "edit",
-        # "confirm_delivery": "approve"
     }
 
     def create(self, request, *args, **kwargs):
@@ -1292,3 +1290,5 @@ class InternalTransferViewSet(SearchDeleteViewSet):
         except Exception as e:
             return Response({"detail": "An unexpected error occurred: " + str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
