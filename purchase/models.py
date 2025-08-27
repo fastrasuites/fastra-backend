@@ -423,7 +423,7 @@ class PurchaseRequestItem(models.Model):
     qty = models.PositiveIntegerField(default=1)
     unit_of_measure = models.ForeignKey("UnitOfMeasure", on_delete=models.SET_NULL, null=True, blank=True,
                                         related_name="purchase_requests")
-    estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
 
     @property
     def total_price(self):
@@ -562,7 +562,7 @@ class RequestForQuotationItem(models.Model):
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
     unit_of_measure = models.ForeignKey("UnitOfMeasure", on_delete=models.SET_NULL, null=True, blank=True,
                                         related_name="rfqs")
-    estimated_unit_price = models.DecimalField(max_digits=20, decimal_places=2)
+    estimated_unit_price = models.DecimalField(max_digits=20, decimal_places=2, null=True)
 
     date_created = models.DateTimeField(auto_now_add=True)
 

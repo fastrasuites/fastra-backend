@@ -395,27 +395,36 @@ class ChangePasswordSerializer(serializers.Serializer):
     confirm_password = serializers.CharField(write_only=True, required=True)
 
     def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError({"detail": "Passwords do not match."})
+
         if not TenantUser.objects.filter(user_id=data["user_id"]).exists():
             raise serializers.ValidationError({"detail": "This user does not exists"})
         tenant_user = TenantUser.objects.get(user_id=data["user_id"])
-        if tenant_user.temp_password != data["old_password"]:
-            raise serializers.ValidationError({"detail": "Incorrect Old Password !!!"})
-        
-        if data['new_password'] != data['confirm_password']:
-            raise serializers.ValidationError({"detail": "Passwords do not match."})              
+        with schema_context('public'):
+            user = User.objects.get(id=data["user_id"])
+
+        # If temp_password exists, check against it
+        if tenant_user.temp_password:
+            if tenant_user.temp_password != data["old_password"]:
+                raise serializers.ValidationError({"detail": "Incorrect Old Password !!!"})
+        else:
+            if not user.check_password(data["old_password"]):
+                raise serializers.ValidationError({"detail": "Incorrect Old Password !!!"})
         return data
-    
-    
+
     def change_password(self, validated_data):
         try:
-            user = None
             with schema_context('public'):
                 user = User.objects.get(id=validated_data["user_id"])
             tenant_user = TenantUser.objects.get(user_id=validated_data["user_id"])
 
             user.set_password(validated_data["new_password"])
             tenant_user.password = user.password
-            tenant_user.temp_password = None
+
+            # Clear temp_password if it exists
+            if tenant_user.temp_password:
+                tenant_user.temp_password = None
 
             with transaction.atomic():
                 tenant_user.save()

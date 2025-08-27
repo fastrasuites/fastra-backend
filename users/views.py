@@ -209,7 +209,10 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
     search_fields = ['user__username', 'user__email']
 
     def get_permissions(self):
-        if self.action == 'retrieve':
+        form_param = self.request.query_params.get('form', '').lower() == 'true'
+
+        if self.action == 'retrieve' or form_param:
+            """If the query parameter of ?form=true is added, then there will be acccess to the views of the request"""
             return [IsAdminOrIsSelf()]
         if self.action in ['list', 'create', 'destroy', 'update', 'partial_update']:
             return [permissions.IsAdminUser()]
@@ -234,13 +237,15 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
                         basic_users_data.append({
                             "id": data["id"],
                             "first_name": user.first_name,
-                            "last_name": user.last_name
+                            "last_name": user.last_name,
+                            "user_image": data["user_image"]
                         })
                     except User.DoesNotExist:
                         basic_users_data.append({
                             "id": data["id"],
                             "first_name": "",
-                            "last_name": ""
+                            "last_name": "",
+                            "user_image": data["user_image"]
                         })
             return Response(basic_users_data)
         
@@ -251,12 +256,14 @@ class NewTenantUserViewSet(SearchDeleteViewSet):
                     data["email"] = user.email
                     data["first_name"] = user.first_name
                     data["last_name"] = user.last_name
-                    data["last_login"] = user.last_login
+                    data["last_login"] = user.last_login,
                 except User.DoesNotExist:
                     data["email"] = ""
                     data["first_name"] = ""
                     data["last_name"] = ""
                     data["last_login"] = None
+
+        tenant_users = sorted(tenant_users, key=lambda x: x['first_name'])
         return Response(tenant_users)
 
 

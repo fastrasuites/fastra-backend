@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render, redirect
 from django.urls import reverse
 #from django.core.mail import send_mail
-from registration.utils import Util, make_authentication
+from registration.utils import Util, make_authentication, conditional_rights_population
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth import login as auth_login
@@ -31,6 +31,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from core.errors.exceptions import TenantNotFoundException, InvalidCredentialsException
 from registration.utils import check_otp_time_expired, compare_password, set_tenant_schema, generate_tokens
 from registration.models import Tenant, Domain
+from registration.views import LoginView
 from users.models import TenantUser
 
 from .models import CompanyProfile
@@ -330,6 +331,56 @@ class ForgottenPasswordView(generics.GenericAPIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 """
 
+class LoginDetailsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # email = request.query_params.get("email")
+        # if not email:
+        #     return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+        #
+        # user = User.objects.filter(email=email).first()
+        user = request.user
+        if not user:
+            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        tenant_user = make_authentication(user.id, all_user_details=True)
+        if not tenant_user:
+            return Response({'detail': 'User not found in any tenant schema.'}, status=status.HTTP_404_NOT_FOUND)
+
+        tenant_id = tenant_user.id
+        tenant_schema_name = tenant_user.tenant.schema_name
+        tenant_company_name = tenant_user.tenant.company_name
+
+        try:
+            with set_tenant_schema('public'):
+                tenant = Tenant.objects.get(schema_name=tenant_schema_name)
+        except Tenant.DoesNotExist:
+            return Response({'detail': 'Tenant not found.'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'detail': f'Unexpected error accessing tenant: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        try:
+            conditional_rights_population()
+            data = LoginView().get_access_groups(tenant_schema_name, user)
+        except Exception as e:
+            return Response({'detail': f'Failed to fetch user access groups: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({
+            'user': {
+                "tenant_user_id": tenant_user.id,
+                "username": tenant_user.user.username,
+                "first_name": tenant_user.user.first_name,
+                "last_name": tenant_user.user.last_name,
+                "user_image": tenant_user.user_image,
+            },
+            "tenant_id": tenant_id,
+            "tenant_schema_name": tenant_schema_name,
+            "tenant_company_name": tenant_company_name,
+            "isOnboarded": tenant.is_onboarded,
+            "user_accesses": data
+        }, status=status.HTTP_200_OK)
+
 class RequestForgottenPasswordView(generics.GenericAPIView):
     serializer_class = RequestForgottenPasswordSerializer
     permission_classes = [AllowAny]
@@ -352,7 +403,7 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
             # Notify tenant admin
                 # schema_name = connection.schema_name
 
-                _, schema_name, _ = make_authentication(user.id)
+                _, schema_name, _, _ = make_authentication(user.id)
                 try:
                     tenant_details = Tenant.objects.get(schema_name=schema_name)
                 except Tenant.DoesNotExist:
@@ -382,7 +433,7 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
                     print(traceback.format_exc())
                     return Response({'error': 'Error sending email to tenant admin.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                return Response({'detail': 'Request sent to tenant admin for approval.'}, status=status.HTTP_200_OK)
+                return Response({'detail': 'Request sent to tenant admin for approval.', 'role': 'employee'}, status=status.HTTP_200_OK)
             
             if not user.profile.is_verified:
                 return Response({'error': 'Email is not verified.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -431,7 +482,7 @@ class RequestForgottenPasswordView(generics.GenericAPIView):
                 print(traceback.format_exc())
                 return Response({'error': 'Error sending email, please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             request.session['forgotten_password_email'] = email  # Store email in session
-            return Response({'detail': 'OTP has been sent to your email.'}, status=status.HTTP_200_OK)
+            return Response({'detail': 'OTP has been sent to your email.', 'role': 'admin'}, status=status.HTTP_200_OK)
             #except User.DoesNotExist:
                 #return Response({'error': 'No user found with this email address.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
