@@ -1094,49 +1094,52 @@ class InternalTransferSerializer(GenericModelSerializer):
 
     def validate(self, data):
         if not self.instance:
-            if not data.get('internal_transfer_items'):
-                raise serializers.ValidationError("At least one item is required for the transfer.")
-            items_data = data.get('internal_transfer_items', [])
             if data.get('status') != 'draft':
+                if not data.get('internal_transfer_items'):
+                    raise serializers.ValidationError("At least one item is required for the transfer.")
+                items_data = data.get('internal_transfer_items', [])
                 for item_data in items_data:
                     product = item_data.get('product')
                     quantity_requested = item_data.get('quantity_requested', 0)
                     if not product or not Product.objects.filter(id=product, is_hidden=False).exists():
                         raise serializers.ValidationError("Invalid Product")
-                    if LocationStock.objects.filter(product=product, location=data['source_location']).count() < quantity_requested:
+                    location_stock = LocationStock.objects.filter(
+                        product=product,
+                        location=data['source_location']).first()
+                    if not location_stock or location_stock.quantity < quantity_requested:
                         raise serializers.ValidationError("Insufficient stock for the product in the source location.")
                     if quantity_requested <= 0:
                         raise serializers.ValidationError("Quantity requested must be greater than zero.")
-            if not data.get('source_location'):
-                raise serializers.ValidationError("Source location is required.")
-            if not data.get('destination_location'):
-                raise serializers.ValidationError("Destination location is required.")
-            user = self.context['request'].user
+        if not data.get('source_location'):
+            raise serializers.ValidationError("Source location is required.")
+        if not data.get('destination_location'):
+            raise serializers.ValidationError("Destination location is required.")
+        user = self.context['request'].user
+        try:
+            tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
+        except TenantUser.DoesNotExist:
+            raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
+        store_keeper = None
+        location_manager = None
+        if 'source_location' in data:
+            source_location_pk = data.get('source_location', None)
             try:
-                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
-            except TenantUser.DoesNotExist:
-                raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
-            store_keeper = None
-            location_manager = None
-            if 'source_location' in data:
-                source_location_pk = data.get('source_location', None)
-                try:
-                    source_location_obj = Location.objects.get(pk=source_location_pk)
-                    store_keeper = source_location_obj.store_keeper.pk if source_location_obj.store_keeper else None
-                    location_manager = source_location_obj.location_manager.pk if source_location_obj.location_manager else None
-                except Location.DoesNotExist:
-                    raise serializers.ValidationError("Source location does not exist.")
-                except store_keeper is None:
-                    raise serializers.ValidationError("Source location does not have a store keeper assigned.")
-                except location_manager is None:
-                    raise serializers.ValidationError("Source location does not have a location manager assigned.")
-                # Check if the store_keeper is the same as the current user
-                if (store_keeper and store_keeper == tenant_user.pk) or (
-                        location_manager and location_manager == tenant_user.pk):
-                    raise serializers.ValidationError(
-                        "You do not have permission to transfer items from your own location.")
-            if data['source_location'] == data['destination_location']:
-                raise serializers.ValidationError("Source and destination locations cannot be the same.")
+                source_location_obj = Location.objects.get(pk=source_location_pk)
+                store_keeper = source_location_obj.store_keeper.pk if source_location_obj.store_keeper else None
+                location_manager = source_location_obj.location_manager.pk if source_location_obj.location_manager else None
+            except Location.DoesNotExist:
+                raise serializers.ValidationError("Source location does not exist.")
+            except store_keeper is None:
+                raise serializers.ValidationError("Source location does not have a store keeper assigned.")
+            except location_manager is None:
+                raise serializers.ValidationError("Source location does not have a location manager assigned.")
+            # Check if the store_keeper is the same as the current user
+            if (store_keeper and store_keeper == tenant_user.pk) or (
+                    location_manager and location_manager == tenant_user.pk):
+                raise serializers.ValidationError(
+                    "You do not have permission to transfer items from your own location.")
+        if data['source_location'] == data['destination_location']:
+            raise serializers.ValidationError("Source and destination locations cannot be the same.")
         return data
 
     @transaction.atomic
@@ -1187,6 +1190,8 @@ class InternalTransferSerializer(GenericModelSerializer):
 
         # Update the instance fields
         for attr, value in validated_data.items():
+            if instance.status == "released" and (attr == 'status' and (value != 'done' or value != 'cancelled')):
+                raise serializers.ValidationError("Status can only be changed from 'released' to 'done' or 'cancelled'.")
             setattr(instance, attr, value)
         instance.save()
 
@@ -1221,22 +1226,58 @@ class InternalTransferSerializer(GenericModelSerializer):
                     else:
                         InternalTransferItem.objects.create(internal_transfer=instance, **item_data)
 
-        if not was_validated and is_now_validated:
-            for item in instance.internal_transfer_items.all():
-                product = item.product
-                quantity_requested = item.quantity_requested
-                source_stock = LocationStock.objects.get(location=instance.source_location, product=product)
-                destination_stock, created = LocationStock.objects.get_or_create(
-                    location=instance.destination_location, product=product,
-                    defaults={'quantity': 0}
-                )
-                if source_stock and destination_stock:
+        # if not was_validated and is_now_validated:
+        #     for item in instance.internal_transfer_items.all():
+        #         product = item.product
+        #         quantity_requested = item.quantity_requested
+        #         source_stock = LocationStock.objects.get(location=instance.source_location, product=product)
+        #         destination_stock, created = LocationStock.objects.get_or_create(
+        #             location=instance.destination_location, product=product,
+        #             defaults={'quantity': 0}
+        #         )
+        #         if source_stock.quantity < quantity_requested:
+        #             raise serializers.ValidationError("Insufficient stock to release transfer.")
+        #         if source_stock and destination_stock:
+        #             source_stock.quantity -= quantity_requested
+        #             destination_stock.quantity += quantity_requested
+        #             source_stock.save()
+        #             destination_stock.save()
+        #         else:
+        #             raise serializers.ValidationError(
+        #                 "Product does not exist in the specified warehouse location."
+        #             )
+        if not was_validated:
+            # Deduct from source at Released
+            if status == 'released' and instance.status != 'released':
+                for item in instance.internal_transfer_items.all():
+                    product = item.product
+                    quantity_requested = item.quantity_requested
+                    source_stock = LocationStock.objects.get(location=instance.source_location, product=product)
+                    if (not source_stock) or source_stock.quantity < quantity_requested:
+                        raise serializers.ValidationError("Insufficient stock to release transfer.")
                     source_stock.quantity -= quantity_requested
-                    destination_stock.quantity += quantity_requested
                     source_stock.save()
-                    destination_stock.save()
-                else:
-                    raise serializers.ValidationError(
-                        "Product does not exist in the specified warehouse location."
+            if status == 'cancelled' and instance.status != 'cancelled':
+                # Revert stock deduction if previously released
+                if instance.status == 'released':
+                    for item in instance.internal_transfer_items.all():
+                        product = item.product
+                        quantity_requested = item.quantity_requested
+                        source_stock, created = LocationStock.objects.get_or_create(
+                            location=instance.source_location, product=product,
+                            defaults={'quantity': 0}
+                        )
+                        source_stock.quantity += quantity_requested
+                        source_stock.save()
+            # Credit to destination at Done
+            if is_now_validated:
+                for item in instance.internal_transfer_items.all():
+                    product = item.product
+                    quantity_requested = item.quantity_requested
+                    destination_stock, created = LocationStock.objects.get_or_create(
+                        location=instance.destination_location, product=product,
+                        defaults={'quantity': 0}
                     )
+                    destination_stock.quantity += quantity_requested
+                    destination_stock.save()
         return instance

@@ -1291,4 +1291,18 @@ class InternalTransferViewSet(SearchDeleteViewSet):
             return Response({"detail": "An unexpected error occurred: " + str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(self.get_object(), data=request.data, partial=False)
+        try:
+            serializer.is_valid(raise_exception=True)
+            instance = serializer.save()
+            return_serializer = InternalTransferSerializer(instance, context={'request': request}, many=False)
+            return Response(return_serializer.data, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist:
+            return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
+        except IntegrityError as e:
+            return Response({"error": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
