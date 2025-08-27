@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from decimal import Decimal
 
+from shared.models import GenericModel
 from users.models import TenantUser
 from purchase.models import Product, UnitOfMeasure, Vendor, PurchaseOrder
 from decimal import Decimal, ROUND_HALF_UP
@@ -237,41 +238,57 @@ class Location(models.Model):
         return cls.objects.exclude(location_code__iexact="CUST").exclude(location_code__iexact="SUPP")
 
     @classmethod
-    def get_user_locations(cls, user):
+    def get_user_locations(cls, tenant_user: TenantUser):
         """
         Returns locations that the user can access based on their role.
         """
-        if user.is_superuser:
+        if tenant_user.user.is_superuser:
             return cls.objects.all()
-        elif user.is_staff:
+        elif tenant_user.user.is_staff:
             return cls.objects.filter(is_hidden=False)
         else:
             # For regular users, filter by their managed locations
             return cls.objects.filter(
-                models.Q(location_manager=user) | models.Q(store_keeper=user)
+                models.Q(location_manager=tenant_user) | models.Q(store_keeper=tenant_user)
             ).distinct()
 
-
     @classmethod
-    def get_managed_locations_for_user(cls, user: TenantUser):
-        """
-        Returns locations that the user can access based on their role.
-        """
-        # For regular users, filter by their managed locations
-        return cls.objects.filter(location_manager=user).distinct()
-
-    @classmethod
-    def get_store_locations_for_user(cls, user):
-        """
-        Returns locations that the user can access based on their role.
-        """
-        if user.is_superuser:
+    def get_other_locations_for_user(cls, tenant_user: TenantUser):
+        if tenant_user.user.is_superuser:
             return cls.objects.all()
-        elif user.is_staff:
+        elif tenant_user.user.is_staff:
+            return cls.objects.filter(is_hidden=False)
+        else:
+            # For regular users, filter by locations that are not managed by them
+            return cls.objects.exclude(
+                models.Q(location_manager=tenant_user) | models.Q(store_keeper=tenant_user)
+            ).distinct()
+
+    @classmethod
+    def get_managed_locations_for_user(cls, tenant_user: TenantUser):
+        """
+        Returns locations that the user can access based on their role.
+        """
+        if tenant_user.user.is_superuser:
+            return cls.objects.all()
+        elif tenant_user.user.is_staff:
+            return cls.objects.filter(is_hidden=False)
+        else:
+            # For regular users, filter by their managed locations
+            return cls.objects.filter(location_manager=tenant_user).distinct()
+
+    @classmethod
+    def get_store_locations_for_user(cls, tenant_user: TenantUser):
+        """
+        Returns locations that the user can access based on their role.
+        """
+        if tenant_user.user.is_superuser:
+            return cls.objects.all()
+        elif tenant_user.user.is_staff:
             return cls.objects.filter(is_hidden=False)
         else:
             # For regular users, filter by their store keeper locations
-            return cls.objects.filter(store_keeper=user).distinct()
+            return cls.objects.filter(store_keeper=tenant_user).distinct()
 
     def get_stock_levels(self):
         return [
@@ -521,7 +538,7 @@ class Scrap(models.Model):
                 ).order_by('-id_number').first()
                 self.id_number = (last_scrap.id_number + 1) if last_scrap else 1
             # Generate the id based on location_code and id_number
-            self.id = f"{self.warehouse_location.location_code}ADJ{self.id_number:05d}"
+            self.id = f"{self.warehouse_location.location_code}SP{self.id_number:05d}"
         if self.is_done:
             self.can_edit = False
         super(Scrap, self).save(*args, **kwargs)
@@ -1238,3 +1255,77 @@ class ReturnIncomingProductItem(models.Model):
 # END RETURN OF INCOMING PRODUCTS
 
 
+class InternalTransfer(GenericModel):
+
+    """Records internal transfers of products between locations"""
+    INTERNAL_TRANSFER_STATUS = (
+        ('draft', 'Draft'),
+        ('awaiting_approval', 'Awaiting Approval'),
+        ('released', 'Released'),
+        ('done', 'Done'),
+        ('canceled', 'Canceled'),
+    )
+
+    id = models.CharField(max_length=15, primary_key=True)
+    id_number = models.PositiveIntegerField(auto_created=True)
+    source_location = models.ForeignKey(
+        'Location',
+        on_delete=models.PROTECT,
+        related_name='internal_transfers_from_source'
+    )
+    destination_location = models.ForeignKey(
+        'Location',
+        on_delete=models.PROTECT,
+        related_name='internal_transfers_to_destination'
+    )
+    status = models.CharField(choices=INTERNAL_TRANSFER_STATUS, max_length=20, default='draft')
+
+    def save(self, *args, **kwargs):
+        if not self.pk:  # Only perform these checks for new instances
+            if self.id and InternalTransfer.objects.filter(id=self.id).exists():
+                raise ValidationError(f"ID '{self.id}' already exists.")
+            # Ensure the id_number is auto-incremented based on location_code
+            if not self.id_number:
+                last_it = InternalTransfer.objects.filter(
+                    source_location__location_code=self.source_location.location_code
+                ).order_by('-id_number').first()
+                self.id_number = (last_it.id_number + 1) if last_it else 1
+            # Generate the id based on location_code and id_number
+            self.id = f"{self.source_location.location_code}INT{self.id_number:05d}"
+        super(InternalTransfer, self).save(*args, **kwargs)
+
+
+
+class InternalTransferItem(models.Model):
+    """Items in an internal transfer"""
+    internal_transfer = models.ForeignKey(
+        'InternalTransfer',
+        on_delete=models.CASCADE,
+        related_name='internal_transfer_items'
+    )
+    product = models.ForeignKey('purchase.Product', on_delete=models.PROTECT)
+    quantity_requested = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='Quantity Requested',
+    )
+
+    def __str__(self):
+        return f"{self.product.product_name} - {self.quantity_requested}"
+
+    def save(self, *args, **kwargs):
+        if self.product:
+            if not self.quantity_requested:
+                raise ValidationError("Quantity is required")
+            current_stock = self.product.location_stocks.filter(
+                location=self.internal_transfer.source_location
+            ).first()
+            if not current_stock:
+                raise ValidationError(
+                    "The product in this Internal Transfer item does not exist in the source location"
+                )
+            if current_stock.quantity < self.quantity_requested:
+                raise ValidationError("Quantity cannot be greater than current stock quantity")
+        else:
+            raise ValidationError("Invalid Product")
+        super().save(*args, **kwargs)
