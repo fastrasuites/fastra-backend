@@ -1088,9 +1088,10 @@ class InternalTransferSerializer(GenericModelSerializer):
     class Meta:
         model = InternalTransfer
         fields = ['id', 'internal_transfer_items', 'source_location', 'source_location_details',
-                  'destination_location', 'destination_location_details', 'status', 'date_created',
-                  'date_updated', 'created_by', 'updated_by', 'is_hidden']
-        read_only_fields = ['id', 'date_created', 'date_updated', 'created_by', 'updated_by']
+                  'destination_location', 'destination_location_details', 'status', 'date_created', 'is_hidden',
+                  'date_updated', 'created_by', 'updated_by', 'is_hidden', 'created_by_details', 'updated_by_details']
+        read_only_fields = ['id', 'date_created', 'date_updated', 'created_by', 'updated_by',
+                            'created_by_details', 'updated_by_details']
 
     def validate(self, data):
         if not self.instance:

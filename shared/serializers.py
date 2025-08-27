@@ -1,6 +1,7 @@
 from inventory.models import Location
 from purchase.models import Product, Vendor, Currency
 from users.models import TenantUser
+from users.serializers import TenantUserSerializer
 from .models import GenericModel
 
 from rest_framework import serializers
@@ -35,10 +36,13 @@ class GenericModelSerializer(serializers.ModelSerializer):
     updated_by = serializers.PrimaryKeyRelatedField(read_only=True)
     date_created = serializers.DateTimeField(read_only=True)
     date_updated = serializers.DateTimeField(read_only=True)
+    created_by_details = TenantUserSerializer(source='created_by', read_only=True)
+    updated_by_details = TenantUserSerializer(source='updated_by', read_only=True)
+    is_hidden = serializers.BooleanField(default=False)
 
     class Meta:
         model = GenericModel
-        fields = ('created_by', 'updated_by', 'date_created', 'date_updated', 'is_hidden')
+        fields = ('created_by', 'updated_by', 'date_created', 'date_updated', 'is_hidden', 'created_by_details', 'updated_by_details')
         abstract = True
 
     def to_internal_value(self, data):
