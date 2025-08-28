@@ -813,6 +813,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         "approved_list": "view",
         "rejected_list": "view",
         "convert_to_po": "create",
+        "send_email": "edit",
     }
 
 
