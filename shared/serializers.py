@@ -50,18 +50,26 @@ class GenericModelSerializer(serializers.ModelSerializer):
         Override to_internal_value to handle the case where the data is None.
         """
         data = data.copy()
+        if 'created_by' not in data or not data.get('created_by'):
+            user = self.context['request'].user
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
+                data['created_by'] = tenant_user.pk
+            except TenantUser.DoesNotExist:
+                raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
+        return super().to_internal_value(data)
+        data = data.copy()
         if data is None:
             return {}
         # add created_by fields if they are not present
-        user = self.context['request'].user
-        try:
-            tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
-            data['created_by'] = tenant_user.pk
-        except TenantUser.DoesNotExist:
-            data['created_by'] = None
-            raise serializers.ValidationError(
-                "TenantUser does not exist for the current user."
-            )
+        if 'created_by' not in data or not data.get('created_by'):
+            user = self.context['request'].user
+            try:
+                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
+                data['created_by'] = tenant_user.pk
+            except TenantUser.DoesNotExist:
+                data['created_by'] = None
+                raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
         return super().to_internal_value(data)
 
     def update(self, instance, validated_data):

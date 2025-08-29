@@ -3,6 +3,8 @@ import requests
 import os
 import io
 
+from django.conf import settings
+from django.core.mail import EmailMessage
 from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from urllib.parse import quote
@@ -842,6 +844,9 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         if rfq.is_expired:
             return Response({'error': 'Cannot send expired RFQ.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        if rfq.status != 'approved':
+            return Response({'error': 'Cannot send RFQs that are not approved.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             # Generate the PDF
             pdf_response = generate_model_pdf(rfq)
@@ -854,23 +859,23 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
             subject = f"Request for Quotation: {rfq.id}"
             body = (f"Please find attached the RFQ {rfq.id}. The deadline"
                     f" for response is {rfq.expiry_date.strftime('%Y-%m-%d') if rfq.expiry_date else 'None'}.")
-            # email = EmailMessage(subject, body, settings.EMAIL_HOST_USER, [rfq.vendor.email])
-            # email.attach(f"RFQ_{rfq.id}.pdf", pdf_content, 'application/pdf')
+            email = EmailMessage(subject, body, settings.EMAIL_HOST_USER, [rfq.vendor.email])
+            email.attach(f"{rfq.id}.pdf", pdf_content, 'application/pdf')
 
             mailto_link = f'mailto:{rfq.vendor.email}?subject={quote(subject)}&body={quote(body)}'
 
             # Prepare the response
-            response = HttpResponse(pdf_content, content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="RFQ_{rfq.id}.pdf"'
+            # response = HttpResponse(pdf_content, content_type='application/pdf')
+            # response['Content-Disposition'] = f'attachment; filename="RFQ_{rfq.id}.pdf"'
+            #
+            # # Embed the mailto link in the response headers for the front-end to use
+            # response['X-Mailto-Link'] = mailto_link
 
-            # Embed the mailto link in the response headers for the front-end to use
-            response['X-Mailto-Link'] = mailto_link
+            # return response
 
-            return response
+            email.send()
 
-            # email.send()
-
-            # return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
+            return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1080,23 +1085,23 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
             # Create and send the email
             subject = f"Purchase Order: {po.id}"
             body = f"Please find attached the RFQ {po.id}."
-            # email = EmailMessage(subject, body, settings.EMAIL_HOST_USER, [po.vendor.email])
-            # email.attach(f"PO_{po.id}.pdf", pdf_content, 'application/pdf')
+            email = EmailMessage(subject, body, settings.EMAIL_HOST_USER, [po.vendor.email])
+            email.attach(f"{po.id}.pdf", pdf_content, 'application/pdf')
 
-            mailto_link = f'mailto:{po.vendor.email}?subject={quote(subject)}&body={quote(body)}'
+            # mailto_link = f'mailto:{po.vendor.email}?subject={quote(subject)}&body={quote(body)}'
 
             # Prepare the response
-            response = HttpResponse(pdf_content, content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="PO_{po.id}.pdf"'
+            # response = HttpResponse(pdf_content, content_type='application/pdf')
+            # response['Content-Disposition'] = f'attachment; filename="PO_{po.id}.pdf"'
+            #
+            # # Embed the mailto link in the response headers for the front-end to use
+            # response['X-Mailto-Link'] = mailto_link
 
-            # Embed the mailto link in the response headers for the front-end to use
-            response['X-Mailto-Link'] = mailto_link
+            # return response
 
-            return response
+            email.send()
 
-            # email.send()
-
-            # return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
+            return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1125,7 +1130,7 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
                 related_po=po,
                 supplier=po.vendor,
                 source_location="SUPP00001",
-                destination_location=Location.get_active_locations(),
+                destination_location=None,
                 status='draft'
             )
 
