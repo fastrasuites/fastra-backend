@@ -785,7 +785,7 @@ class PurchaseRequestItemViewSet(SearchViewSet):
     serializer_class = PurchaseRequestItemSerializer
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['purchase_request__id']
-    search_fields = ["product__product_name", "unit_of_measure__unit_name", "purchase_request__id"]
+    search_fields = ["product__product_name", "purchase_request__id"]
 
 @extend_schema_view(
     list=extend_schema(tags=['Request For Quotation']),
@@ -1010,8 +1010,8 @@ class RequestForQuotationItemViewSet(SearchViewSet):
     queryset = RequestForQuotationItem.objects.all()
     serializer_class = RequestForQuotationItemSerializer
     permission_classes = [permissions.IsAuthenticated]
-    search_fields = ["product__product_name", "unit_of_measure__unit_name",]
-    filterset_fields = ["product__product_name", "unit_of_measure__unit_name", "request_for_quotation__id"]
+    search_fields = ["product__product_name"]
+    filterset_fields = ["product__product_name", "request_for_quotation__id"]
 
 
 @extend_schema_view(
@@ -1234,5 +1234,5 @@ class PurchaseOrderItemViewSet(SearchViewSet):
     queryset = PurchaseOrderItem.objects.all()
     serializer_class = PurchaseOrderItemSerializer
     permission_classes = [permissions.IsAuthenticated]
-    search_fields = ["product__product_name", "unit_of_measure__unit_name",]
-    filterset_fields = ["product__product_name", "unit_of_measure__unit_name", "purchase_order__id"]
+    search_fields = ["product__product_name"]
+    filterset_fields = ["product__product_name", "purchase_order__id"]
