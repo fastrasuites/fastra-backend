@@ -724,7 +724,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
 class SendMailSerializer(serializers.Serializer):
     email_subject = serializers.CharField(max_length=255)
     email_body = serializers.CharField()
-    recipient_list = serializers.CharField(
+    recipient_list = serializers.ListField(
         child=serializers.EmailField(),
         allow_empty=False
     )

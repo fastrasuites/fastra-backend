@@ -859,7 +859,7 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
                 f"Please find attached the RFQ {rfq.id}. The deadline"
                 f" for response is {rfq.expiry_date.strftime('%Y-%m-%d') if rfq.expiry_date else 'None'}."
             )
-            to_email = serializer.validated_data.pop('recipient_list').split(",") or rfq.vendor.email
+            to_email = serializer.validated_data.pop('recipient_list') or [rfq.vendor.email]
             attachment = serializer.validated_data.pop('email_attachment', None)
 
             email = EmailMessage(
@@ -1094,7 +1094,7 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
             body = serializer.validated_data.pop('email_body') or (
                 f"Please find attached the Purchase Order {po.id}."
             )
-            to_email = serializer.validated_data.pop('recipient_list').split(",") or po.vendor.email
+            to_email = serializer.validated_data.pop('recipient_list') or [po.vendor.email]
             attachment = serializer.validated_data.pop('email_attachment', None)
 
             email = EmailMessage(
