@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core.mail import EmailMessage
 from django.utils.text import slugify
 from rest_framework import serializers
 
@@ -719,3 +720,45 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
 
         return instance
 
+
+class SendMailSerializer(serializers.Serializer):
+    email_subject = serializers.CharField(max_length=255)
+    email_body = serializers.CharField()
+    recipient_list = serializers.CharField(
+        child=serializers.EmailField(),
+        allow_empty=False
+    )
+    email_attachment = serializers.FileField(required=False, allow_null=True, write_only=True)
+
+    def validate_recipient_list(self, value):
+        if not value:
+            raise serializers.ValidationError("Recipient list cannot be empty.")
+        return value
+
+    def validate_email_attachment(self, value):
+        if value:
+            max_size = 5 * 1024 * 1024
+            if value.size > max_size:
+                raise serializers.ValidationError("Attachment size should not exceed 5MB.")
+        return value
+
+    def save(self, **kwargs):
+        email_subject = self.validated_data['email_subject']
+        email_body = self.validated_data['email_body']
+        recipient_list = self.validated_data['recipient_list']
+        email_attachment = self.validated_data.get('email_attachment', None)
+
+        email = EmailMessage(
+            subject=email_subject,
+            body=email_body,
+            to=recipient_list
+        )
+
+        if email_attachment:
+            email.attach(email_attachment.name, email_attachment.read(), email_attachment.content_type)
+
+        email.send(fail_silently=False)
+        return {
+            'status': 'success',
+            'message': 'Email sent successfully.'
+        }
