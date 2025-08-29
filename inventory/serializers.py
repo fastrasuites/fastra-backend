@@ -1191,8 +1191,15 @@ class InternalTransferSerializer(GenericModelSerializer):
 
         # Update the instance fields
         for attr, value in validated_data.items():
+            if instance.status == "awaiting_approval" and (attr == 'status' and (value != 'approved' or value != 'cancelled')):
+                raise serializers.ValidationError(
+                    "Status can only be changed from 'awaiting_approval' to 'approved' or 'cancelled'.")
+            if instance.status == "approved" and (attr == 'status' and (value != 'released' or value != 'cancelled')):
+                raise serializers.ValidationError(
+                    "Status can only be changed from 'approved' to 'released' or 'cancelled'.")
             if instance.status == "released" and (attr == 'status' and (value != 'done' or value != 'cancelled')):
-                raise serializers.ValidationError("Status can only be changed from 'released' to 'done' or 'cancelled'.")
+                raise serializers.ValidationError(
+                    "Status can only be changed from 'released' to 'done' or 'cancelled'.")
             setattr(instance, attr, value)
         instance.save()
 

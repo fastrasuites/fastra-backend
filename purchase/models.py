@@ -419,10 +419,7 @@ class PurchaseRequestItem(models.Model):
     purchase_request = models.ForeignKey(PurchaseRequest, on_delete=models.CASCADE, related_name='items')
     date_created = models.DateTimeField(auto_now_add=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    description = models.CharField(max_length=255, null=True, blank=True)
     qty = models.PositiveIntegerField(default=1)
-    unit_of_measure = models.ForeignKey("UnitOfMeasure", on_delete=models.SET_NULL, null=True, blank=True,
-                                        related_name="purchase_requests")
     estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
 
     @property
@@ -438,10 +435,6 @@ class PurchaseRequestItem(models.Model):
         return self.product.product_name
 
     def save(self, *args, **kwargs):
-        if not self.description:
-            self.description = self.product.product_description
-        if not self.unit_of_measure:
-            self.unit_of_measure = self.product.unit_of_measure
         super(PurchaseRequestItem, self).save(*args, **kwargs)
 
 
@@ -558,10 +551,7 @@ class RequestForQuotation(models.Model):
 class RequestForQuotationItem(models.Model):
     request_for_quotation = models.ForeignKey(RequestForQuotation, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    description = models.CharField(max_length=255, null=True, blank=True)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
-    unit_of_measure = models.ForeignKey("UnitOfMeasure", on_delete=models.SET_NULL, null=True, blank=True,
-                                        related_name="rfqs")
     estimated_unit_price = models.DecimalField(max_digits=20, decimal_places=2, null=True)
 
     date_created = models.DateTimeField(auto_now_add=True)
@@ -580,10 +570,6 @@ class RequestForQuotationItem(models.Model):
         return self.product.product_name
 
     def save(self, *args, **kwargs):
-        if not self.description:
-            self.description = self.product.product_description
-        if not self.unit_of_measure:
-            self.unit_of_measure = self.product.unit_of_measure
         super(RequestForQuotationItem, self).save(*args, **kwargs)
 
 
@@ -691,10 +677,7 @@ class PurchaseOrderItem(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     purchase_order = models.ForeignKey("PurchaseOrder", on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    description = models.CharField(max_length=255, null=True, blank=True)
     qty = models.PositiveIntegerField(default=1, verbose_name="QTY")
-    unit_of_measure = models.ForeignKey(UnitOfMeasure, on_delete=models.SET_NULL, null=True,
-                                        related_name="purchase_orders")
     estimated_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
 
     objects = models.Manager()
@@ -710,8 +693,4 @@ class PurchaseOrderItem(models.Model):
         return f"{self.product.product_name} || {self.total_price}"
 
     def save(self, *args, **kwargs):
-        if not self.description:
-            self.description = self.product.product_description
-        if not self.unit_of_measure:
-            self.unit_of_measure = self.product.unit_of_measure
         super(PurchaseOrderItem, self).save(*args, **kwargs)

@@ -130,17 +130,11 @@ class PurchaseRequestItemSerializer(serializers.ModelSerializer):
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.filter(is_hidden=False),
     )
-    unit_of_measure = serializers.PrimaryKeyRelatedField(
-        queryset=UnitOfMeasure.objects.filter(is_hidden=False),
-        required=False,
-        allow_null=True,
-        allow_empty=True
-    )
     product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = PurchaseRequestItem
-        fields = ['id', 'purchase_request', 'product', 'product_details', 'description', 'qty', 'unit_of_measure',
+        fields = ['id', 'purchase_request', 'product', 'product_details', 'qty',
                   'estimated_unit_price']
         read_only_fields = ['total_price']
 
@@ -150,20 +144,12 @@ class PurchaseRequestItemSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        if not validated_data.get('description'):
-            validated_data['description'] = validated_data['product'].product_description
-        if not validated_data.get('unit_of_measure'):
-            validated_data['unit_of_measure'] = validated_data['product'].unit_of_measure
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
         for attr, value in validated_data.items():
             if attr != 'id':
                 setattr(instance, attr, value)
-        if not instance.description:
-            instance.description = instance.product.product_description
-        if not instance.unit_of_measure:
-            instance.unit_of_measure = instance.product.unit_of_measure
         instance.save()
         return instance
 
@@ -338,12 +324,6 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.filter(is_hidden=False),
     )
-    unit_of_measure = serializers.PrimaryKeyRelatedField(
-        queryset=UnitOfMeasure.objects.filter(is_hidden=False),
-        required=False,
-        allow_null=True,
-        allow_empty=True
-    )
     request_for_quotation = serializers.PrimaryKeyRelatedField(
         read_only=True
     )
@@ -351,8 +331,8 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = RequestForQuotationItem
-        fields = ['id', 'url', 'request_for_quotation', 'product', 'product_details', 'description',
-                  'qty', 'unit_of_measure', 'estimated_unit_price', 'total_price']
+        fields = ['id', 'url', 'request_for_quotation', 'product', 'product_details',
+                  'qty', 'estimated_unit_price', 'total_price']
 
     def validate(self, data):
         if data.get('qty') is None or data['qty'] <= 0:
@@ -360,20 +340,12 @@ class RequestForQuotationItemSerializer(serializers.HyperlinkedModelSerializer):
         return data
 
     def create(self, validated_data):
-        if not validated_data.get('description'):
-            validated_data['description'] = validated_data['product'].product_description
-        if not validated_data.get('unit_of_measure'):
-            validated_data['unit_of_measure'] = validated_data['product'].unit_of_measure
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
         for attr, value in validated_data.items():
             if attr != 'id':
                 setattr(instance, attr, value)
-        if not instance.description:
-            instance.description = instance.product.product_description
-        if not instance.unit_of_measure:
-            instance.unit_of_measure = instance.product.unit_of_measure
         instance.save()
         return instance
 
@@ -535,18 +507,12 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
     purchase_order = serializers.PrimaryKeyRelatedField(
         read_only=True
     )
-    unit_of_measure = serializers.PrimaryKeyRelatedField(
-        queryset=UnitOfMeasure.objects.filter(is_hidden=False),
-        required=False,
-        allow_null=True,
-        allow_empty=True
-    )
     product_details = ProductSerializer(read_only=True, source='product')
 
     class Meta:
         model = PurchaseOrderItem
-        fields = ['id', 'url', 'purchase_order', 'product', 'description', 'product_details',
-                  'qty', 'unit_of_measure', 'estimated_unit_price', 'total_price']
+        fields = ['id', 'url', 'purchase_order', 'product', 'product_details',
+                  'qty', 'estimated_unit_price', 'total_price']
 
     def validate(self, data):
         if data.get('qty') is None or data['qty'] <= 0:
@@ -554,20 +520,12 @@ class PurchaseOrderItemSerializer(serializers.HyperlinkedModelSerializer):
         return data
 
     def create(self, validated_data):
-        if not validated_data.get('description'):
-            validated_data['description'] = validated_data['product'].product_description
-        if not validated_data.get('unit_of_measure'):
-            validated_data['unit_of_measure'] = validated_data['product'].unit_of_measure
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
         for attr, value in validated_data.items():
             if attr != 'id':
                 setattr(instance, attr, value)
-        if not instance.description:
-            instance.description = instance.product.product_description
-        if not instance.unit_of_measure:
-            instance.unit_of_measure = instance.product.unit_of_measure
         instance.save()
         return instance
 
@@ -621,7 +579,7 @@ class PurchaseOrderSerializer(serializers.HyperlinkedModelSerializer):
         return super().to_internal_value(data)
 
     def validate_create(self, data):
-        required_fields = ['items', 'created_by', 'currency', 'vendor', 'created_by']
+        required_fields = ['items', 'created_by', 'currency', 'vendor']
         if data.get('related_rfq'):
             rfq = data['related_rfq']
             if rfq.status != "approved":
