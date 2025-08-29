@@ -424,7 +424,9 @@ class PurchaseRequestItem(models.Model):
 
     @property
     def total_price(self):
-        return self.qty * self.estimated_unit_price
+        if self.qty and self.estimated_unit_price:
+            return self.qty * self.estimated_unit_price
+        return 0.00
 
     objects = models.Manager()
 
@@ -564,7 +566,9 @@ class RequestForQuotationItem(models.Model):
 
     @property
     def total_price(self):
-        return self.qty * self.estimated_unit_price
+        if self.qty and self.estimated_unit_price:
+            return self.qty * self.estimated_unit_price
+        return 0.00
 
     def __str__(self):
         return self.product.product_name
@@ -687,7 +691,9 @@ class PurchaseOrderItem(models.Model):
 
     @property
     def total_price(self):
-        return self.qty * self.estimated_unit_price
+        if self.qty and self.estimated_unit_price:
+            return self.qty * self.estimated_unit_price
+        return 0.00
 
     def __str__(self):
         return f"{self.product.product_name} || {self.total_price}"

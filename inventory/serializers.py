@@ -791,7 +791,7 @@ class BackOrderCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Incoming_product is required.")
         if response:
             backorder = self.create_backorder(incoming_product)
-            return {"message": "Back Order created successfully.", "backorder_id": backorder.pk}
+            return {"message": "Back Order created successfully.", "backorder_id": backorder.backorder_id}
         else:
             for item in incoming_product.incoming_product_items.all():
                 item.expected_quantity = item.quantity_received
@@ -1111,36 +1111,36 @@ class InternalTransferSerializer(GenericModelSerializer):
                         raise serializers.ValidationError("Insufficient stock for the product in the source location.")
                     if quantity_requested <= 0:
                         raise serializers.ValidationError("Quantity requested must be greater than zero.")
-        if not data.get('source_location'):
-            raise serializers.ValidationError("Source location is required.")
-        if not data.get('destination_location'):
-            raise serializers.ValidationError("Destination location is required.")
-        user = self.context['request'].user
-        try:
-            tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
-        except TenantUser.DoesNotExist:
-            raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
-        store_keeper = None
-        location_manager = None
-        if 'source_location' in data:
-            source_location_pk = data.get('source_location', None)
-            try:
-                source_location_obj = Location.objects.get(pk=source_location_pk)
-                store_keeper = source_location_obj.store_keeper.pk if source_location_obj.store_keeper else None
-                location_manager = source_location_obj.location_manager.pk if source_location_obj.location_manager else None
-            except Location.DoesNotExist:
-                raise serializers.ValidationError("Source location does not exist.")
-            except store_keeper is None:
-                raise serializers.ValidationError("Source location does not have a store keeper assigned.")
-            except location_manager is None:
-                raise serializers.ValidationError("Source location does not have a location manager assigned.")
-            # Check if the store_keeper is the same as the current user
-            if (store_keeper and store_keeper == tenant_user.pk) or (
-                    location_manager and location_manager == tenant_user.pk):
-                raise serializers.ValidationError(
-                    "You do not have permission to transfer items from your own location.")
-        if data['source_location'] == data['destination_location']:
-            raise serializers.ValidationError("Source and destination locations cannot be the same.")
+                if not data.get('source_location'):
+                    raise serializers.ValidationError("Source location is required.")
+                if not data.get('destination_location'):
+                    raise serializers.ValidationError("Destination location is required.")
+                user = self.context['request'].user
+                try:
+                    tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
+                except TenantUser.DoesNotExist:
+                    raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
+                store_keeper = None
+                location_manager = None
+                if 'source_location' in data:
+                    source_location_pk = data.get('source_location', None)
+                    try:
+                        source_location_obj = Location.objects.get(pk=source_location_pk)
+                        store_keeper = source_location_obj.store_keeper.pk if source_location_obj.store_keeper else None
+                        location_manager = source_location_obj.location_manager.pk if source_location_obj.location_manager else None
+                    except Location.DoesNotExist:
+                        raise serializers.ValidationError("Source location does not exist.")
+                    except store_keeper is None:
+                        raise serializers.ValidationError("Source location does not have a store keeper assigned.")
+                    except location_manager is None:
+                        raise serializers.ValidationError("Source location does not have a location manager assigned.")
+                    # Check if the store_keeper is the same as the current user
+                    if (store_keeper and store_keeper == tenant_user.pk) or (
+                            location_manager and location_manager == tenant_user.pk):
+                        raise serializers.ValidationError(
+                            "You do not have permission to transfer items from your own location.")
+                if data['source_location'] == data['destination_location']:
+                    raise serializers.ValidationError("Source and destination locations cannot be the same.")
         return data
 
     @transaction.atomic

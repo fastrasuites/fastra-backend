@@ -1267,7 +1267,7 @@ class StockMoveViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
 
 
 class InternalTransferViewSet(SearchDeleteViewSet):
-    queryset = InternalTransfer.objects.filter(is_hidden=False)
+    queryset = InternalTransfer.objects.all()
     serializer_class = InternalTransferSerializer
     app_label = "inventory"
     model_name = "internaltransfer"

@@ -7,6 +7,7 @@ from django.conf import settings
 from django.core.mail import EmailMessage
 from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
+from smtplib import SMTPServerDisconnected
 from urllib.parse import quote
 
 from django.http import HttpResponse
@@ -42,7 +43,7 @@ from .serializers import (PurchaseRequestSerializer, VendorSerializer, ProductSe
                           RequestForQuotationSerializer, RequestForQuotationItemSerializer,
                           UnitOfMeasureSerializer, PurchaseRequestItemSerializer,
                           PurchaseOrderSerializer, PurchaseOrderItemSerializer,
-                          ExcelUploadSerializer, CurrencySerializer)
+                          ExcelUploadSerializer, CurrencySerializer, SendMailSerializer)
 from .utils import generate_model_pdf
 from users.config import basic_action_permission_map
 
@@ -847,35 +848,41 @@ class RequestForQuotationViewSet(SearchDeleteViewSet):
         if rfq.status != 'approved':
             return Response({'error': 'Cannot send RFQs that are not approved.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        serializer = SendMailSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            # Generate the PDF
-            pdf_response = generate_model_pdf(rfq)
-            if not pdf_response:
-                return Response({'error': 'Error generating PDF.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            pdf_content = pdf_response.content
+            subject = serializer.validated_data.pop('email_subject', f"Request for Quotation: {rfq.id}")
+            body = serializer.validated_data.pop('email_body') or (
+                f"Please find attached the RFQ {rfq.id}. The deadline"
+                f" for response is {rfq.expiry_date.strftime('%Y-%m-%d') if rfq.expiry_date else 'None'}."
+            )
+            to_email = serializer.validated_data.pop('recipient_list') or [rfq.vendor.email]
+            attachment = serializer.validated_data.pop('email_attachment', None)
 
-            # Create and send the email
-            subject = f"Request for Quotation: {rfq.id}"
-            body = (f"Please find attached the RFQ {rfq.id}. The deadline"
-                    f" for response is {rfq.expiry_date.strftime('%Y-%m-%d') if rfq.expiry_date else 'None'}.")
-            email = EmailMessage(subject, body, settings.EMAIL_HOST_USER, [rfq.vendor.email])
-            email.attach(f"{rfq.id}.pdf", pdf_content, 'application/pdf')
+            email = EmailMessage(
+                subject=subject,
+                body=body,
+                to=to_email,
+            )
 
-            mailto_link = f'mailto:{rfq.vendor.email}?subject={quote(subject)}&body={quote(body)}'
+            if attachment:
+                email.attach(
+                    attachment.name,
+                    attachment.read(),
+                    attachment.content_type
+                )
 
-            # Prepare the response
-            # response = HttpResponse(pdf_content, content_type='application/pdf')
-            # response['Content-Disposition'] = f'attachment; filename="RFQ_{rfq.id}.pdf"'
-            #
-            # # Embed the mailto link in the response headers for the front-end to use
-            # response['X-Mailto-Link'] = mailto_link
-
-            # return response
-
-            email.send()
-
-            return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
+            try:
+                email.send(fail_silently=False)
+                return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
+            except SMTPServerDisconnected:
+                return Response({'error': 'Email server disconnected.'},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except RequestForQuotation.DoesNotExist:
+            return Response({'error': 'RFQ not found.'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1074,37 +1081,45 @@ class PurchaseOrderViewSet(SearchDeleteViewSet):
     def send_email(self, request, pk=None):
         po = self.get_object()
 
+        if po.status != 'completed':
+            return Response({'error': 'Cannot send POs that are not canceled.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = SendMailSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            # Generate the PDF
-            pdf_response = generate_model_pdf(po)
-            if not pdf_response:
-                return Response({'error': 'Error generating PDF.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            pdf_content = pdf_response.content
+            subject = serializer.validated_data.pop('email_subject', f"Purchase Order: {po.id}")
+            body = serializer.validated_data.pop('email_body') or (
+                f"Please find attached the Purchase Order {po.id}."
+            )
+            to_email = serializer.validated_data.pop('recipient_list') or [po.vendor.email]
+            attachment = serializer.validated_data.pop('email_attachment', None)
 
-            # Create and send the email
-            subject = f"Purchase Order: {po.id}"
-            body = f"Please find attached the RFQ {po.id}."
-            email = EmailMessage(subject, body, settings.EMAIL_HOST_USER, [po.vendor.email])
-            email.attach(f"{po.id}.pdf", pdf_content, 'application/pdf')
+            email = EmailMessage(
+                subject=subject,
+                body=body,
+                to=to_email,
+            )
 
-            # mailto_link = f'mailto:{po.vendor.email}?subject={quote(subject)}&body={quote(body)}'
+            if attachment:
+                email.attach(
+                    attachment.name,
+                    attachment.read(),
+                    attachment.content_type
+                )
 
-            # Prepare the response
-            # response = HttpResponse(pdf_content, content_type='application/pdf')
-            # response['Content-Disposition'] = f'attachment; filename="PO_{po.id}.pdf"'
-            #
-            # # Embed the mailto link in the response headers for the front-end to use
-            # response['X-Mailto-Link'] = mailto_link
-
-            # return response
-
-            email.send()
-
-            return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
+            try:
+                email.send(fail_silently=False)
+                return Response({'status': 'email sent'}, status=status.HTTP_200_OK)
+            except SMTPServerDisconnected:
+                return Response({'error': 'Email server disconnected.'},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except RequestForQuotation.DoesNotExist:
+            return Response({'error': 'RFQ not found.'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     @action(methods=['get'], detail=False)
     def get_unrelated_po(self, request):
         unrelated_po = PurchaseOrder.objects.filter(incoming_product__isnull=True, status="completed").distinct()
