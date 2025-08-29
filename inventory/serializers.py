@@ -791,7 +791,7 @@ class BackOrderCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Incoming_product is required.")
         if response:
             backorder = self.create_backorder(incoming_product)
-            return {"message": "Back Order created successfully.", "backorder_id": backorder.pk}
+            return {"message": "Back Order created successfully.", "backorder_id": backorder.backorder_id}
         else:
             for item in incoming_product.incoming_product_items.all():
                 item.expected_quantity = item.quantity_received
