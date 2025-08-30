@@ -1102,7 +1102,7 @@ class InternalTransferSerializer(GenericModelSerializer):
                 for item_data in items_data:
                     product = item_data.get('product')
                     quantity_requested = item_data.get('quantity_requested', 0)
-                    if not product or not Product.objects.filter(id=product, is_hidden=False).exists():
+                    if not product or not Product.objects.filter(id=product.id, is_hidden=False).exists():
                         raise serializers.ValidationError("Invalid Product")
                     location_stock = LocationStock.objects.filter(
                         product=product,

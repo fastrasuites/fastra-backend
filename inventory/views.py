@@ -14,7 +14,9 @@ from companies.utils import Util
 
 from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product
-from shared.viewsets.soft_delete_search_viewset import SoftDeleteWithModelViewSet, SearchDeleteViewSet, NoCreateSearchViewSet
+from shared.viewsets.soft_delete_search_viewset import (
+    SoftDeleteWithModelViewSet, SearchDeleteViewSet, NoCreateSearchViewSet)
+from shared.utils import extract_error_message
 from users.models import TenantUser
 from users.module_permissions import HasModulePermission
 
@@ -1280,15 +1282,18 @@ class InternalTransferViewSet(SearchDeleteViewSet):
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
         try:
             self.perform_create(serializer)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        except IntegrityError as e:
-            return Response({"detail": "Error creating internal transfer: " + str(e)},
-                            status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({"detail": "An unexpected error occurred: " + str(e)},
+            error = extract_error_message(e)
+            return Response({"error": "Error creating internal transfer: " + error},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except IntegrityError as e:
+            error = extract_error_message(e)
+            return Response({"error": "An unexpected error occurred: " + error},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def update(self, request, *args, **kwargs):
@@ -1300,9 +1305,13 @@ class InternalTransferViewSet(SearchDeleteViewSet):
             return Response(return_serializer.data, status=status.HTTP_200_OK)
         except ObjectDoesNotExist:
             return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
-        except IntegrityError as e:
-            return Response({"error": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            error = extract_error_message(e)
+            return Response({"error": "Error updating internal transfer: " + error},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except IntegrityError as e:
+            error = extract_error_message(e)
+            return Response({"error": "An unexpected error occurred: " + error},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
