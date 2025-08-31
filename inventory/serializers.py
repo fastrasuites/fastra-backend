@@ -1109,7 +1109,10 @@ class InternalTransferSerializer(GenericModelSerializer):
                         product=product,
                         location=data['source_location']).first()
                     if not location_stock or location_stock.quantity < quantity_requested:
-                        errors.append({f'{product.product_name}': 'Insufficient stock for the product in the source location.'})
+                        errors.append({
+                            f'{product.product_name}': 'Insufficient stock for the product in the source location.',
+                            'Quantity left in location': location_stock.quantity
+                        })
                     if quantity_requested <= 0:
                         errors.append({f'{product.product_name}': 'Quantity requested must be greater than zero.'})
                 if len(errors) > 0:
