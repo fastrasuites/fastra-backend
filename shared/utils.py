@@ -3,16 +3,19 @@ from rest_framework.exceptions import ErrorDetail
 def extract_error_message(e):
     """
     Extracts a user-friendly error message from various exception types.
+    Handles 'non_field_errors' in dict details.
     """
     error_message = str(e)
     if hasattr(e, 'detail'):
         detail = e.detail
-        if isinstance(detail, (list, dict)):
-            # Flatten list/dict to string
-            error_message = (
-                detail[0] if isinstance(detail, list) and detail else
-                next(iter(detail.values()))[0] if isinstance(detail, dict) and detail else str(detail)
-            )
+        if isinstance(detail, dict):
+            if "non_field_errors" in detail and detail["non_field_errors"]:
+                error_message = detail["non_field_errors"] if isinstance(detail["non_field_errors"], list) else [detail["non_field_errors"]]
+            else:
+                # Fallback to first value in dict
+                error_message = next(iter(detail.values())) if detail else str(detail)
+        elif isinstance(detail, list):
+            error_message = detail if detail else str(detail)
         elif isinstance(detail, ErrorDetail):
             error_message = str(detail)
         else:
