@@ -1283,7 +1283,11 @@ class InternalTransferViewSet(SearchDeleteViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
-            return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            errors = serializer.errors
+            if isinstance(errors, dict) and "non_field_errors" in errors and len(errors) == 1:
+                return Response({"error": errors["non_field_errors"]}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": errors}, status=status.HTTP_400_BAD_REQUEST)
+            # return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
         try:
             self.perform_create(serializer)
             return Response(serializer.data, status=status.HTTP_201_CREATED)

@@ -1099,18 +1099,21 @@ class InternalTransferSerializer(GenericModelSerializer):
                 if not data.get('internal_transfer_items'):
                     raise serializers.ValidationError("At least one item is required for the transfer.")
                 items_data = data.get('internal_transfer_items', [])
+                errors = []
                 for item_data in items_data:
                     product = item_data.get('product')
                     quantity_requested = item_data.get('quantity_requested', 0)
                     if not product or not Product.objects.filter(id=product.id, is_hidden=False).exists():
-                        raise serializers.ValidationError("Invalid Product")
+                        errors.append({f'{product.product_name}': 'Invalid Product'})
                     location_stock = LocationStock.objects.filter(
                         product=product,
                         location=data['source_location']).first()
                     if not location_stock or location_stock.quantity < quantity_requested:
-                        raise serializers.ValidationError("Insufficient stock for the product in the source location.")
+                        errors.append({f'{product.product_name}': 'Insufficient stock for the product in the source location.'})
                     if quantity_requested <= 0:
-                        raise serializers.ValidationError("Quantity requested must be greater than zero.")
+                        errors.append({f'{product.product_name}': 'Quantity requested must be greater than zero.'})
+                if len(errors) > 0:
+                    raise serializers.ValidationError(errors)
                 if not data.get('source_location'):
                     raise serializers.ValidationError("Source location is required.")
                 if not data.get('destination_location'):
