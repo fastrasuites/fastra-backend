@@ -1315,6 +1315,8 @@ class InternalTransferViewSet(SearchDeleteViewSet):
             return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             error = extract_error_message(e)
+            if isinstance(error, list):
+                error = " ".join(error)
             return Response({"error": "Error updating internal transfer: " + error},
                             status=status.HTTP_400_BAD_REQUEST)
         except IntegrityError as e:
