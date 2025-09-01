@@ -1302,11 +1302,15 @@ class InternalTransferViewSet(SearchDeleteViewSet):
 
     def update(self, request, *args, **kwargs):
         serializer = self.get_serializer(self.get_object(), data=request.data, partial=False)
+        if not serializer.is_valid():
+            errors = serializer.errors
+            if isinstance(errors, dict) and "non_field_errors" in errors and len(errors) == 1:
+                return Response({"error": errors["non_field_errors"]}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": errors}, status=status.HTTP_400_BAD_REQUEST)
+            # return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            serializer.is_valid(raise_exception=True)
-            instance = serializer.save()
-            return_serializer = InternalTransferSerializer(instance, context={'request': request}, many=False)
-            return Response(return_serializer.data, status=status.HTTP_200_OK)
+            self.perform_update(serializer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         except ObjectDoesNotExist:
             return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
