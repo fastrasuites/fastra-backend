@@ -1273,7 +1273,7 @@ class InternalTransferViewSet(SearchDeleteViewSet):
     serializer_class = InternalTransferSerializer
     app_label = "inventory"
     model_name = "internaltransfer"
-    search_fields = ['status', "source_location__location_name", "destination_location__location_name", "internal_transfer_id"]
+    search_fields = ['status', "source_location__location_name", "destination_location__location_name", "id"]
     filterset_fields = ['date_created', 'status', "source_location__id", "destination_location__id"]
     permission_classes = [permissions.IsAuthenticated, HasModulePermission]
     action_permission_map = {
