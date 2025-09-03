@@ -25,7 +25,7 @@ from .models import (DeliveryOrder, DeliveryOrderItem, DeliveryOrderReturn, Deli
                      MultiLocation, ReturnIncomingProduct, ScrapItem, StockAdjustment, Scrap, IncomingProduct,
                      IncomingProductItem, StockMove, BackOrder, BackOrderItem, InternalTransfer)
 from .serializers import (DeliveryOrderReturnItemSerializer, DeliveryOrderReturnSerializer,
-                          DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer,
+                          DeliveryOrderSerializer, LocationSerializer, MultiLocationSerializer, LocationStockSerializer,
                           ReturnIncomingProductSerializer, StockAdjustmentSerializer, BackOrderNotCreateSerializer,
                           ScrapSerializer, IncomingProductSerializer, StockMoveSerializer,
                           BackOrderCreateSerializer, InternalTransferSerializer)
@@ -145,6 +145,30 @@ class LocationViewSet(SearchDeleteViewSet):
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+class LocationStockViewSet(SearchDeleteViewSet):
+    queryset = LocationStock.objects.all()
+    serializer_class = LocationStockSerializer  # You might want to create a specific serializer for LocationStock
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ["location__id", "product__id"]
+    search_fields = ["location__location_name", "product__product_name"]
+
+    @action(detail=False, methods=['GET'], url_path='by-location/(?P<location_id>[^/.]+)')
+    def by_location(self, request, location_id=None):
+        """
+        Returns the stock levels for all products in a specific location.
+        """
+        try:
+            location = Location.objects.get(id=location_id, is_hidden=False)
+            stock_levels = LocationStock.objects.filter(location=location, product__is_hidden=False)
+            serializer = LocationStockSerializer(stock_levels, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist:
+            return Response({"error": "Location not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class StockAdjustmentViewSet(SearchDeleteViewSet):
     queryset = StockAdjustment.objects.all()
@@ -1269,7 +1293,7 @@ class StockMoveViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
 
 
 class InternalTransferViewSet(SearchDeleteViewSet):
-    queryset = InternalTransfer.objects.all()
+    queryset = InternalTransfer.objects.filter(is_hidden=False).order_by('date_created')
     serializer_class = InternalTransferSerializer
     app_label = "inventory"
     model_name = "internaltransfer"

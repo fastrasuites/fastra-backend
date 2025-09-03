@@ -47,6 +47,36 @@ class LocationSerializer(serializers.HyperlinkedModelSerializer):
         return super().create(validated_data)
 
 
+class LocationStockSerializer(serializers.ModelSerializer):
+    location = serializers.PrimaryKeyRelatedField(
+        queryset=Location.get_active_locations().filter(is_hidden=False)
+    )
+    location_details = LocationSerializer(source='location', read_only=True)
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.filter(is_hidden=False)
+    )
+    product_details = ProductSerializer(source='product', read_only=True)
+
+    class Meta:
+        model = LocationStock
+        fields = ['id', 'location', 'location_details', 'product', 'product_details', 'quantity']
+
+    def create(self, validated_data):
+        location = validated_data.get('location')
+        product = validated_data.get('product')
+        if LocationStock.objects.filter(location=location, product=product).exists():
+            raise serializers.ValidationError("Stock entry for this product in the specified location already exists.")
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        location = validated_data.get('location', instance.location)
+        product = validated_data.get('product', instance.product)
+        if (location != instance.location or product != instance.product) and \
+                LocationStock.objects.filter(location=location, product=product).exists():
+            raise serializers.ValidationError("Stock entry for this product in the specified location already exists.")
+        return super().update(instance, validated_data)
+
+
 class MultiLocationSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='multi-location-detail')
 

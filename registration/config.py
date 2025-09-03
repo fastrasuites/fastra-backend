@@ -11,7 +11,9 @@ DESIRED_INVENTORY_MODELS = [
     'deliveryorderreturn', #DONE
     'returnincomingproduct', #DONE
     'stockadjustment', #DONE
-    'scrap' #DONE
+    'scrap', #DONE
+    'backorder', #DONE
+    'internaltransfer', #DONE
 ]
 
 DESIRED_PURCHASE_MODELS = [
