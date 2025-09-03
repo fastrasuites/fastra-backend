@@ -298,7 +298,7 @@ class Location(models.Model):
                 'product_unit_of_measure': str(stock.product.unit_of_measure),
                 'quantity': stock.quantity
             }
-            for stock in self.stocks.select_related('product').filter(is_hidden=False)
+            for stock in self.stocks.select_related('product').filter(product__is_hidden=False)
         ]
 
     def save(self, *args, **kwargs):
