@@ -12,8 +12,10 @@ def extract_error_message(e):
             if "non_field_errors" in detail and detail["non_field_errors"]:
                 error_message = detail["non_field_errors"] if isinstance(detail["non_field_errors"], list) else [detail["non_field_errors"]]
             else:
-                # Fallback to first value in dict
-                error_message = next(iter(detail.values())) if detail else str(detail)
+                # # Fallback to first value in dict
+                # error_message = next(iter(detail.values())) if detail else str(detail)
+                error_dict = {k: v[0] if isinstance(v, list) and v else str(v) for k, v in detail.items()}
+                error_message = [error_dict]
         elif isinstance(detail, list):
             error_message = detail if detail else str(detail)
         elif isinstance(detail, ErrorDetail):
