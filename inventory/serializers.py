@@ -1148,7 +1148,7 @@ class InternalTransferSerializer(GenericModelSerializer):
                         f'{product.product_name}': 'Insufficient stock for the product in the source location.',
                         'Quantity left in location': (location_stock.quantity if location_stock else 0)
                     })
-                if quantity_requested <= 0:
+                if (not quantity_requested) or (quantity_requested <= 0):
                     errors.append({f'{product.product_name}': 'Quantity requested must be greater than zero.'})
             if len(errors) > 0:
                 raise serializers.ValidationError(errors)
@@ -1299,15 +1299,26 @@ class InternalTransferSerializer(GenericModelSerializer):
         if not was_validated:
             # Deduct from source at Released
             if status == 'released' and instance.status != 'released':
+                errors = []
                 for item in instance.internal_transfer_items.all():
                     product = item.product
                     quantity_requested = item.quantity_requested
                     source_stock = LocationStock.objects.get(location=instance.source_location, product=product)
+                    if (not quantity_requested) or (quantity_requested <= 0):
+                        errors.append({f'{product.product_name}': 'Quantity requested must be greater than zero.'})
                     if (not source_stock) or source_stock.quantity < quantity_requested:
-                        raise serializers.ValidationError({f'{product.product_name}': 'Insufficient stock for the product in the source location.',
+                        errors.append({f'{product.product_name}': 'Insufficient stock for the product in the source location.',
                         'Quantity left in location': (source_stock.quantity if source_stock else 0)})
-                    source_stock.quantity -= quantity_requested
-                    source_stock.save()
+                if len(errors) == 0:
+                    for item in instance.internal_transfer_items.all():
+                        product = item.product
+                        quantity_requested = item.quantity_requested
+                        source_stock = LocationStock.objects.get(location=instance.source_location, product=product)
+                        source_stock.quantity -= quantity_requested
+                        source_stock.save()
+                else:
+                    raise serializers.ValidationError(errors)
+
             if status == 'canceled' and instance.status != 'canceled':
                 # Revert stock deduction if previously released
                 if instance.status == 'released':
