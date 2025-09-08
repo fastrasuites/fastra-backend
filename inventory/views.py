@@ -1317,11 +1317,11 @@ class InternalTransferViewSet(SearchDeleteViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except Exception as e:
             error = extract_error_message(e)
-            return Response({"error": "Error creating internal transfer: " + error},
+            return Response({"error": error},
                             status=status.HTTP_400_BAD_REQUEST)
         except IntegrityError as e:
             error = extract_error_message(e)
-            return Response({"error": "An unexpected error occurred: " + error},
+            return Response({"error": error},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def update(self, request, *args, **kwargs):
@@ -1341,11 +1341,11 @@ class InternalTransferViewSet(SearchDeleteViewSet):
             error = extract_error_message(e)
             if isinstance(error, list):
                 error = " ".join(error)
-            return Response({"error": "Error updating internal transfer: " + error},
+            return Response({"error": error},
                             status=status.HTTP_400_BAD_REQUEST)
         except IntegrityError as e:
             error = extract_error_message(e)
-            return Response({"error": "An unexpected error occurred: " + error},
+            return Response({"error": error},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

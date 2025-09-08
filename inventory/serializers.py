@@ -1193,7 +1193,7 @@ class InternalTransferSerializer(GenericModelSerializer):
                 [InternalTransferItem(internal_transfer=internal_transfer, **item_data) for item_data in items_data]
             )
         except IntegrityError as e:
-            raise serializers.ValidationError({"error": "Error creating internal transfer items: " + str(e)})
+            raise serializers.ValidationError({"error": str(e)})
 
         status = validated_data.get('status', 'draft')
         if status not in ['draft', 'awaiting_approval']:
