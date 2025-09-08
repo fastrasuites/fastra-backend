@@ -1325,16 +1325,19 @@ class InternalTransferItem(models.Model):
     def save(self, *args, **kwargs):
         if self.product:
             if not self.quantity_requested:
-                raise ValidationError("Quantity is required")
+                raise ValidationError(f"For {self.product.product_name}, Quantity is required")
             current_stock = self.product.location_stocks.filter(
                 location=self.internal_transfer.source_location
             ).first()
             if not current_stock:
                 raise ValidationError(
-                    "The product in this Internal Transfer item does not exist in the source location"
+                    f"The product {self.product.product_name} in this Internal Transfer item does not exist in the source location"
                 )
             if current_stock.quantity < self.quantity_requested:
-                raise ValidationError("Quantity cannot be greater than current stock quantity")
+                raise ValidationError({
+                    f'{self.product.product_name}': 'Insufficient stock for the product in the source location.',
+                    'Quantity left in location': (current_stock.quantity if current_stock else 0)
+                })
         else:
             raise ValidationError("Invalid Product")
         super().save(*args, **kwargs)

@@ -1146,7 +1146,7 @@ class InternalTransferSerializer(GenericModelSerializer):
                 if not location_stock or location_stock.quantity < quantity_requested:
                     errors.append({
                         f'{product.product_name}': 'Insufficient stock for the product in the source location.',
-                        'Quantity left in location': location_stock.quantity
+                        'Quantity left in location': (location_stock.quantity if location_stock else 0)
                     })
                 if quantity_requested <= 0:
                     errors.append({f'{product.product_name}': 'Quantity requested must be greater than zero.'})
@@ -1304,7 +1304,8 @@ class InternalTransferSerializer(GenericModelSerializer):
                     quantity_requested = item.quantity_requested
                     source_stock = LocationStock.objects.get(location=instance.source_location, product=product)
                     if (not source_stock) or source_stock.quantity < quantity_requested:
-                        raise serializers.ValidationError("Insufficient stock to release transfer.")
+                        raise serializers.ValidationError({f'{product.product_name}': 'Insufficient stock for the product in the source location.',
+                        'Quantity left in location': (source_stock.quantity if source_stock else 0)})
                     source_stock.quantity -= quantity_requested
                     source_stock.save()
             if status == 'canceled' and instance.status != 'canceled':
