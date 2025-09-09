@@ -14,7 +14,7 @@ from companies.utils import Util
 
 from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product
-from shared.viewsets.soft_delete_search_viewset import (
+from shared.viewsets.soft_delete_search_viewset import (SearchDeleteViewSetWithCreatedUpdated,
     SoftDeleteWithModelViewSet, SearchDeleteViewSet, NoCreateSearchViewSet)
 from shared.utils import extract_error_message
 from users.models import TenantUser
@@ -1292,7 +1292,7 @@ class StockMoveViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
 # END STOCK MOVES
 
 
-class InternalTransferViewSet(SearchDeleteViewSet):
+class InternalTransferViewSet(SearchDeleteViewSetWithCreatedUpdated):
     queryset = InternalTransfer.objects.filter(is_hidden=False).order_by('date_created')
     serializer_class = InternalTransferSerializer
     app_label = "inventory"
@@ -1306,46 +1306,14 @@ class InternalTransferViewSet(SearchDeleteViewSet):
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        if not serializer.is_valid():
-            errors = serializer.errors
-            if isinstance(errors, dict) and "non_field_errors" in errors and len(errors) == 1:
-                return Response({"error": errors["non_field_errors"]}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"error": errors}, status=status.HTTP_400_BAD_REQUEST)
-            # return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            self.perform_create(serializer)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        except Exception as e:
-            error = extract_error_message(e)
-            return Response({"error": error},
-                            status=status.HTTP_400_BAD_REQUEST)
-        except IntegrityError as e:
-            error = extract_error_message(e)
-            return Response({"error": error},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        serializer.is_valid(raise_exception=True)  # will hit global handler on error
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
-        serializer = self.get_serializer(self.get_object(), data=request.data, partial=False)
-        if not serializer.is_valid():
-            errors = serializer.errors
-            if isinstance(errors, dict) and "non_field_errors" in errors and len(errors) == 1:
-                return Response({"error": errors["non_field_errors"]}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"error": errors}, status=status.HTTP_400_BAD_REQUEST)
-            # return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            self.perform_update(serializer)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        except ObjectDoesNotExist:
-            return Response({"error": "Object not found."}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            error = extract_error_message(e)
-            if isinstance(error, list):
-                error = " ".join(error)
-            return Response({"error": error},
-                            status=status.HTTP_400_BAD_REQUEST)
-        except IntegrityError as e:
-            error = extract_error_message(e)
-            return Response({"error": error},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        serializer = self.get_serializer(self.get_object(), data=request.data)
+        serializer.is_valid(raise_exception=True)  # consistent handling
+        self.perform_update(serializer)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 

@@ -1113,8 +1113,8 @@ class InternalTransferSerializer(GenericModelSerializer):
     source_location_details = LocationSerializer(source='source_location', read_only=True)
     destination_location_details = LocationSerializer(source='destination_location', read_only=True)
 
-    class Meta:
-        model = InternalTransfer
+    class Meta(GenericModelSerializer.Meta):
+        model = InternalTransfer   # <-- real model with table
         fields = ['id', 'internal_transfer_items', 'source_location', 'source_location_details',
                   'destination_location', 'destination_location_details', 'status', 'date_created', 'is_hidden',
                   'date_updated', 'created_by', 'updated_by', 'is_hidden', 'created_by_details', 'updated_by_details']

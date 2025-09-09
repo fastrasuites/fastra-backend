@@ -4,6 +4,8 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from users.models import TenantUser
+
 
 class SoftDeleteWithModelViewSet(viewsets.GenericViewSet, mixins.ListModelMixin, mixins.CreateModelMixin,
                                  mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
@@ -117,6 +119,19 @@ class SearchDeleteViewSet(SoftDeleteWithModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = []
     filterset_fields = []
+
+
+class SearchDeleteViewSetWithCreatedUpdated(SearchDeleteViewSet):
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        tenant_user = TenantUser.objects.filter(user=user, is_hidden=False).first()
+        serializer.save(created_by=tenant_user)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        tenant_user = TenantUser.objects.filter(user=user, is_hidden=False).first()
+        serializer.save(updated_by=tenant_user)
 
 
 class SearchViewSet(viewsets.ModelViewSet):

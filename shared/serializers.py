@@ -41,46 +41,9 @@ class GenericModelSerializer(serializers.ModelSerializer):
     is_hidden = serializers.BooleanField(default=False)
 
     class Meta:
-        model = GenericModel
-        fields = ('created_by', 'updated_by', 'date_created', 'date_updated', 'is_hidden', 'created_by_details', 'updated_by_details')
-        abstract = True
-
-    def to_internal_value(self, data):
-        """
-        Override to_internal_value to handle the case where the data is None.
-        """
-        data = data.copy()
-        if 'created_by' not in data or not data.get('created_by'):
-            user = self.context['request'].user
-            try:
-                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
-                data['created_by'] = tenant_user.pk
-            except TenantUser.DoesNotExist:
-                raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
-        return super().to_internal_value(data)
-        data = data.copy()
-        if data is None:
-            return {}
-        # add created_by fields if they are not present
-        if 'created_by' not in data or not data.get('created_by'):
-            user = self.context['request'].user
-            try:
-                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
-                data['created_by'] = tenant_user.pk
-            except TenantUser.DoesNotExist:
-                data['created_by'] = None
-                raise serializers.ValidationError({'created_by': 'Logged in user is not a valid tenant member.'})
-        return super().to_internal_value(data)
-
-    def update(self, instance, validated_data):
-        request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            user = request.user
-            try:
-                tenant_user = TenantUser.objects.get(user_id=user.id, is_hidden=False)
-                validated_data['updated_by'] = tenant_user.pk
-            except TenantUser.DoesNotExist:
-                raise serializers.ValidationError(
-                    "TenantUser does not exist for the current user."
-                )
-        return super().update(instance, validated_data)
+        fields = (
+            'created_by', 'updated_by',
+            'date_created', 'date_updated',
+            'is_hidden', 'created_by_details', 'updated_by_details'
+        )
+        # ⚠️ no `model = GenericModel` and no `abstract = True`
