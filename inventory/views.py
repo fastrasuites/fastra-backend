@@ -16,7 +16,6 @@ from inventory.signals import create_delivery_order_returns_stock_move
 from purchase.models import Product
 from shared.viewsets.soft_delete_search_viewset import (SearchDeleteViewSetWithCreatedUpdated,
     SoftDeleteWithModelViewSet, SearchDeleteViewSet, NoCreateSearchViewSet)
-from shared.utils import extract_error_message
 from users.models import TenantUser
 from users.module_permissions import HasModulePermission
 
