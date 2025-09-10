@@ -125,12 +125,12 @@ class SearchDeleteViewSetWithCreatedUpdated(SearchDeleteViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        tenant_user = TenantUser.objects.filter(user=user, is_hidden=False).first()
+        tenant_user = TenantUser.objects.filter(user_id=user.id, is_hidden=False).first()
         serializer.save(created_by=tenant_user)
 
     def perform_update(self, serializer):
         user = self.request.user
-        tenant_user = TenantUser.objects.filter(user=user, is_hidden=False).first()
+        tenant_user = TenantUser.objects.filter(user_id=user.id, is_hidden=False).first()
         serializer.save(updated_by=tenant_user)
 
 

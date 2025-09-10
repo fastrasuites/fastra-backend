@@ -389,6 +389,10 @@ LOGGING = {
             "level": "INFO",
             "propagate": True,
         },
+        'django_tenants': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
         "__main__": {
             "handlers": ["console", "file"],
             "level": "ERROR",
@@ -434,19 +438,3 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024
 
 API_BASE_DOMAIN = os.getenv("API_BASE_DOMAIN", 'https://fastrasuiteapi.com.ng')
 FRONTEND_URL = os.getenv("FRONTEND_URL", 'https://app.fastrasuite.com')
-
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-    },
-    'loggers': {
-        'django_tenants': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-        },
-    },
-}

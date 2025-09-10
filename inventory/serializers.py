@@ -1231,6 +1231,10 @@ class InternalTransferSerializer(GenericModelSerializer):
             )
 
         # Update the instance fields
+        if instance.status == "draft" and (status and (status != 'awaiting_approval')):
+            raise serializers.ValidationError(
+                "Status can only be changed from 'draft' to 'awaiting_approval'"
+            )
         if instance.status == "awaiting_approval" and (status and (status != 'approved' and status != 'canceled')):
             raise serializers.ValidationError(
                 "Status can only be changed from 'awaiting_approval' to 'approved' or 'canceled'.")
